@@ -17,6 +17,10 @@
   Fase E: protocolo serial (NDJSON) sobre a mesma porta USB-CDC, pra
   comunicacao com o app desktop de configuracao. Ver
   docs/04-protocolo-serial.md.
+  Fase F: nome livre por pad (ex: "Caixa"), editavel so via o app desktop
+  (comando set_pad com field="label") - nunca pelos encoders/TFT. O numero
+  do pad e' fixo; o nome exibido e' sempre "N - Label" (ou "Pad N" sem
+  label). Persistido em EEPROM junto com o resto.
 
   Pinout usado aqui: ver docs/02-hardware.md (marcado como proposto/a validar
   no hardware real).
@@ -87,18 +91,29 @@
 // testes iniciais. O usuario pode reatribuir por pad via o menu na tela.
 #define FIRST_TEST_NOTE 36
 
+// Nome livre por pad (ex: "Caixa"), editavel so pelo app desktop (nao entra
+// no fluxo dos encoders/TFT) - ver docs/01-decisoes-arquiteturais.md. O
+// numero do pad nunca e' editavel: o nome exibido e' sempre "N - Label", ou
+// "Pad N" enquanto nao houver label definido.
+#define PAD_LABEL_MAX_LEN 20                            // "Chimbal Aberto" etc + '\0'
+#define PAD_NAME_MAX_LEN (PAD_LABEL_MAX_LEN + 8)        // "32 - " + label + margem
+
 // ---------------------------------------------------------------------------
 // EEPROM (persistencia das configuracoes por pad) - Fase D
 // Layout: 10 bytes por pad (sensitivity, threshold1, scantime, masktime,
 // rimSensitivity, rimThreshold, curvetype, note, noteRim, noteCup - ver
-// HelloDrum::loadMemory()/initMemory() em hellodrum.cpp) + 1 byte extra no
-// final, usado como flag de "ja inicializado" (evita sensitivity/threshold
-// zerados no primeiro boot, antes de qualquer initMemory() ter rodado).
+// HelloDrum::loadMemory()/initMemory() em hellodrum.cpp), seguido de 1 byte
+// usado como flag de "ja inicializado" (evita sensitivity/threshold zerados
+// no primeiro boot, antes de qualquer initMemory() ter rodado), seguido de
+// PAD_LABEL_MAX_LEN bytes por pad pro nome livre (Fase F).
 // ---------------------------------------------------------------------------
 #define EEPROM_BYTES_PER_PAD 10
 #define EEPROM_INIT_FLAG_ADDR (NUM_PADS * EEPROM_BYTES_PER_PAD)
-#define EEPROM_SIZE (EEPROM_INIT_FLAG_ADDR + 1)
+#define EEPROM_NAMES_ADDR (EEPROM_INIT_FLAG_ADDR + 1)
+#define EEPROM_SIZE (EEPROM_NAMES_ADDR + NUM_PADS * PAD_LABEL_MAX_LEN)
 #define EEPROM_INIT_MAGIC 0xA5
+
+#define padLabelEepromAddr(i) (EEPROM_NAMES_ADDR + (i) * PAD_LABEL_MAX_LEN)
 
 // Cada HelloDrumMUX_4051 recebe um muxNum sequencial automatico (0..3, na
 // ordem de instanciacao abaixo). Ver docs/01-decisoes-arquiteturais.md.
@@ -140,10 +155,28 @@ HelloDrumButton button(255, 255, 255, 255, 255);
 RotaryEncoder padEncoder(PAD_ENC_A, PAD_ENC_B, RotaryEncoder::LatchMode::FOUR3);
 RotaryEncoder itemEncoder(ITEM_ENC_A, ITEM_ENC_B, RotaryEncoder::LatchMode::FOUR3);
 
-// settingName() guarda o ponteiro que recebe (nao copia a string), por isso
-// precisa apontar para memoria que dura o programa todo - nao para um buffer
-// temporario de escopo local. Preenchido em setup().
-char padNames[NUM_PADS][8];
+// padLabels[i]: texto livre editavel (ex: "Caixa"), vazio por padrao.
+// padNames[i]: nome exibido de fato ("N - Label" ou "Pad N" sem label) -
+// e' o que settingName() recebe. settingName() guarda o ponteiro recebido
+// (nao copia a string), por isso padNames precisa ser memoria que dura o
+// programa todo (nao um buffer temporario de escopo local) - e como e' um
+// buffer mutavel, atualizar seu CONTEUDO depois (rebuildPadName()) reflete
+// automaticamente no que a lib exibe, sem precisar chamar settingName() de
+// novo. Ver docs/01-decisoes-arquiteturais.md.
+char padLabels[NUM_PADS][PAD_LABEL_MAX_LEN];
+char padNames[NUM_PADS][PAD_NAME_MAX_LEN];
+
+void rebuildPadName(byte i)
+{
+    if (padLabels[i][0] == '\0')
+    {
+        snprintf(padNames[i], PAD_NAME_MAX_LEN, "Pad %d", i + 1);
+    }
+    else
+    {
+        snprintf(padNames[i], PAD_NAME_MAX_LEN, "%d - %s", i + 1, padLabels[i]);
+    }
+}
 
 long padEncoderLastPos = 0;
 long itemEncoderLastPos = 0;
@@ -347,6 +380,7 @@ void sendPadConfig(byte padIndex)
     doc["type"] = "pad_config";
     doc["pad"] = padIndex;
     doc["name"] = padNames[padIndex];
+    doc["label"] = padLabels[padIndex];
     doc["sensitivity"] = pads[padIndex].sensitivity;
     doc["threshold"] = pads[padIndex].threshold1;
     doc["scan_time"] = pads[padIndex].scantime;
@@ -356,20 +390,43 @@ void sendPadConfig(byte padIndex)
     sendJsonLine(doc);
 }
 
-// Aplica um campo de configuracao a um pad (RAM) e persiste os 10 campos
+// Aplica um campo de configuracao a um pad. Pros campos numericos da lib
+// (sensitivity, threshold, etc), atualiza em RAM e persiste os 10 campos
 // desse pad na EEPROM via HelloDrum::initMemory() - reaproveita os offsets
-// ja calculados pela lib, sem duplicar essa logica aqui.
+// ja calculados pela lib, sem duplicar essa logica aqui. "label" e' um campo
+// nosso (nao existe na lib), tratado separadamente logo abaixo.
 void handleSetPad(JsonDocument &doc)
 {
     int pad = doc["pad"] | -1;
     const char *field = doc["field"] | "";
-    long value = doc["value"] | -1;
 
     if (pad < 0 || pad >= NUM_PADS)
     {
         sendError("set_pad", "invalid_pad");
         return;
     }
+
+    if (strcmp(field, "label") == 0)
+    {
+        const char *label = doc["value"] | "";
+        if (strlen(label) >= PAD_LABEL_MAX_LEN)
+        {
+            sendError("set_pad", "value_too_long");
+            return;
+        }
+
+        strncpy(padLabels[pad], label, PAD_LABEL_MAX_LEN - 1);
+        padLabels[pad][PAD_LABEL_MAX_LEN - 1] = '\0';
+        rebuildPadName(pad);
+
+        EEPROM_ESP.writeBytes(padLabelEepromAddr(pad), padLabels[pad], PAD_LABEL_MAX_LEN);
+        EEPROM_ESP.commit();
+
+        sendPadConfig(pad); // devolve o estado atualizado (name/label novos)
+        return;
+    }
+
+    long value = doc["value"] | -1;
 
     if (strcmp(field, "sensitivity") == 0)
     {
@@ -533,11 +590,22 @@ void setup()
     {
         pads[i].note = FIRST_TEST_NOTE + i;
 
+        if (eepromFirstBoot)
+        {
+            padLabels[i][0] = '\0'; // sem nome customizado ainda
+            EEPROM_ESP.writeBytes(padLabelEepromAddr(i), padLabels[i], PAD_LABEL_MAX_LEN);
+        }
+        else
+        {
+            EEPROM_ESP.readBytes(padLabelEepromAddr(i), padLabels[i], PAD_LABEL_MAX_LEN);
+            padLabels[i][PAD_LABEL_MAX_LEN - 1] = '\0'; // seguranca contra dado corrompido sem terminador
+        }
+        rebuildPadName(i);
+
         // settingName() tambem incrementa nameIndexMax (global, dentro da
         // lib) - sem chamar isso pra cada pad, a navegacao via encoder fica
         // travada no pad 0 (nameIndexMax ficaria 0). Ver
         // docs/01-decisoes-arquiteturais.md.
-        snprintf(padNames[i], sizeof(padNames[i]), "Pad %d", i + 1);
         pads[i].settingName(padNames[i]);
 
         if (eepromFirstBoot)

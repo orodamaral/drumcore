@@ -25,6 +25,7 @@ cérebro do sistema, capaz de:
 | 2 | Tela TFT (ST7735) + 2 encoders rotativos de configuração | Compilado, sem teste em hardware real |
 | 2b | Persistência EEPROM (config por pad sobrevive a reboot) | Compilado, sem teste em hardware real |
 | 2c | Protocolo serial NDJSON (módulo ↔ app desktop) | Compilado, sem teste em hardware real |
+| 2d | Nome livre por pad (editável só pelo app desktop) | Compilado/build ok, sem teste em hardware real |
 | 3 | Interface desktop de configuração (Electron/React) | Build/typecheck ok, sem teste com módulo real (só modo demo) |
 
 ## Decisões já tomadas

@@ -143,9 +143,42 @@ button:disabled {
   color: #7a7f8c;
 }
 
-.pad-editor h2 {
-  margin-top: 0;
-  font-size: 16px;
+.pad-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.pad-number-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #262b34;
+  border: 1px solid #383e4a;
+  font-size: 13px;
+  font-weight: 600;
+  color: #b7bcc7;
+}
+
+.pad-rename-input {
+  flex: 1;
+  background: #1e222a;
+  color: #e8e8ec;
+  border: 1px solid #2a2e37;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pad-rename-input:focus {
+  outline: none;
+  border-color: #5b8cff;
 }
 
 .field-row {

@@ -105,6 +105,10 @@ export default function App() {
     send({ cmd: 'set_pad', pad, field, value })
   }
 
+  function renamePad(pad: number, label: string): void {
+    send({ cmd: 'set_pad', pad, field: 'label', value: label })
+  }
+
   const padList = useMemo(
     () => Array.from({ length: PAD_COUNT }, (_, i) => pads[i]),
     [pads]
@@ -160,6 +164,7 @@ export default function App() {
           <PadEditor
             pad={pads[selectedPad]}
             onChange={(field, value) => updatePadField(selectedPad, field, value)}
+            onRename={(label) => renamePad(selectedPad, label)}
           />
         </main>
       ) : (

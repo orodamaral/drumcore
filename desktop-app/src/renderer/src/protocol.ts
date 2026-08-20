@@ -3,7 +3,10 @@
 
 export interface PadConfig {
   pad: number
+  /** Nome pronto pra exibir: "N - label", ou "Pad N" enquanto sem label. */
   name: string
+  /** Texto livre "crú" (sem o prefixo do número) - editável só pelo app desktop. */
+  label: string
   sensitivity: number
   threshold: number
   scan_time: number
@@ -14,6 +17,8 @@ export interface PadConfig {
 
 export const PAD_FIELDS = ['sensitivity', 'threshold', 'scan_time', 'mask_time', 'curve_type', 'note'] as const
 export type PadField = (typeof PAD_FIELDS)[number]
+
+export const PAD_LABEL_MAX_LEN = 19
 
 export type IncomingMessage =
   | { type: 'pong' }

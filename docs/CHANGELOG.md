@@ -2,6 +2,22 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (8)
+
+- **Fase F**: nome livre por pad (ex: "Caixa"), editável só pelo app
+  desktop. Número do pad fixo — nome exibido sempre `"N - label"` (ou
+  `"Pad N"` sem label), na tela TFT e no app.
+- Firmware: `padLabels`/`padNames` em `main.cpp`, persistidos em EEPROM
+  (layout estendido). Protocolo `set_pad` ganhou o campo `label` (string),
+  reaproveitando o comando existente em vez de criar um novo. Detalhes em
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) e
+  [04-protocolo-serial.md](04-protocolo-serial.md).
+- App desktop: campo de texto no editor do pad (com o número fixo ao lado),
+  commit ao sair do campo ou apertar Enter. Modo demo atualizado pra
+  simular o mesmo comportamento.
+- Build/typecheck do firmware e do app validados. Nada testado em hardware
+  real ainda.
+
 ## 2026-08-20 (7)
 
 - Iniciada a **interface desktop** (item 4 do escopo original) em

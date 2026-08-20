@@ -346,3 +346,54 @@ build estático) nesta sessão.
 - MIDI SysEx como protocolo de config: mais "elegante" (um único cabo/
   interface), mas mais complexo dos dois lados e sem nenhum parsing de SysEx
   já implementado no firmware — descartado em favor de Serial+JSON.
+
+## 2026-08-20 — Nome livre por pad, editável só pelo app desktop
+
+**Decisão**: cada pad ganha um "label" de texto livre (ex: `"Caixa"`),
+persistido em EEPROM, editável **exclusivamente** via o app desktop (comando
+`set_pad` com `field: "label"`, protocolo serial). O número do pad nunca é
+editável. O nome exibido (tela TFT e app) é sempre `"N - label"` (1-based) ou
+só `"Pad N"` enquanto nenhum label tiver sido definido.
+
+**Contexto/Racional**: pedido direto do usuário. A escolha de "só pelo app
+desktop" (não pelos encoders/TFT) evita ter que resolver entrada de texto
+numa tela de 128x128 com 2 encoders (giro+clique não dá um jeito natural de
+digitar texto livre sem inventar um teclado on-screen) — um teclado
+físico+mouse no desktop já resolve isso de forma trivial.
+
+**Implementação**:
+- Firmware: `padLabels[NUM_PADS][20]` (texto livre) + `padNames[NUM_PADS][28]`
+  (nome final formatado, é o que a lib recebe via `settingName()`) em
+  `main.cpp`. `rebuildPadName(i)` recalcula `padNames[i]` a partir de
+  `padLabels[i]` sempre que o label muda. Como `padNames[i]` é um buffer
+  mutável (não um `const char*` fixo), atualizar seu conteúdo já reflete
+  automaticamente no que `HelloDrumButton::GetPadName()` devolve (usado pela
+  tela) — não precisa chamar `settingName()` de novo.
+- EEPROM: layout extendido com mais `NUM_PADS * 20` bytes (20 bytes fixos por
+  pad, incluindo terminador nulo) depois da flag de primeiro-boot já
+  existente (Fase D). Usa `EEPROM_ESP.readBytes()`/`writeBytes()` (slots de
+  tamanho fixo, mais simples que `readString()`/`writeString()` pra esse
+  caso).
+- Protocolo: reaproveitado o comando `set_pad` já existente (campo `field`
+  agora aceita `"label"` além dos numéricos), em vez de criar um comando
+  novo tipo `set_pad_name` — mantém o protocolo mais uniforme. Único ponto
+  assimétrico: `set_pad` com campos numéricos responde com `ack`, mas com
+  `field: "label"` responde com o `pad_config` inteiro (mais útil pro app já
+  receber o `name` recalculado, e evita inventar um tipo de resposta só pra
+  string). Documentado em [04-protocolo-serial.md](04-protocolo-serial.md).
+
+**Efeito colateral (não era o objetivo, mas é consequência direta)**: como a
+tela TFT também usa `GetPadName()` pra exibir o nome do pad selecionado, um
+pad renomeado via o app aparece com o nome novo na tela física também, sem
+código extra — é o mesmo dado, uma única fonte de verdade.
+
+**Status de validação**: build/typecheck do firmware e do app passam limpo.
+**Nada testado em hardware real.**
+
+**Alternativas descartadas**:
+- Comando dedicado `set_pad_name` (em vez de reaproveitar `set_pad` com
+  `field: "label"`): descartado pra não duplicar a validação de `pad` e
+  manter só um comando de "alterar campo de um pad".
+- Permitir renomear pelos encoders também: descartado pelo próprio usuário
+  (edição de texto livre com 2 encoders é uma UX ruim sem um teclado
+  on-screen, que não estava no escopo).

@@ -1,4 +1,8 @@
-import { PadConfig, PadField, PAD_FIELDS, IncomingMessage } from './protocol'
+import { PadConfig, PadField, PAD_FIELDS, PAD_LABEL_MAX_LEN, IncomingMessage } from './protocol'
+
+function nameFor(pad: number, label: string): string {
+  return label ? `${pad + 1} - ${label}` : `Pad ${pad + 1}`
+}
 
 // Simula o firmware (protocolo NDJSON) inteiramente no renderer, sem tocar
 // em nenhuma porta serial - permite testar/demonstrar a UI antes de ter o
@@ -11,7 +15,8 @@ export class MockDevice {
   constructor(padCount = 32) {
     this.pads = Array.from({ length: padCount }, (_, i) => ({
       pad: i,
-      name: `Pad ${i + 1}`,
+      name: nameFor(i, ''),
+      label: '',
       sensitivity: 100,
       threshold: 10,
       scan_time: 10,
@@ -43,7 +48,7 @@ export class MockDevice {
   }
 
   send(line: string): void {
-    let cmd: { cmd?: string; pad?: number; field?: string; value?: number }
+    let cmd: { cmd?: string; pad?: number; field?: string; value?: number | string }
     try {
       cmd = JSON.parse(line)
     } catch {
@@ -86,12 +91,25 @@ export class MockDevice {
     }
   }
 
-  private handleSetPad(cmd: { pad?: number; field?: string; value?: number }): void {
+  private handleSetPad(cmd: { pad?: number; field?: string; value?: number | string }): void {
     const pad = typeof cmd.pad === 'number' ? this.pads[cmd.pad] : undefined
     if (!pad) {
       this.emit({ type: 'error', cmd: 'set_pad', message: 'invalid_pad' })
       return
     }
+
+    if (cmd.field === 'label') {
+      const label = typeof cmd.value === 'string' ? cmd.value : ''
+      if (label.length > PAD_LABEL_MAX_LEN) {
+        this.emit({ type: 'error', cmd: 'set_pad', message: 'value_too_long' })
+        return
+      }
+      pad.label = label
+      pad.name = nameFor(pad.pad, label)
+      this.emit({ type: 'pad_config', ...pad }) // mesmo comportamento do firmware real
+      return
+    }
+
     if (!cmd.field || !PAD_FIELDS.includes(cmd.field as PadField) || typeof cmd.value !== 'number') {
       this.emit({ type: 'error', cmd: 'set_pad', message: 'unknown_field' })
       return
