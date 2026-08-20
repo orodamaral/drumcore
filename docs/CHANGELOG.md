@@ -2,6 +2,13 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (10)
+
+- App desktop: lista de pads trocada de um grid de botões grandes pra uma
+  lista compacta (uma linha por pad — número, nome/"Sem nome", nota),
+  ocupando uma coluna fixa mais estreita à esquerda, deixando mais espaço
+  pro editor do pad. Ajuste de UI, sem mudança de protocolo/firmware.
+
 ## 2026-08-20 (9)
 
 - **Fase G**: os 8 tipos de sensor documentados pela HelloDrum-lib (simples,

@@ -91,54 +91,80 @@ button:disabled {
   color: #7a7f8c;
 }
 
-.pad-grid {
-  flex: 1.2;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  padding: 16px;
-  overflow-y: auto;
-}
-
-.pad-button {
+.pad-list {
+  flex: 0 0 280px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 10px 12px;
-  background: #1e222a;
-  border: 1px solid #2a2e37;
-  border-radius: 8px;
+  gap: 2px;
+  padding: 10px;
+  overflow-y: auto;
+  border-right: 1px solid #2a2e37;
+}
+
+.pad-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  text-align: left;
   transition: background-color 120ms, border-color 120ms;
 }
 
-.pad-button.selected {
+.pad-row:not(:disabled):hover {
+  background: #1e222a;
+}
+
+.pad-row.selected {
   border-color: #5b8cff;
   background: #232a3a;
 }
 
-.pad-button.hit {
+.pad-row.hit {
   border-color: #3ddc84;
   background: #1c2b22;
 }
 
-.pad-button.consumed {
-  background: #181a1f;
-  border-style: dashed;
+.pad-row.consumed {
   cursor: not-allowed;
+  opacity: 0.55;
 }
 
-.pad-name {
+.pad-row-number {
+  flex: 0 0 22px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6a6f7a;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.pad-row-name {
+  flex: 1;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.pad-note {
+.pad-row-name.unnamed {
+  font-weight: 400;
+  color: #6a6f7a;
+  font-style: italic;
+}
+
+.pad-row-note {
+  flex: 0 0 auto;
   font-size: 11px;
   color: #8b90a0;
+  font-variant-numeric: tabular-nums;
 }
 
-.pad-consumed {
+.pad-row-consumed {
+  flex: 1;
   font-size: 11px;
   color: #6a6f7a;
   font-style: italic;
@@ -147,7 +173,6 @@ button:disabled {
 .pad-editor {
   flex: 1;
   padding: 20px;
-  border-left: 1px solid #2a2e37;
   overflow-y: auto;
 }
 

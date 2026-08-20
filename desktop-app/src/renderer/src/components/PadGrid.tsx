@@ -9,23 +9,27 @@ interface Props {
 
 export default function PadGrid({ pads, selectedPad, lastHit, onSelect }: Props) {
   return (
-    <div className="pad-grid">
+    <div className="pad-list">
       {pads.map((pad, i) => {
         const consumed = pad && !pad.primary
 
         return (
           <button
             key={i}
-            className={`pad-button${i === selectedPad ? ' selected' : ''}${lastHit?.pad === i ? ' hit' : ''}${consumed ? ' consumed' : ''}`}
+            className={`pad-row${i === selectedPad ? ' selected' : ''}${lastHit?.pad === i ? ' hit' : ''}${consumed ? ' consumed' : ''}`}
             onClick={() => onSelect(i)}
             disabled={consumed}
           >
+            <span className="pad-row-number">{i + 1}</span>
+
             {consumed ? (
-              <span className="pad-consumed">2º canal do pad {(pad as { consumed_by: number }).consumed_by + 1}</span>
+              <span className="pad-row-consumed">2º canal do Pad {(pad as { consumed_by: number }).consumed_by + 1}</span>
             ) : (
               <>
-                <span className="pad-name">{pad?.primary ? pad.name : `Pad ${i + 1}`}</span>
-                <span className="pad-note">nota {pad?.primary ? pad.note : '—'}</span>
+                <span className={`pad-row-name${pad?.primary && pad.label ? '' : ' unnamed'}`}>
+                  {pad?.primary && pad.label ? pad.label : 'Sem nome'}
+                </span>
+                <span className="pad-row-note">{pad?.primary ? `nota ${pad.note}` : '—'}</span>
               </>
             )}
           </button>
