@@ -2,6 +2,39 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (9)
+
+- **Fase G**: os 8 tipos de sensor documentados pela HelloDrum-lib (simples,
+  aro/dual, chimbal simples, prato 2 zonas, chimbal 2 zonas, prato 3 zonas,
+  pedal FSR/VH-10/VH-11, pedal óptico TCRT5000), com a topologia de canais
+  (tipo de cada canal, e quais 2 canais formam um pad de 2 zonas)
+  configurável em runtime só pelo app desktop, persistida em EEPROM.
+  Detalhamento completo em [05-tipos-de-sensor.md](05-tipos-de-sensor.md).
+- Confirmado lendo o código-fonte: **nenhum tipo de sensor dessa lib usa mais
+  de 2 canais** — inclusive o prato de 3 zonas (a 3ª zona/cup é o mesmo canal
+  do switch de borda, discriminado por um threshold mais alto).
+- Firmware: todos os 32 pads passaram a ser construídos com 2 pinos desde o
+  boot (`HelloDrum(i, i+1)`) pra permitir trocar o tipo de um pad em runtime
+  sem reconstruir objetos C++ — só troca qual método de sensing é chamado.
+  Canais consumidos por um pad de 2 canais ficam sem configuração própria
+  (`"primary": false` no protocolo). Chimbal (prato/simples) e pedal de
+  chimbal são pads separados, linkáveis via `hihat_pedal_channel` (a lib não
+  faz essa ligação automaticamente). Detalhes e limitações herdadas da lib
+  (só 3 slots de nota independentes) em
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+- Protocolo (`04-protocolo-serial.md`) estendido: `set_pad` ganhou os campos
+  `rim_sensitivity`, `rim_threshold`, `note_rim`, `note_cup`, `pad_type` e
+  `hihat_pedal_channel`; `pad_config` ganhou `primary`/`consumed_by`; `hit`
+  ganhou `zone`.
+- App desktop: seletor de tipo de sensor por pad, campos condicionais por
+  tipo (só mostra o que faz sentido), seletor de pedal linkado pros tipos de
+  chimbal, e exibição diferenciada pra canais consumidos no grid e no editor.
+  Modo demo simula a mesma lógica (incluindo consumo de canal e simulação de
+  hits por zona).
+- Build/typecheck do firmware e do app validados. **Nada testado em
+  hardware real** — em especial a faixa de `pedalCC` e o comportamento real
+  de `HH2zoneMUX()` num chimbal físico.
+
 ## 2026-08-20 (8)
 
 - **Fase F**: nome livre por pad (ex: "Caixa"), editável só pelo app

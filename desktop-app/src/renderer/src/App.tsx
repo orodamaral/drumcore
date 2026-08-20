@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MockDevice } from './mockDevice'
-import { PadConfig, PadField, parseIncoming } from './protocol'
+import { PadConfig, PadField, PadType, parseIncoming } from './protocol'
 import PadGrid from './components/PadGrid'
 import PadEditor from './components/PadEditor'
 import type { PortInfo } from './env'
@@ -109,6 +109,14 @@ export default function App() {
     send({ cmd: 'set_pad', pad, field: 'label', value: label })
   }
 
+  function changePadType(pad: number, padType: PadType): void {
+    send({ cmd: 'set_pad', pad, field: 'pad_type', value: padType })
+  }
+
+  function changeHihatLink(pad: number, channel: number): void {
+    send({ cmd: 'set_pad', pad, field: 'hihat_pedal_channel', value: channel })
+  }
+
   const padList = useMemo(
     () => Array.from({ length: PAD_COUNT }, (_, i) => pads[i]),
     [pads]
@@ -163,8 +171,11 @@ export default function App() {
           <PadGrid pads={padList} selectedPad={selectedPad} lastHit={lastHit} onSelect={setSelectedPad} />
           <PadEditor
             pad={pads[selectedPad]}
+            allPads={padList}
             onChange={(field, value) => updatePadField(selectedPad, field, value)}
             onRename={(label) => renamePad(selectedPad, label)}
+            onChangeType={(type) => changePadType(selectedPad, type)}
+            onChangeHihatLink={(channel) => changeHihatLink(selectedPad, channel)}
           />
         </main>
       ) : (

@@ -397,3 +397,96 @@ código extra — é o mesmo dado, uma única fonte de verdade.
 - Permitir renomear pelos encoders também: descartado pelo próprio usuário
   (edição de texto livre com 2 encoders é uma UX ruim sem um teclado
   on-screen, que não estava no escopo).
+
+## 2026-08-20 — Tipos de sensor: todos os 8, topologia de canais configurável pelo app
+
+**Decisão**: implementar os 8 tipos de sensor documentados pela
+HelloDrum-lib (ver [05-tipos-de-sensor.md](05-tipos-de-sensor.md) pro
+detalhamento), com a topologia (qual canal é qual tipo, e quais 2 canais
+formam um pad de 2 zonas) configurável em runtime só pelo app desktop,
+persistida em EEPROM — mesmo padrão já usado pro nome do pad (Fase F).
+
+**Contexto/Racional**: perguntado diretamente ao usuário (duas decisões de
+escopo genuinamente abertas — quantos tipos implementar, e onde configurar a
+topologia). Escolhido o escopo mais completo porque a lógica de sensing em
+si já existe pronta na lib (não precisávamos escrever isso do zero) — o
+trabalho real foi o despacho por tipo e a modelagem da topologia.
+
+**O problema central**: o construtor de `HelloDrum` (`pin_1`/`pin_2`) só
+aceita pinos no momento da construção — não existe setter público pra
+trocar os canais de um pad depois de criado. Isso pareceria exigir destruir
+e reconstruir objetos `HelloDrum` toda vez que o usuário mudasse o tipo de
+um pad via o app (arriscado e complicado em C++ embarcado).
+
+**Solução**: construir **todos** os 32 objetos `HelloDrum` já com 2 pinos
+desde o boot (`HelloDrum(i, i+1)` para `i` de 0 a 30, e `HelloDrum(31)` pro
+último, que não tem `i+1`). Métodos de sensing de 1 canal (`singlePiezoMUX()`,
+`hihatControlMUX()`, etc) simplesmente nunca leem `pin_2` — não há problema
+em ele "existir" sem ser usado. Métodos de 2 canais (`dualPiezoMUX()`,
+`cymbal2zoneMUX()`, etc) leem `pin_2` normalmente. Resultado: **nunca
+precisamos reconstruir nada** — trocar o tipo de um pad em runtime é só
+trocar qual método chamamos nele a cada `loop()` (`dispatchSensing()` em
+`main.cpp`), uma tabela de despacho baseada num `byte padTypes[32]` que o
+app pode alterar livremente.
+
+**Canais consumidos**: quando `padTypes[i]` é um tipo de 2 canais, o canal
+`i+1` fica "consumido" — não é sensoreado nem exposto como pad
+independente. Isso é **derivado**, não guardado explicitamente: uma função
+`recomputeChannelPrimary()` recalcula um array `bool channelPrimary[32]`
+toda vez que algum `padTypes[]` muda, percorrendo os canais em ordem (canal
+`i` é consumido se o canal `i-1` for primário **e** seu tipo usar 2 canais -
+recursão de profundidade 1 só, já que nenhum tipo usa mais de 2 canais, não
+há como formar correntes de 3+). Trocar um pad de volta pra um tipo de 1
+canal libera o seguinte automaticamente, sem nenhuma limpeza manual.
+
+**Restrição no encoder/TFT**: `nameIndex`/`nameIndexMax` (globais internas
+da lib) não são resetáveis de fora de `hellodrum.cpp` (mesmo problema de
+`static` com linkage interno já documentado na entrada de
+2026-08-20 sobre encoders). Por isso, `settingName()` continua sendo chamado
+pra todos os 32 canais no boot (não só os primários) — a navegação pelos
+encoders sempre alcança as 32 posições, mas ao chegar num canal consumido a
+tela mostra "Canal ocupado" em vez de item/valor (`renderScreen()` usa
+`currentPadIndex()` — um truque de comparação de ponteiro, já que não existe
+getter pra ler o `nameIndex` bruto: como `GetPadName()` devolve exatamente o
+mesmo ponteiro que passamos em `settingName(padNames[i])`, comparar
+`padNames[i] == button.GetPadName()` recupera o índice atual de forma
+confiável).
+
+**Hi-hat = 2 pads linkados**: a lib não faz a ligação entre o pedal
+(`hihatControlMUX()`/`TCRT5000MUX()`, que atualizam `openHH`/`closeHH`) e o
+prato/chimbal em si (`HHMUX()`/`HH2zoneMUX()`, que **não** olham esses
+campos - confirmado lendo `FSRSensing()`/`TCRT5000Sensing()` e
+`singlePiezoSensing()`/`cymbal2zoneSensing()` em `hellodrum.cpp`). Por isso
+os tipos de chimbal (2/4) ganharam um campo `hihat_pedal_channel` (índice de
+outro pad, tipo 6 ou 7) — nosso próprio código (`handlePadResult()`) lê o
+`openHH` do pad linkado pra decidir qual nota usar. Sem link, assume "sempre
+aberto".
+
+**Limitação herdada e simplificação feita**: a lib só tem 3 slots de nota
+independentes por pad (`note`/`note_rim`/`note_cup`), e `note_rim` seta 4
+campos internos da lib pro mesmo valor de uma vez (`noteRim`, `noteEdge`,
+`noteClose`, `noteOpenEdge` — mesmo aliasing que `settingEnable()` já faz).
+Isso significa que não dá pra ter uma nota diferente pra "borda com o
+chimbal aberto" vs "fechado" — os dois usariam o mesmo valor. Simplificamos
+o despacho do chimbal 2 zonas pra refletir isso honestamente: só a zona do
+corpo (bow) distingue aberto/fechado; a borda usa sempre `note_rim`,
+independente do estado do pedal. Ver
+[05-tipos-de-sensor.md](05-tipos-de-sensor.md).
+
+**Status de validação**: build/typecheck do firmware e do app passam limpo.
+**Nada testado em hardware real** — em especial, não temos como confirmar a
+faixa real de `pad.pedalCC` nem o comportamento de `HH2zoneMUX()` num
+chimbal físico 2 zonas de verdade.
+
+**Alternativas descartadas**:
+- Reconstruir os objetos `HelloDrum` dinamicamente (`new`/`delete`) quando o
+  tipo de um pad muda: tecnicamente possível no ESP32, mas mais arriscado e
+  sem necessidade real, dado que construir todos com 2 pinos desde o início
+  resolve o mesmo problema de forma mais simples.
+- Deixar a topologia fixa no código-fonte (não configurável em runtime):
+  descartado pelo usuário — o objetivo é poder reconfigurar o kit sem
+  recompilar/reflashear.
+- Permitir canais não-adjacentes formarem um pad de 2 zonas (ex: canal 3 +
+  canal 20): descartado por complexidade desproporcional ao ganho — a
+  convenção "sempre o canal seguinte" já resolve o problema de forma simples
+  e o usuário só precisa cabear o 2º sensor no próximo slot do MUX.
