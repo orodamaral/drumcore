@@ -2,6 +2,27 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (3)
+
+- Implementada a **Fase B**: USB-MIDI nativo. `firmware/src/main.cpp` agora
+  envia `MIDI.sendNoteOn/sendNoteOff` via `Adafruit_USBD_MIDI` (transporte USB
+  nativo/TinyUSB) sempre que um pad é atingido, usando notas de teste
+  consecutivas (36 a 67) só para identificar cada canal no DAW.
+- `firmware/platformio.ini`: adicionado `ARDUINO_USB_MODE=0` (modo TinyUSB/OTG,
+  confirmado no `boards.txt` do core `arduino-esp32` instalado — o padrão do
+  board é `ARDUINO_USB_MODE=1`, modo Hardware-CDC, que não suporta classes USB
+  customizadas), `ARDUINO_USB_CDC_ON_BOOT=1` (mantém Serial via CDC) e
+  `lib_deps` (`Adafruit TinyUSB Library`, `FortySevenEffects/MIDI Library`).
+- **Problema de linker encontrado e contornado**: o core `arduino-esp32` 3.x já
+  embute sua própria TinyUSB pré-compilada, conflitando (símbolos duplicados)
+  com a TinyUSB que a lib Adafruit compila do próprio código-fonte. Resolvido
+  com `-Wl,--allow-multiple-definition`. Detalhes em
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+- Build validado com sucesso (RAM 11.1%, Flash 9.5% no `esp32-s3-devkitc-1`).
+  **Ainda não testado em hardware real** — falta confirmar que o módulo
+  enumera como dispositivo USB-MIDI de fato e que o Serial (CDC) continua
+  funcionando junto (dispositivo composto).
+
 ## 2026-08-20 (2)
 
 - Implementada a **Fase A**: firmware básico (`firmware/src/main.cpp`) que

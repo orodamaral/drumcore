@@ -91,3 +91,55 @@ instâncias (uma por chip CD4051), sem necessidade de modificar a lib para isso.
 
 **Conclusão prática**: não é necessário modificar a biblioteca para suportar 4x
 CD4051 / 32 canais — é uma questão de uso correto da API existente.
+
+## 2026-08-20 — USB-MIDI nativo: Adafruit TinyUSB + FortySevenEffects MIDI Library
+
+**Decisão**: implementar o envio MIDI usando `Adafruit_USBD_MIDI` (biblioteca
+`Adafruit TinyUSB Library`) como transporte da `MIDI Library` (FortySevenEffects,
+a mesma já usada nos exemplos originais da HelloDrum-lib) — via
+`MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI)`. Isso mantém a mesma
+API (`MIDI.sendNoteOn()`/`sendNoteOff()`) já usada no código de sensing, só
+trocando o transporte de Serial/BLE para USB nativo.
+
+**Contexto/Racional**: o core `arduino-esp32` (verificamos a v3.20017, instalada
+no ambiente de dev) não expõe uma classe Arduino de alto nível para USB-MIDI —
+só `USBCDC` e `USBMSC`. A camada MIDI só existe no nível baixo do TinyUSB
+(`tinyusb/src/class/midi/midi_device.h`, dentro do próprio core). A
+`Adafruit_TinyUSB_Arduino` é a forma prática e testada pela comunidade de obter
+uma classe MIDI USB de alto nível no ESP32-S3, confirmada lendo o exemplo oficial
+`examples/MIDI/midi_test/midi_test.ino` do repositório.
+
+**Configuração de build necessária** (`firmware/platformio.ini`):
+- `-D ARDUINO_USB_MODE=0` — muda o modo USB do ESP32-S3 de "Hardware CDC and
+  JTAG" (padrão do board `esp32-s3-devkitc-1`, que é `ARDUINO_USB_MODE=1`) para
+  "USB-OTG (TinyUSB)", necessário para expor classes USB customizadas como MIDI.
+  Confirmado direto no `boards.txt` do core instalado (menu "USB Mode").
+- `-D ARDUINO_USB_CDC_ON_BOOT=1` — mantém uma interface CDC (Serial) ativa desde
+  o boot, para continuarmos com debug via Serial monitor mesmo com o dispositivo
+  USB composto (CDC + MIDI).
+
+**Problema encontrado e contornado — conflito de linker**: o core `arduino-esp32`
+3.x já embute uma TinyUSB pré-compilada (`libarduino_tinyusb.a`, usada
+internamente por `USB.cpp`/`USBCDC.cpp`/`USBMSC.cpp`) e a `Adafruit TinyUSB
+Library` compila a sua própria a partir do código-fonte — as duas juntas
+duplicam símbolos (`tusb.c`, `usbd.c`, `usbd_control.c`, etc) e o link falha
+("multiple definition of ..."). Contornado adicionando
+`-Wl,--allow-multiple-definition` aos `build_flags`, que faz o linker manter a
+primeira definição encontrada (a da Adafruit, confirmado pela ordem nas
+mensagens de erro antes da correção). Esse é um conflito conhecido dessa
+combinação de versões (core 3.x + Adafruit TinyUSB no ESP32), não um bug do
+nosso código.
+
+**Status de validação**: o firmware **compila e linka com sucesso**
+(RAM 11.1%, Flash 9.5% no `esp32-s3-devkitc-1`), mas **ainda não foi testado em
+hardware real** — não temos como confirmar que o dispositivo enumera
+corretamente como USB-MIDI (e que o Serial via CDC continua funcionando
+simultaneamente, já que é um dispositivo composto) até termos a bancada
+montada. Isso é o próximo passo de validação quando o hardware estiver pronto.
+
+**Alternativas descartadas**:
+- Implementar a classe MIDI diretamente sobre a API TinyUSB de baixo nível já
+  embutida no core (`esp32-hal-tinyusb.c`), no estilo do que `USBCDC.cpp`/
+  `USBMSC.cpp` fazem para suas respectivas classes. Mais trabalho manual
+  (descritores USB, callbacks de classe) e sem exemplo de referência pronto —
+  descartado em favor da solução já testada pela comunidade.

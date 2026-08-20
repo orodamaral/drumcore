@@ -46,23 +46,24 @@ if (pad.hit) { /* pad.note, pad.velocity disponíveis */ }
 onde `muxNum` é a ordem de instanciação do `HelloDrumMUX_4051` (0 para o 1º MUX
 criado no código, 1 para o 2º, etc — ver `muxIndex` estático em `hellodrum.cpp`).
 
-## MIDI: lacuna a resolver (USB-MIDI nativo no ESP32-S3)
+## MIDI: USB-MIDI nativo no ESP32-S3 (Fase B — resolvido)
 
 Nenhum exemplo da lib usa USB-MIDI classe nativa em ESP32 — as opções mostradas
 são MIDI serial (biblioteca `MIDI.h`, para Hairless MIDI), USB-MIDI via
-`USB-MIDI.h` (só para atmega32u4/Teensy) ou BLE-MIDI (ESP32, sem fio).
+`USB-MIDI.h` (só para atmega32u4/Teensy) ou BLE-MIDI (ESP32, sem fio). Isso é
+esperado: a HelloDrum-lib só cuida da sensing (`pad.hit`, `pad.note`,
+`pad.velocity`) e é independente de como o MIDI é transportado.
 
-Para o nosso requisito de módulo **MIDI-USB** no ESP32-S3, vamos precisar
-integrar a lib com a stack USB nativa do core `arduino-esp32` (baseada em
-TinyUSB, classe `USBMIDI`), que é independente da lib HelloDrum — a HelloDrum só
-cuida da sensing (`pad.hit`, `pad.note`, `pad.velocity`); o envio MIDI é
-responsabilidade do nosso código de integração.
+**Solução adotada** (racional completo em
+[01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)): `Adafruit_USBD_MIDI`
+(lib `Adafruit TinyUSB Library`) como transporte da mesma `MIDI Library`
+(FortySevenEffects) já usada nos exemplos originais — troca só o transporte,
+mantém a API `MIDI.sendNoteOn()`/`sendNoteOff()`. Requer `ARDUINO_USB_MODE=0` e
+um workaround de linker (`-Wl,--allow-multiple-definition`, conflito com a
+TinyUSB pré-compilada do core `arduino-esp32`) — ambos configurados em
+`firmware/platformio.ini`.
 
-**A investigar/decidir quando começarmos a implementar isso**:
-- Configuração de build necessária no `platformio.ini` para habilitar o modo USB
-  nativo do ESP32-S3 (`ARDUINO_USB_MODE`, `ARDUINO_USB_CDC_ON_BOOT`, etc).
-- Se vamos usar a classe `USBMIDI` do core arduino-esp32 diretamente, ou a lib
-  `Adafruit_TinyUSB`.
+Build validado (compila e linka), **teste em hardware real ainda pendente**.
 
 ## Modificações em relação ao original
 
@@ -85,7 +86,7 @@ O próprio comentário original já alertava para isso: `static byte padType[16]
 
 O mesmo problema existe em `showInstrument[]` (também 16 entradas), usado por
 `settingName()` — relevante para quando implementarmos a tela OLED/botões
-(Fase B), mas corrigido já agora para não deixar essa armadilha para depois.
+(Fase C), mas corrigido já agora para não deixar essa armadilha para depois.
 
 **O que foi feito**: `padType[16]` → `padType[32]`; `showInstrument[]` ganhou
 mais 16 entradas ("Pad 17" a "Pad 32"). Nenhuma outra lógica foi alterada.
