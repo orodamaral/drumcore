@@ -1373,7 +1373,11 @@ void HelloDrum::settingEnable()
         {
           sensitivity = 1;
         }
-        EEPROM_ESP.write(padNum * 8, sensitivity);
+        // [CORRIGIDO - projeto HelloDrum MIDI-USB] era "padNum * 8" no
+        // original - inconsistente com todo o resto do layout (padNum*10),
+        // corrompia o EEPROM de outro pad para qualquer padNum >= 1. Ver
+        // docs/03-biblioteca-hellodrum.md.
+        EEPROM_ESP.write(padNum * 10, sensitivity);
         break;
 
       case 1:
@@ -1654,7 +1658,9 @@ void HelloDrum::settingEnable()
         {
           sensitivity = 1;
         }
-        EEPROM.write(padNum * 8, sensitivity);
+        // [CORRIGIDO - projeto HelloDrum MIDI-USB] mesmo bug do branch ESP32
+        // acima (era "padNum * 8"). Ver docs/03-biblioteca-hellodrum.md.
+        EEPROM.write(padNum * 10, sensitivity);
         break;
 
       case 1:

@@ -245,3 +245,48 @@ usado (pode precisar de `FOUR0` dependendo do encoder).
 - Usar a chave do encoder 2 para alguma função imediatamente: deixada em
   aberto por enquanto (reservada) até surgir uma necessidade concreta (ex:
   atalho para "salvar tudo"/"voltar pra tela inicial").
+
+## 2026-08-20 — Persistência: EEPROM (NVS) com flag de primeiro boot
+
+**Decisão**: ativar `EEPROM_ESP` (já presente na lib, wrapper sobre NVS do
+ESP32) com um layout de 10 bytes por pad (320 bytes pros 32 pads) + 1 byte
+extra usado como flag de "já inicializado" (endereço `NUM_PADS*10`, valor
+mágico `0xA5`). No `setup()`: se a flag não bater, chama
+`HelloDrum::initMemory()` pra cada pad (grava os valores padrão em EEPROM);
+senão, chama `HelloDrum::loadMemory()` (restaura o que foi salvo, incluindo
+edições feitas via os encoders em boots anteriores).
+
+**Contexto/Racional**: adiamos isso nas Fases A-C de propósito (ver entrada de
+2026-08-20 sobre USB-MIDI/Fase C) porque ativar `EEPROM_ESP.begin()` sem um
+fluxo de primeiro-boot deixaria `sensitivity`/`threshold1`/etc como `0` (bytes
+não inicializados do NVS), o que quebra o sensing (threshold 0 = dispara com
+qualquer ruído). A flag de primeiro boot resolve isso: só usamos os valores
+lidos da EEPROM depois de termos certeza que ela foi gravada com
+`initMemory()` alguma vez.
+
+As escritas feitas durante o uso normal (girar o encoder em modo de edição)
+**não precisam de nenhum código nosso** — `HelloDrum::settingEnable()` já
+escreve e comita no EEPROM sozinho a cada mudança (é assim que a lib original
+já funciona com botões físicos; com os encoders é a mesma coisa, já que
+alimentamos os mesmos sinais via `readButton()`).
+
+**Bug encontrado e corrigido na lib vendorizada**: no branch de incremento
+(UP) do item SENSITIVITY (item 0) dentro de `settingEnable()`, o endereço de
+EEPROM usado era `padNum * 8` — inconsistente com **todos** os outros 9 itens
+e com o branch de decremento (DOWN) do próprio item 0, que usam
+`padNum * 10`. Isso faria incrementar a sensibilidade de qualquer pad com
+`padNum >= 1` sobrescrever um byte de EEPROM de **outro** pad (ex: pad 1
+gravaria no endereço 8, que é o campo `noteRim` do pad 0). Corrigido para
+`padNum * 10` nos dois branches (ESP32 e AVR) em `hellodrum.cpp`. Esse bug só
+foi percebido agora porque a Fase D foi a primeira vez que a persistência
+ficou realmente ativa — nas fases anteriores as escritas eram sempre
+no-ops silenciosos (EEPROM nunca inicializada).
+
+**Status de validação**: build compila e linka. **Teste em hardware real
+ainda pendente** — falta confirmar que os valores realmente persistem entre
+reboots (não temos como simular reboot com NVS real sem a placa física).
+
+**Alternativas descartadas**:
+- Detectar "primeiro boot" checando se `sensitivity == 0` (em vez de uma flag
+  dedicada): descartado por ser um heurística frágil — um valor legítimo
+  poderia coincidir, e não cobre todos os campos.

@@ -9,6 +9,11 @@
   e editar os parametros de cada pad (sensibilidade, threshold, curva, nota...),
   usando o fluxo de configuracao ja existente na HelloDrum-lib
   (HelloDrumButton::readButton() + HelloDrum::settingEnable()).
+  Fase D: persistencia em EEPROM (NVS) - grava valores padrao no primeiro
+  boot (HelloDrum::initMemory()) e restaura o que foi editado nos boots
+  seguintes (HelloDrum::loadMemory()). As proprias escritas feitas pelos
+  encoders (via settingEnable()) ja commitam sozinhas, isso e' so o
+  load/init inicial.
 
   Pinout usado aqui: ver docs/02-hardware.md (marcado como proposto/a validar
   no hardware real).
@@ -77,6 +82,19 @@
 // Primeira nota MIDI usada (pad 0) - so para identificar cada canal nos
 // testes iniciais. O usuario pode reatribuir por pad via o menu na tela.
 #define FIRST_TEST_NOTE 36
+
+// ---------------------------------------------------------------------------
+// EEPROM (persistencia das configuracoes por pad) - Fase D
+// Layout: 10 bytes por pad (sensitivity, threshold1, scantime, masktime,
+// rimSensitivity, rimThreshold, curvetype, note, noteRim, noteCup - ver
+// HelloDrum::loadMemory()/initMemory() em hellodrum.cpp) + 1 byte extra no
+// final, usado como flag de "ja inicializado" (evita sensitivity/threshold
+// zerados no primeiro boot, antes de qualquer initMemory() ter rodado).
+// ---------------------------------------------------------------------------
+#define EEPROM_BYTES_PER_PAD 10
+#define EEPROM_INIT_FLAG_ADDR (NUM_PADS * EEPROM_BYTES_PER_PAD)
+#define EEPROM_SIZE (EEPROM_INIT_FLAG_ADDR + 1)
+#define EEPROM_INIT_MAGIC 0xA5
 
 // Cada HelloDrumMUX_4051 recebe um muxNum sequencial automatico (0..3, na
 // ordem de instanciacao abaixo). Ver docs/01-decisoes-arquiteturais.md.
@@ -279,6 +297,20 @@ void setup()
         TinyUSBDevice.attach();
     }
 
+    if (!EEPROM_ESP.begin(EEPROM_SIZE))
+    {
+        Serial.println("EEPROM_ESP.begin() falhou - configuracoes nao vao persistir entre boots.");
+    }
+
+    // Primeiro boot (ou EEPROM ainda nao inicializada): grava os valores
+    // padrao de cada pad (initMemory()). Nos demais boots, restaura o que foi
+    // salvo (loadMemory()) - que pode ja ter sido editado via os encoders.
+    bool eepromFirstBoot = EEPROM_ESP.read(EEPROM_INIT_FLAG_ADDR) != EEPROM_INIT_MAGIC;
+    if (eepromFirstBoot)
+    {
+        Serial.println("EEPROM: primeira inicializacao - gravando valores padrao por pad.");
+    }
+
     for (byte i = 0; i < NUM_PADS; i++)
     {
         pads[i].note = FIRST_TEST_NOTE + i;
@@ -289,6 +321,21 @@ void setup()
         // docs/01-decisoes-arquiteturais.md.
         snprintf(padNames[i], sizeof(padNames[i]), "Pad %d", i + 1);
         pads[i].settingName(padNames[i]);
+
+        if (eepromFirstBoot)
+        {
+            pads[i].initMemory(); // grava os defaults acima (nota inclusa) na EEPROM
+        }
+        else
+        {
+            pads[i].loadMemory(); // restaura os valores salvos - pode sobrescrever o note default acima
+        }
+    }
+
+    if (eepromFirstBoot)
+    {
+        EEPROM_ESP.write(EEPROM_INIT_FLAG_ADDR, EEPROM_INIT_MAGIC);
+        EEPROM_ESP.commit();
     }
 
     pinMode(PAD_ENC_SW, INPUT_PULLUP);
@@ -308,7 +355,7 @@ void setup()
     tft.fillScreen(ST77XX_BLACK);
 
     delay(500);
-    Serial.println("HelloDrum - Fase C: tela TFT + 2 encoders (32 canais, 4x CD4051, USB-MIDI)");
+    Serial.println("HelloDrum - Fase D: EEPROM + tela TFT + 2 encoders (32 canais, 4x CD4051, USB-MIDI)");
 }
 
 void loop()

@@ -23,6 +23,7 @@ cérebro do sistema, capaz de:
 | 1a | Leitura de 32 canais via 4x CD4051 (sensing) | Compilado, sem teste em hardware real |
 | 1b | Envio MIDI-USB nativo (Note On/Off) | Compilado, sem teste em hardware real |
 | 2 | Tela TFT (ST7735) + 2 encoders rotativos de configuração | Compilado, sem teste em hardware real |
+| 2b | Persistência EEPROM (config por pad sobrevive a reboot) | Compilado, sem teste em hardware real |
 | 3 | Interface desktop de configuração | Em planejamento |
 
 ## Decisões já tomadas

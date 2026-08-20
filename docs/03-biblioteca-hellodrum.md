@@ -92,6 +92,22 @@ build) — inofensivo no nosso caso porque todos os nossos pads são
 `singlePiezoMUX` (`padType == Snum`), mas é uma fragilidade pré-existente da
 lib original, não introduzida por nós.
 
+## Persistência: EEPROM/NVS (Fase D — resolvido)
+
+A lib já vem com `loadMemory()`/`initMemory()` e o wrapper `EEPROM_ESP`
+(NVS do ESP32) — só precisávamos ativar isso corretamente. Adicionamos
+`EEPROM_ESP.begin()` + um byte de flag ("já inicializado") em `main.cpp`
+pra decidir, no boot, entre `initMemory()` (grava defaults, primeiro boot)
+ou `loadMemory()` (restaura o que foi salvo). As escritas do dia-a-dia (via
+os encoders, em `settingEnable()`) já commitam sozinhas, sem código nosso.
+Detalhes e o racional completo em
+[01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+
+Essa fase também foi quando encontramos o bug do endereço errado de EEPROM
+pro item SENSITIVITY (ver "Modificações em relação ao original" abaixo) — só
+apareceu agora porque antes a EEPROM nunca tinha sido de fato inicializada
+(as escritas eram no-ops silenciosos).
+
 ## Modificações em relação ao original
 
 ### 2026-08-20 — `padType[16]` → `padType[32]` e `showInstrument[]` (16 → 32 entradas)
@@ -117,3 +133,20 @@ O mesmo problema existe em `showInstrument[]` (também 16 entradas), usado por
 
 **O que foi feito**: `padType[16]` → `padType[32]`; `showInstrument[]` ganhou
 mais 16 entradas ("Pad 17" a "Pad 32"). Nenhuma outra lógica foi alterada.
+
+### 2026-08-20 — `settingEnable()`: endereço de EEPROM errado pro item SENSITIVITY (UP)
+
+**Arquivo**: `firmware/lib/HelloDrum-arduino-Library/src/hellodrum.cpp`
+
+**Motivo**: ao ativar a persistência em EEPROM (Fase D), percebemos que o
+branch de incremento (UP) do item SENSITIVITY dentro de `settingEnable()`
+escrevia em `padNum * 8`, enquanto **todos** os outros 9 itens (e o próprio
+branch de decremento/DOWN do item SENSITIVITY) usam `padNum * 10` — o layout
+real usado por `loadMemory()`/`initMemory()`. Para qualquer pad com
+`padNum >= 1`, isso gravava por cima de um byte de **outro** pad (ex: subir a
+sensibilidade do pad 1 escrevia no endereço 8, que é o `noteRim` do pad 0).
+
+**O que foi feito**: os dois branches afetados (versão ESP32 com
+`EEPROM_ESP.write`, e a versão AVR/não-ESP32 com `EEPROM.write`, ambas no
+mesmo padrão) foram corrigidos para `padNum * 10`, consistente com o resto do
+código.

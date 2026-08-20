@@ -2,6 +2,26 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (6)
+
+- Implementada a **Fase D**: persistência das configurações em EEPROM (NVS).
+  `firmware/src/main.cpp` agora chama `EEPROM_ESP.begin()` no `setup()` e usa
+  um byte de flag ("já inicializado", endereço `NUM_PADS*10`) pra decidir
+  entre `initMemory()` (primeiro boot, grava os defaults) ou `loadMemory()`
+  (demais boots, restaura o que foi salvo/editado via os encoders).
+- **Bug real encontrado e corrigido na lib vendorizada**: no branch de
+  incremento (UP) do item SENSITIVITY, o endereço de EEPROM usado era
+  `padNum * 8` em vez de `padNum * 10` (usado por todo o resto do código) —
+  gravava por cima de dados de **outro** pad para qualquer `padNum >= 1`.
+  Corrigido nas duas variantes (ESP32/AVR) em `hellodrum.cpp`. Só apareceu
+  agora porque é a primeira fase em que a EEPROM foi de fato ativada — antes
+  as escritas eram no-ops silenciosos. Detalhes em
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) e
+  [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md).
+- Build validado (compila e linka, RAM 11.4%, Flash 10.4%). **Teste em
+  hardware real ainda pendente** — não há como simular reboot com NVS real
+  sem a placa física, então a persistência de fato ainda não foi confirmada.
+
 ## 2026-08-20 (5)
 
 - Implementada a **Fase C**: tela TFT (ST7735, `Adafruit GFX` + `Adafruit
