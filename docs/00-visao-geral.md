@@ -10,8 +10,9 @@ cérebro do sistema, capaz de:
 2. Converter os sinais lidos em eventos MIDI (Note On/Off, Control Change) e
    enviá-los via **USB-MIDI nativo** (classe de dispositivo USB, plug-and-play,
    sem necessidade de driver ou software intermediário como Hairless MIDI).
-3. Prever uma tela OLED e botões físicos para configuração do módulo diretamente
-   no hardware (sensibilidade, threshold, curva, nota MIDI de cada pad, etc).
+3. Prever uma tela (TFT ST7735 128x128, SPI) e botões físicos para configuração
+   do módulo diretamente no hardware (sensibilidade, threshold, curva, nota
+   MIDI de cada pad, etc).
 4. Oferecer uma interface desktop para configuração completa do módulo (todos os
    parâmetros de cada pad, mapeamento de notas, backup/restore de configuração).
 
@@ -19,8 +20,9 @@ cérebro do sistema, capaz de:
 
 | # | Funcionalidade | Status |
 |---|---|---|
-| 1 | Firmware base: leitura de 32 canais via 4x CD4051 + envio MIDI-USB | Em planejamento |
-| 2 | Tela OLED + botões de configuração no hardware | Em planejamento |
+| 1a | Leitura de 32 canais via 4x CD4051 (sensing) | Compilado, sem teste em hardware real |
+| 1b | Envio MIDI-USB nativo (Note On/Off) | Compilado, sem teste em hardware real |
+| 2 | Tela TFT (ST7735) + botões de configuração no hardware | Em planejamento (hardware da tela definido) |
 | 3 | Interface desktop de configuração | Em planejamento |
 
 ## Decisões já tomadas
@@ -39,7 +41,7 @@ completo e o racional de cada decisão. Resumo:
 - **docs/01-decisoes-arquiteturais.md** — registro de decisões técnicas (estilo ADR),
   com contexto e alternativas consideradas.
 - **docs/02-hardware.md** — esquema de ligação (pinout ESP32-S3 ↔ 4x CD4051 ↔ pads,
-  OLED, botões).
+  tela TFT, botões).
 - **docs/03-biblioteca-hellodrum.md** — notas sobre a API da biblioteca base, o que
   foi entendido do código-fonte, e o que foi/será modificado em relação ao original.
 - **docs/CHANGELOG.md** — o que foi feito, em ordem cronológica.

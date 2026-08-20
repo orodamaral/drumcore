@@ -143,3 +143,39 @@ montada. Isso é o próximo passo de validação quando o hardware estiver pront
   `USBMSC.cpp` fazem para suas respectivas classes. Mais trabalho manual
   (descritores USB, callbacks de classe) e sem exemplo de referência pronto —
   descartado em favor da solução já testada pela comunidade.
+
+## 2026-08-20 — Tela: TFT ST7735 (SPI) em vez de OLED SSD1306 (I2C)
+
+**Decisão**: usar uma tela TFT 1.44" 128x128, driver ST7735S, interface SPI
+(modelo definido pelo usuário por preço — foto em `Modelo Tela.jpeg` na raiz do
+projeto), em vez do OLED SSD1306/I2C previsto inicialmente (que era só o
+componente usado nos exemplos da HelloDrum-lib, não um requisito do projeto).
+
+**Contexto/Racional**: o requisito original (item 2 do escopo) era só "prever
+possibilidade de tela + botões de configuração" — o componente específico
+ficou em aberto até o usuário encontrar um modelo com bom preço. A troca para
+SPI (em vez de I2C) muda o pinout (6 sinais dedicados: SCL/SCK, SDA/MOSI, RES,
+DC, CS, BLK — vs. 2 pinos compartilhados de I2C) e a biblioteca a usar: a
+`u8g2` (usada nos exemplos originais da lib) é focada em displays
+monocromáticos e não é a escolha natural para uma TFT RGB colorida.
+
+**Biblioteca escolhida**: `Adafruit GFX Library` + `Adafruit ST7735 and
+ST7789 Library` — API simples via construtor (`Adafruit_ST7735(cs, dc, rst)`),
+sem exigir edição de arquivo de configuração dentro da lib (diferente da
+`TFT_eSPI`, que exige customizar `User_Setup.h` ou definir dezenas de
+`build_flags` equivalentes). Como o uso aqui é uma tela de configuração (texto,
+menus, valores) e não algo performance-crítico, a simplicidade da Adafruit
+pesou mais que a velocidade extra da TFT_eSPI.
+
+**A fazer quando implementarmos o código da tela (Fase C)**:
+- Adicionar `lib_deps` no `platformio.ini` (`adafruit/Adafruit GFX Library`,
+  `adafruit/Adafruit ST7735 and ST7789 Library`).
+- Validar se o pino BLK (backlight) fica fixo em 3.3V ou controlado por GPIO
+  (permite dimming/desligar a tela).
+
+**Alternativas descartadas**:
+- Manter OLED SSD1306/I2C: descartado porque o usuário já encontrou/comprou
+  (ou está prestes a) o modelo TFT por preço.
+- `TFT_eSPI`: mais rápida (usa DMA/SPI otimizado para ESP32) mas exige mais
+  configuração inicial; guardado como alternativa caso a Adafruit se mostre
+  lenta demais na prática (o que não é esperado para uma tela de config).

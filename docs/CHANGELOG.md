@@ -2,6 +2,20 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (4)
+
+- **Mudança de hardware**: tela definida como TFT 1.44" 128x128, driver ST7735S
+  (SPI), em vez do OLED SSD1306 (I2C) previsto inicialmente — modelo escolhido
+  pelo usuário por preço (foto em `Modelo Tela.jpeg` na raiz do projeto).
+- Atualizado pinout proposto em [02-hardware.md](02-hardware.md) para os 6
+  sinais SPI da tela (SCK, MOSI, RES, DC, CS, BLK), sem conflito com os pinos
+  já usados pelos 4x CD4051.
+- Decisão de biblioteca registrada em
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md): Adafruit GFX +
+  Adafruit ST7735 Library (em vez de u8g2, que é focada em displays
+  monocromáticos, ou TFT_eSPI, que exige mais configuração). Ainda não
+  implementado no firmware — só a decisão e o pinout.
+
 ## 2026-08-20 (3)
 
 - Implementada a **Fase B**: USB-MIDI nativo. `firmware/src/main.cpp` agora

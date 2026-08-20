@@ -7,7 +7,10 @@
 - 4x multiplexador analógico CD4051 (8 canais cada → 32 canais totais).
 - Pads piezo (simples e/ou duplos), pratos 2/3 zonas, hi-hat, conforme suportado
   pela lib (ver [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md)).
-- Tela OLED (SSD1306, via I2C — mesmo modelo usado nos exemplos da lib com u8g2).
+- Tela TFT 1.44" 128x128 RGB, driver ST7735S, interface SPI (modelo escolhido -
+  ver foto `Modelo Tela.jpeg` na raiz do projeto). Substitui o OLED
+  SSD1306/I2C previsto inicialmente — ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
 - Botões físicos de configuração (mínimo 5, conforme `HelloDrumButton`: EDIT, UP,
   DOWN, NEXT, BACK).
 
@@ -46,10 +49,30 @@ Z      ------------ pino ADC dedicado ao MUX #n
 Atualizar esta tabela (e o `main.cpp`) quando o pinout for validado/ajustado no
 hardware real.
 
-## Tela OLED
+## Tela TFT (ST7735, SPI)
 
-I2C (SDA/SCL) — pinout TBD, seguindo o padrão dos exemplos `muxSensing_u8g2` da
-lib base (biblioteca u8g2).
+**Modelo**: 1.44" 128x128 RGB, driver IC ST7735S. 8 pinos: `GND VCC SCL SDA RES
+DC CS BLK` (SPI, não I2C).
+
+| Sinal na tela | Função | GPIO (ESP32-S3, proposto) |
+|---|---|---|
+| SCL | SPI Clock (SCK) | 12 |
+| SDA | SPI Data (MOSI) | 11 |
+| RES | Reset | 14 |
+| DC | Data/Command | 9 |
+| CS | Chip Select | 10 |
+| BLK | Backlight | 13 (ou direto em 3.3V, se não precisar controlar brilho) |
+| VCC | 3.3V | — |
+| GND | GND | — |
+
+> **Status: proposto, ainda não validado em hardware real.** Pinos escolhidos
+> fora da faixa de strapping (0, 3, 45, 46), fora dos pinos do USB nativo
+> (19/20) e sem conflito com os pinos já usados pelos 4x CD4051 (ver tabela
+> acima). Não usam pinos ADC1 (1-10) já ocupados pelos MUX, exceto CS(10) e
+> DC(9) que ficam nessa faixa mas são usados só digitalmente (sem conflito,
+> já que não fazemos `analogRead` neles).
+
+## Botões de configuração
 
 ## Botões de configuração
 
