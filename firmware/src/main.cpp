@@ -14,6 +14,9 @@
   seguintes (HelloDrum::loadMemory()). As proprias escritas feitas pelos
   encoders (via settingEnable()) ja commitam sozinhas, isso e' so o
   load/init inicial.
+  Fase E: protocolo serial (NDJSON) sobre a mesma porta USB-CDC, pra
+  comunicacao com o app desktop de configuracao. Ver
+  docs/04-protocolo-serial.md.
 
   Pinout usado aqui: ver docs/02-hardware.md (marcado como proposto/a validar
   no hardware real).
@@ -31,6 +34,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <RotaryEncoder.h>
+#include <ArduinoJson.h>
 
 // ---------------------------------------------------------------------------
 // Pinout - CD4051 (4x, 32 canais)
@@ -273,6 +277,220 @@ void renderScreen()
     tft.print(value);
 }
 
+// ---------------------------------------------------------------------------
+// Protocolo serial (NDJSON) com o app desktop - Fase E. Ver
+// docs/04-protocolo-serial.md pro contrato completo (comandos/eventos).
+// Todo o trafego Serial usa esse formato, inclusive os eventos de hit e as
+// mensagens de log de boot (antes eram Serial.print livre) - mantem o
+// stream inteiro facil de parsear do lado do app, sem misturar texto humano
+// com JSON.
+// ---------------------------------------------------------------------------
+
+void sendJsonLine(JsonDocument &doc)
+{
+    serializeJson(doc, Serial);
+    Serial.println();
+}
+
+void sendLog(const char *message)
+{
+    JsonDocument doc;
+    doc["type"] = "log";
+    doc["message"] = message;
+    sendJsonLine(doc);
+}
+
+void sendError(const char *cmd, const char *message)
+{
+    JsonDocument doc;
+    doc["type"] = "error";
+    doc["cmd"] = cmd;
+    doc["message"] = message;
+    sendJsonLine(doc);
+}
+
+void sendAck(const char *cmd, int pad, const char *field, long value)
+{
+    JsonDocument doc;
+    doc["type"] = "ack";
+    doc["cmd"] = cmd;
+    doc["pad"] = pad;
+    doc["field"] = field;
+    doc["value"] = value;
+    sendJsonLine(doc);
+}
+
+void sendHitEvent(byte padIndex)
+{
+    JsonDocument doc;
+    doc["type"] = "hit";
+    doc["pad"] = padIndex;
+    doc["note"] = pads[padIndex].note;
+    doc["velocity"] = pads[padIndex].velocity;
+    sendJsonLine(doc);
+}
+
+void sendDeviceInfo()
+{
+    JsonDocument doc;
+    doc["type"] = "device_info";
+    doc["pads"] = NUM_PADS;
+    doc["muxes"] = NUM_MUX;
+    doc["midi_channel"] = DRUM_MIDI_CHANNEL;
+    doc["firmware_phase"] = "E";
+    sendJsonLine(doc);
+}
+
+void sendPadConfig(byte padIndex)
+{
+    JsonDocument doc;
+    doc["type"] = "pad_config";
+    doc["pad"] = padIndex;
+    doc["name"] = padNames[padIndex];
+    doc["sensitivity"] = pads[padIndex].sensitivity;
+    doc["threshold"] = pads[padIndex].threshold1;
+    doc["scan_time"] = pads[padIndex].scantime;
+    doc["mask_time"] = pads[padIndex].masktime;
+    doc["curve_type"] = pads[padIndex].curvetype;
+    doc["note"] = pads[padIndex].note;
+    sendJsonLine(doc);
+}
+
+// Aplica um campo de configuracao a um pad (RAM) e persiste os 10 campos
+// desse pad na EEPROM via HelloDrum::initMemory() - reaproveita os offsets
+// ja calculados pela lib, sem duplicar essa logica aqui.
+void handleSetPad(JsonDocument &doc)
+{
+    int pad = doc["pad"] | -1;
+    const char *field = doc["field"] | "";
+    long value = doc["value"] | -1;
+
+    if (pad < 0 || pad >= NUM_PADS)
+    {
+        sendError("set_pad", "invalid_pad");
+        return;
+    }
+
+    if (strcmp(field, "sensitivity") == 0)
+    {
+        if (value < 0 || value > 100) { sendError("set_pad", "value_out_of_range"); return; }
+        pads[pad].sensitivity = value;
+    }
+    else if (strcmp(field, "threshold") == 0)
+    {
+        if (value < 0 || value > 100) { sendError("set_pad", "value_out_of_range"); return; }
+        pads[pad].threshold1 = value;
+    }
+    else if (strcmp(field, "scan_time") == 0)
+    {
+        if (value < 0 || value > 100) { sendError("set_pad", "value_out_of_range"); return; }
+        pads[pad].scantime = value;
+    }
+    else if (strcmp(field, "mask_time") == 0)
+    {
+        if (value < 0 || value > 100) { sendError("set_pad", "value_out_of_range"); return; }
+        pads[pad].masktime = value;
+    }
+    else if (strcmp(field, "curve_type") == 0)
+    {
+        if (value < 0 || value > 4) { sendError("set_pad", "value_out_of_range"); return; }
+        pads[pad].curvetype = value;
+    }
+    else if (strcmp(field, "note") == 0)
+    {
+        if (value < 0 || value > 127) { sendError("set_pad", "value_out_of_range"); return; }
+        pads[pad].note = value;
+        pads[pad].noteOpen = value; // consistente com o que settingEnable() faz pro item NOTE
+    }
+    else
+    {
+        sendError("set_pad", "unknown_field");
+        return;
+    }
+
+    pads[pad].initMemory();
+    sendAck("set_pad", pad, field, value);
+}
+
+void handleSerialCommand(const String &line)
+{
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, line);
+    if (err)
+    {
+        sendError("?", "invalid_json");
+        return;
+    }
+
+    const char *cmd = doc["cmd"] | "";
+
+    if (strcmp(cmd, "ping") == 0)
+    {
+        JsonDocument res;
+        res["type"] = "pong";
+        sendJsonLine(res);
+    }
+    else if (strcmp(cmd, "get_device_info") == 0)
+    {
+        sendDeviceInfo();
+    }
+    else if (strcmp(cmd, "get_pad") == 0)
+    {
+        int pad = doc["pad"] | -1;
+        if (pad < 0 || pad >= NUM_PADS)
+        {
+            sendError(cmd, "invalid_pad");
+            return;
+        }
+        sendPadConfig(pad);
+    }
+    else if (strcmp(cmd, "get_all_pads") == 0)
+    {
+        for (byte i = 0; i < NUM_PADS; i++)
+        {
+            sendPadConfig(i);
+        }
+    }
+    else if (strcmp(cmd, "set_pad") == 0)
+    {
+        handleSetPad(doc);
+    }
+    else
+    {
+        sendError(cmd, "unknown_cmd");
+    }
+}
+
+// Leitura nao-bloqueante: acumula ate '\n' e so entao processa - nunca usar
+// algo como Serial.readStringUntil() com timeout aqui, pausaria o
+// sensing/MIDI a cada chamada.
+String serialLineBuffer;
+
+void pollSerialCommands()
+{
+    while (Serial.available())
+    {
+        char c = Serial.read();
+        if (c == '\n')
+        {
+            serialLineBuffer.trim();
+            if (serialLineBuffer.length() > 0)
+            {
+                handleSerialCommand(serialLineBuffer);
+            }
+            serialLineBuffer = "";
+        }
+        else if (c != '\r')
+        {
+            serialLineBuffer += c;
+            if (serialLineBuffer.length() > 256)
+            {
+                serialLineBuffer = ""; // linha absurda - descarta em vez de crescer sem limite
+            }
+        }
+    }
+}
+
 void setup()
 {
     // Necessario em cores sem begin() automatico do dispositivo USB.
@@ -299,7 +517,7 @@ void setup()
 
     if (!EEPROM_ESP.begin(EEPROM_SIZE))
     {
-        Serial.println("EEPROM_ESP.begin() falhou - configuracoes nao vao persistir entre boots.");
+        sendLog("EEPROM_ESP.begin() falhou - configuracoes nao vao persistir entre boots.");
     }
 
     // Primeiro boot (ou EEPROM ainda nao inicializada): grava os valores
@@ -308,7 +526,7 @@ void setup()
     bool eepromFirstBoot = EEPROM_ESP.read(EEPROM_INIT_FLAG_ADDR) != EEPROM_INIT_MAGIC;
     if (eepromFirstBoot)
     {
-        Serial.println("EEPROM: primeira inicializacao - gravando valores padrao por pad.");
+        sendLog("EEPROM: primeira inicializacao - gravando valores padrao por pad.");
     }
 
     for (byte i = 0; i < NUM_PADS; i++)
@@ -355,7 +573,7 @@ void setup()
     tft.fillScreen(ST77XX_BLACK);
 
     delay(500);
-    Serial.println("HelloDrum - Fase D: EEPROM + tela TFT + 2 encoders (32 canais, 4x CD4051, USB-MIDI)");
+    sendLog("HelloDrum - Fase E: protocolo serial + EEPROM + tela TFT + 2 encoders (32 canais, 4x CD4051, USB-MIDI)");
 }
 
 void loop()
@@ -375,16 +593,7 @@ void loop()
 
         if (pads[i].hit)
         {
-            Serial.print("Pad ");
-            Serial.print(i);
-            Serial.print(" (MUX ");
-            Serial.print(i / PADS_PER_MUX);
-            Serial.print(", canal ");
-            Serial.print(i % PADS_PER_MUX);
-            Serial.print(") - nota ");
-            Serial.print(pads[i].note);
-            Serial.print(", velocity: ");
-            Serial.println(pads[i].velocity);
+            sendHitEvent(i);
 
             if (TinyUSBDevice.mounted())
             {
@@ -396,4 +605,5 @@ void loop()
 
     handleConfigInputs();
     renderScreen();
+    pollSerialCommands();
 }

@@ -24,7 +24,8 @@ cérebro do sistema, capaz de:
 | 1b | Envio MIDI-USB nativo (Note On/Off) | Compilado, sem teste em hardware real |
 | 2 | Tela TFT (ST7735) + 2 encoders rotativos de configuração | Compilado, sem teste em hardware real |
 | 2b | Persistência EEPROM (config por pad sobrevive a reboot) | Compilado, sem teste em hardware real |
-| 3 | Interface desktop de configuração | Em planejamento |
+| 2c | Protocolo serial NDJSON (módulo ↔ app desktop) | Compilado, sem teste em hardware real |
+| 3 | Interface desktop de configuração (Electron/React) | Build/typecheck ok, sem teste com módulo real (só modo demo) |
 
 ## Decisões já tomadas
 
@@ -45,6 +46,8 @@ completo e o racional de cada decisão. Resumo:
   tela TFT, botões).
 - **docs/03-biblioteca-hellodrum.md** — notas sobre a API da biblioteca base, o que
   foi entendido do código-fonte, e o que foi/será modificado em relação ao original.
+- **docs/04-protocolo-serial.md** — contrato de comunicação (NDJSON) entre o
+  firmware e a interface desktop.
 - **docs/CHANGELOG.md** — o que foi feito, em ordem cronológica.
 
 Sempre que uma decisão relevante for tomada ou algo novo for aprendido sobre a

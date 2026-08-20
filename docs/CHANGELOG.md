@@ -2,6 +2,31 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (7)
+
+- Iniciada a **interface desktop** (item 4 do escopo original) em
+  `desktop-app/` — Electron + React + TypeScript, build via `electron-vite`.
+  Decisões (stack e protocolo) perguntadas diretamente ao usuário. Detalhes
+  em [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+- **Fase E do firmware**: protocolo serial NDJSON sobre a porta USB-CDC
+  (`bblanchon/ArduinoJson`). Todo o tráfego Serial passou a ser JSON (uma
+  linha por objeto) — inclusive os eventos de hit e logs de boot, que antes
+  eram texto livre. Contrato completo documentado em
+  [04-protocolo-serial.md](04-protocolo-serial.md).
+- App desktop implementado: tela de conexão (lista/seleciona porta serial),
+  grid dos 32 pads, editor de parâmetros (sliders), log de eventos. Inclui
+  **"modo demo"** — simula o módulo inteiramente no processo renderer
+  (`mockDevice.ts`), sem precisar de porta serial nem hardware, útil pra
+  validar/demonstrar a UI antes da bancada estar montada.
+- Corrigidas vulnerabilidades de dependências encontradas no scaffold inicial
+  (Electron e esbuild/vite desatualizados) antes de seguir — atualizado para
+  `electron@^43`, `vite@^7`, `0` vulnerabilidades no `npm audit`.
+- Validado: `npm run typecheck` e `npm run build` (main+preload+renderer)
+  passam limpo. Firmware da Fase E compila (RAM/Flash sem mudança
+  significativa). **Nada testado com o módulo real** — sem hardware montado,
+  só o modo demo do app foi exercitado (e mesmo assim só via build, não
+  `npm run dev` de fato nesta sessão).
+
 ## 2026-08-20 (6)
 
 - Implementada a **Fase D**: persistência das configurações em EEPROM (NVS).

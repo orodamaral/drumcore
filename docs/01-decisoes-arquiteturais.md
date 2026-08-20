@@ -290,3 +290,59 @@ reboots (não temos como simular reboot com NVS real sem a placa física).
 - Detectar "primeiro boot" checando se `sensitivity == 0` (em vez de uma flag
   dedicada): descartado por ser um heurística frágil — um valor legítimo
   poderia coincidir, e não cobre todos os campos.
+
+## 2026-08-20 — Interface desktop: Electron + React/TypeScript, protocolo NDJSON via Serial
+
+**Decisão**: interface desktop em Electron + React + TypeScript (build via
+`electron-vite`), comunicando com o módulo por porta serial USB-CDC usando um
+protocolo texto linha-a-linha em JSON (NDJSON) — não MIDI SysEx.
+
+**Contexto/Racional**: perguntado diretamente ao usuário (duas decisões sem
+trade-off óbvio a favor de uma só opção):
+- **Stack**: Electron+React foi escolhido entre as opções apresentadas
+  (Python+Qt, .NET/WPF-Avalonia, Tauri+React) — UI web é um bom encaixe pra
+  uma tela com grid de 32 pads x ~6 parâmetros cada, e Electron empacota bem
+  pra Windows.
+- **Protocolo**: Serial+JSON em vez de MIDI SysEx — o módulo já expõe uma
+  porta CDC desde a Fase B (`ARDUINO_USB_CDC_ON_BOOT=1`), sem custo extra, e é
+  muito mais simples de implementar/debugar dos dois lados (dá pra testar com
+  qualquer terminal serial, sem precisar decodificar SysEx). O contrato
+  completo está em [04-protocolo-serial.md](04-protocolo-serial.md).
+
+**Firmware (Fase E)**: adicionada a lib `bblanchon/ArduinoJson` e um
+protocolo NDJSON sobre a mesma porta Serial já usada desde a Fase B — todo o
+tráfego (comandos, respostas, eventos de hit, logs de boot) passou a ser
+JSON, uma linha por objeto. Antes disso, os eventos de hit e as mensagens de
+boot eram `Serial.print` em texto livre; converter tudo pra JSON evita ter
+que filtrar/distinguir linhas de debug de linhas de protocolo do lado do app.
+Leitura da porta serial no firmware é não-bloqueante (acumula caracteres até
+`\n` a cada `loop()`, sem usar `Serial.readStringUntil()` com timeout, que
+pausaria o sensing/MIDI).
+
+**"Modo demo"**: o app tem uma opção de simular o módulo inteiramente no
+renderer (`mockDevice.ts`), sem tocar em porta serial nenhuma — permite
+validar/demonstrar a UI antes do hardware estar montado (mesma lógica por
+trás de termos priorizado "compila e builda" como critério de validação em
+todas as fases do firmware).
+
+**Vulnerabilidades de dependências corrigidas antes de seguir**: o scaffold
+inicial (`electron@^31`, `vite@^5`) tinha CVEs conhecidos (Electron: várias
+falhas de sandbox/IPC; esbuild/vite: servidor de dev expondo requisições a
+qualquer site). Atualizado para `electron@^43`, `vite@^7`, `@vitejs/plugin-
+react@^5.2` (a v6 do plugin-react exige vite^8, que por sua vez não é
+suportado pelo `electron-vite@^5` ainda — ver changelog do `electron-vite`
+antes de tentar subir pra vite 8). `npm audit` limpo (0 vulnerabilidades)
+nessa combinação de versões.
+
+**Status de validação**: `npm run typecheck` e `npm run build` passam limpo.
+**Nunca testado com o módulo real** (sem hardware) — só o modo demo foi
+exercitado, e mesmo assim não com uma execução real de `npm run dev` (só
+build estático) nesta sessão.
+
+**Alternativas descartadas**:
+- Python + PySide6, .NET (WPF/Avalonia), Tauri+React: alternativas viáveis,
+  descartadas só por preferência do usuário nessa decisão, não por algum
+  defeito técnico.
+- MIDI SysEx como protocolo de config: mais "elegante" (um único cabo/
+  interface), mas mais complexo dos dois lados e sem nenhum parsing de SysEx
+  já implementado no firmware — descartado em favor de Serial+JSON.

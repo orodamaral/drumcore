@@ -5,8 +5,9 @@ firmware/.vscode/c_cpp_properties.json
 firmware/.vscode/launch.json
 firmware/.vscode/ipch
 
-# Desktop app (stack a definir)
+# Desktop app (Electron + React/TypeScript, ver desktop-app/README.md)
 desktop-app/node_modules/
+desktop-app/out/
 desktop-app/dist/
 desktop-app/build/
 
