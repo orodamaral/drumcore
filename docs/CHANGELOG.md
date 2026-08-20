@@ -2,6 +2,25 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (2)
+
+- Implementada a **Fase A**: firmware básico (`firmware/src/main.cpp`) que
+  instancia 4x `HelloDrumMUX_4051` + 32x `HelloDrum` e reporta hits via Serial
+  (sensibilidade/threshold padrão da lib, sem MIDI/OLED/botões ainda).
+- Definido pinout proposto para o ESP32-S3 (S0/S1/S2 compartilhados + 4 pinos
+  ADC1 dedicados, evitando strapping pins e os pinos do USB nativo). Ver
+  [02-hardware.md](02-hardware.md).
+- **Bug encontrado e corrigido na lib vendorizada**: `padType[16]` e
+  `showInstrument[]` (16 entradas) são indexados por `padNum`/`nameIndex`, que
+  vão até 31 com 32 pads — causaria overflow de memória a partir do pad 17.
+  Ambos ampliados para 32. Detalhes em
+  [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md).
+- PlatformIO CLI instalado (`pip install --user platformio`) e build validado:
+  compila com sucesso para `esp32-s3-devkitc-1` (RAM 7.0%, Flash 8.7%). Ainda
+  **não testado em hardware real** — o hardware com os 4x CD4051 ainda não foi
+  montado, então a lógica de sensing em si não foi validada com sinais reais,
+  só a compilação/estrutura do código.
+
 ## 2026-08-20
 
 - Estruturação inicial do projeto: repositório Git criado, pastas `docs/`,

@@ -25,10 +25,26 @@ S2     ------------ (compartilhado entre os 4 MUX)
 Z      ------------ pino ADC dedicado ao MUX #n
 ```
 
-> TBD: pinout definitivo (quais GPIOs do ESP32-S3 serão usados para S0/S1/S2 e
-> para os 4 pinos ADC). Precisa considerar quais GPIOs do S3 são
-> ADC-capable e quais estão reservados pelo USB nativo/strapping pins antes de
-> fechar o pinout. Atualizar esta seção quando definido.
+### Pinout proposto (usado em `firmware/src/main.cpp`)
+
+> **Status: proposto, ainda não validado em hardware real.** Escolhido evitando
+> pinos de strapping (GPIO0, 3, 45, 46), os pinos do USB nativo (GPIO19/20 —
+> reservados para o USB-MIDI da Fase B) e a faixa usada por PSRAM octal em
+> algumas variantes do S3 (GPIO35-37). Todos os 4 pinos analógicos estão em
+> ADC1 (GPIO1-10), evitando ADC2 (que tem conflitos conhecidos com Wi-Fi).
+
+| Sinal | GPIO (ESP32-S3) |
+|---|---|
+| S0 (compartilhado) | 4 |
+| S1 (compartilhado) | 5 |
+| S2 (compartilhado) | 6 |
+| Z — MUX 0 (pads 0-7) | 1 |
+| Z — MUX 1 (pads 8-15) | 2 |
+| Z — MUX 2 (pads 16-23) | 7 |
+| Z — MUX 3 (pads 24-31) | 8 |
+
+Atualizar esta tabela (e o `main.cpp`) quando o pinout for validado/ajustado no
+hardware real.
 
 ## Tela OLED
 

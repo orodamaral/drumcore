@@ -66,5 +66,26 @@ responsabilidade do nosso código de integração.
 
 ## Modificações em relação ao original
 
-_Nenhuma até o momento — a lib foi vendorizada sem alterações na cópia inicial._
-Registrar aqui toda modificação feita no código vendorizado, com data e motivo.
+### 2026-08-20 — `padType[16]` → `padType[32]` e `showInstrument[]` (16 → 32 entradas)
+
+**Arquivo**: `firmware/lib/HelloDrum-arduino-Library/src/hellodrum.h`
+
+**Motivo**: ao implementar a leitura dos 32 canais (Fase A), identificamos que
+`padType[]` é um array **fixo de 16 posições**, indexado por `padNum` (0..31 no
+nosso caso, um por pad instanciado) — e essa indexação acontece dentro de
+**toda** chamada de sensing (`singlePiezoMUX()`, `dualPiezoMUX()`, etc, ex:
+`padType[padNum] = Snum;`), não só na configuração via botões. Com 32 pads,
+qualquer pad com `padNum >= 16` escreveria fora dos limites do array, corrompendo
+as variáveis estáticas declaradas depois dele em `hellodrum.h` (`edit`,
+`editCheck`, `editdone`, etc) — um bug silencioso de memória, sem erro de
+compilação.
+
+O próprio comentário original já alertava para isso: `static byte padType[16];
+//if you use more pad, add numer` (sic).
+
+O mesmo problema existe em `showInstrument[]` (também 16 entradas), usado por
+`settingName()` — relevante para quando implementarmos a tela OLED/botões
+(Fase B), mas corrigido já agora para não deixar essa armadilha para depois.
+
+**O que foi feito**: `padType[16]` → `padType[32]`; `showInstrument[]` ganhou
+mais 16 entradas ("Pad 17" a "Pad 32"). Nenhuma outra lógica foi alterada.

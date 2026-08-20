@@ -97,6 +97,8 @@ const static char *itemHHC[] = {
     "NOTE CLOSE E", //9 8
 };
 
+// [MODIFICADO - projeto HelloDrum MIDI-USB] tamanho ampliado de 16 para 32
+// entradas para suportar 4x CD4051 (32 canais). Ver docs/03-biblioteca-hellodrum.md.
 const static char *showInstrument[] = {
     "Pad 1",
     "Pad 2",
@@ -114,6 +116,22 @@ const static char *showInstrument[] = {
     "Pad 14",
     "Pad 15",
     "Pad 16",
+    "Pad 17",
+    "Pad 18",
+    "Pad 19",
+    "Pad 20",
+    "Pad 21",
+    "Pad 22",
+    "Pad 23",
+    "Pad 24",
+    "Pad 25",
+    "Pad 26",
+    "Pad 27",
+    "Pad 28",
+    "Pad 29",
+    "Pad 30",
+    "Pad 31",
+    "Pad 32",
 };
 
 static bool push;
@@ -133,7 +151,10 @@ static byte CY3num = 4;
 static byte HHnum = 5;
 static byte HH2num = 6;
 static byte HHCnum = 7;
-static byte padType[16]; //if you use more pad, add numer
+// [MODIFICADO - projeto HelloDrum MIDI-USB] 16 -> 32 (indexado por padNum,
+// que vai de 0 a 31 com 4x CD4051). O comentario original ja avisava:
+// "if you use more pad, add numer". Ver docs/03-biblioteca-hellodrum.md.
+static byte padType[32];
 
 static bool edit;
 static bool editCheck;
