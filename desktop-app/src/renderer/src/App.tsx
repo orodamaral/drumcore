@@ -3,11 +3,15 @@ import { MockDevice } from './mockDevice'
 import { PadConfig, PadField, PadType, parseIncoming } from './protocol'
 import PadGrid from './components/PadGrid'
 import PadEditor from './components/PadEditor'
+import HardwareSimulator from './components/HardwareSimulator'
 import type { PortInfo } from './env'
 
 const PAD_COUNT = 32
 
+type Tab = 'config' | 'simulator'
+
 export default function App() {
+  const [tab, setTab] = useState<Tab>('config')
   const [ports, setPorts] = useState<PortInfo[]>([])
   const [selectedPort, setSelectedPort] = useState('')
   const [connected, setConnected] = useState(false)
@@ -166,7 +170,18 @@ export default function App() {
         </div>
       </header>
 
-      {connected ? (
+      <nav className="tabbar">
+        <button className={tab === 'config' ? 'active' : ''} onClick={() => setTab('config')}>
+          Configuração
+        </button>
+        <button className={tab === 'simulator' ? 'active' : ''} onClick={() => setTab('simulator')}>
+          Simulador do módulo (LCD + encoders)
+        </button>
+      </nav>
+
+      {tab === 'simulator' ? (
+        <HardwareSimulator />
+      ) : connected ? (
         <main className="content">
           <PadGrid pads={padList} selectedPad={selectedPad} lastHit={lastHit} onSelect={setSelectedPad} />
           <PadEditor
@@ -184,11 +199,13 @@ export default function App() {
         </main>
       )}
 
-      <footer className="log">
-        {log.map((entry, i) => (
-          <div key={i}>{entry}</div>
-        ))}
-      </footer>
+      {tab === 'config' && (
+        <footer className="log">
+          {log.map((entry, i) => (
+            <div key={i}>{entry}</div>
+          ))}
+        </footer>
+      )}
     </div>
   )
 }

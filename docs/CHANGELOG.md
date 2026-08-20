@@ -2,6 +2,21 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (11)
+
+- **Simulador do módulo** (nova aba no app desktop): recria a tela TFT
+  128x128 + navegação pelos 2 encoders rotativos, pra testar a UX da
+  configuração via hardware antes da tela/encoders físicos chegarem.
+  Reproduz fielmente a máquina de estados do firmware (navegação de pad/item,
+  modo de edição, encoder 2 desabilitado durante edição, mensagem "Canal
+  ocupado") - ver [06-simulador-hardware.md](06-simulador-hardware.md) pro
+  detalhamento do que é fiel e o que é só aproximação visual.
+- Controle por scroll do mouse nos "encoders" na tela, ou por teclado
+  (setas + Enter/Espaço) - dataset de 32 pads local com uma mistura de
+  tipos pra dar um "tour" pelas telas possíveis sem precisar configurar
+  nada primeiro.
+- Build/typecheck validados.
+
 ## 2026-08-20 (10)
 
 - App desktop: lista de pads trocada de um grid de botões grandes pra uma

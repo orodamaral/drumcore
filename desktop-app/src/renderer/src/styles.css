@@ -79,6 +79,33 @@ button:disabled {
   box-shadow: 0 0 6px #3ddc84;
 }
 
+.tabbar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 20px 0;
+  background: #1b1e24;
+  border-bottom: 1px solid #2a2e37;
+}
+
+.tabbar button {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  padding: 8px 4px;
+  color: #8b90a0;
+  font-size: 13px;
+}
+
+.tabbar button:hover {
+  color: #e8e8ec;
+}
+
+.tabbar button.active {
+  color: #e8e8ec;
+  border-bottom-color: #5b8cff;
+}
+
 .content {
   flex: 1;
   display: flex;
@@ -262,4 +289,148 @@ button:disabled {
   font-family: 'Cascadia Mono', 'Consolas', monospace;
   font-size: 12px;
   color: #8b90a0;
+}
+
+/* Simulador do módulo (LCD + encoders) - ver docs/06-simulador-hardware.md */
+
+.hw-sim {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px;
+  overflow-y: auto;
+}
+
+.hw-sim-device {
+  display: inline-block;
+  padding: 16px;
+  background: linear-gradient(145deg, #2e333f, #1f232b);
+  border: 1px solid #3a3f4c;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.hw-sim-screen {
+  width: 256px;
+  height: 256px;
+  background: #000;
+  border-radius: 4px;
+  padding: 18px;
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  position: relative;
+  overflow: hidden;
+}
+
+.hw-sim-padname {
+  color: #00eaff;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-bottom: 26px;
+  word-break: break-word;
+}
+
+.hw-sim-item {
+  color: #fff;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.hw-sim-value {
+  color: #fff;
+  font-size: 42px;
+  font-weight: 700;
+}
+
+.hw-sim-consumed {
+  color: #ff5b5b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.hw-sim-flash {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 700;
+}
+
+.hw-sim-flash-yellow {
+  color: #ffe600;
+}
+
+.hw-sim-flash-green {
+  color: #00ff66;
+}
+
+.hw-sim-controls {
+  display: flex;
+  gap: 56px;
+  margin-top: 32px;
+}
+
+.hw-sim-encoder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.hw-sim-knob {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3a4050, #1e222a 70%);
+  border: 2px solid #454b58;
+  position: relative;
+  padding: 0;
+  transition: transform 60ms ease-out, background-color 100ms;
+}
+
+.hw-sim-knob:active {
+  background: radial-gradient(circle at 35% 30%, #4a5163, #262b34 70%);
+}
+
+.hw-sim-knob-mark {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 4px;
+  height: 18px;
+  background: #7d8494;
+  border-radius: 2px;
+  transform: translateX(-50%);
+}
+
+.hw-sim-encoder-label {
+  font-size: 11px;
+  color: #8b90a0;
+  text-align: center;
+  line-height: 1.5;
+  max-width: 170px;
+}
+
+.hw-sim-hint {
+  margin-top: 28px;
+  font-size: 12px;
+  color: #6a6f7a;
+  font-style: italic;
+  text-align: center;
+}
+
+.hw-sim-hint kbd {
+  background: #262b34;
+  border: 1px solid #383e4a;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.hw-sim-reset {
+  margin-top: 16px;
 }
