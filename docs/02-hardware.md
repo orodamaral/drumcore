@@ -1,5 +1,12 @@
 # Hardware
 
+**Esquemático visual**: [docs/assets/esquematico-hellodrum.html](assets/esquematico-hellodrum.html)
+(abrir no navegador) reúne todo o pinout abaixo num diagrama único — ESP32-S3
+↔ 4x CD4051 ↔ tela TFT ↔ 2 encoders. Também publicado como
+[artifact](https://claude.ai/code/artifact/1be57133-3c26-4838-9696-acc0d626246e)
+(link privado). Gerado em 2026-08-20 — atualizar (ou marcar como
+desatualizado) se o pinout abaixo mudar.
+
 ## Componentes previstos
 
 - 1x placa ESP32-S3 (dev board com USB nativo exposto — confirmar modelo exato

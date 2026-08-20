@@ -2,6 +2,14 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (12)
+
+- Criado esquemático visual de ligação (ESP32-S3 ↔ 4x CD4051 ↔ tela TFT ↔ 2
+  encoders), reunindo o pinout já documentado num diagrama único. Salvo em
+  [docs/assets/esquematico-hellodrum.html](assets/esquematico-hellodrum.html)
+  e também publicado como artifact. Inclui notas de montagem que ainda não
+  estavam explícitas (VDD/VSS/INH do CD4051, pull-up interno dos encoders).
+
 ## 2026-08-20 (11)
 
 - **Simulador do módulo** (nova aba no app desktop): recria a tela TFT
