@@ -10,9 +10,9 @@ cérebro do sistema, capaz de:
 2. Converter os sinais lidos em eventos MIDI (Note On/Off, Control Change) e
    enviá-los via **USB-MIDI nativo** (classe de dispositivo USB, plug-and-play,
    sem necessidade de driver ou software intermediário como Hairless MIDI).
-3. Prever uma tela (TFT ST7735 128x128, SPI) e botões físicos para configuração
-   do módulo diretamente no hardware (sensibilidade, threshold, curva, nota
-   MIDI de cada pad, etc).
+3. Prever uma tela (TFT ST7735 128x128, SPI) e 2 encoders rotativos com chave
+   para configuração do módulo diretamente no hardware (sensibilidade,
+   threshold, curva, nota MIDI de cada pad, etc).
 4. Oferecer uma interface desktop para configuração completa do módulo (todos os
    parâmetros de cada pad, mapeamento de notas, backup/restore de configuração).
 
@@ -22,7 +22,7 @@ cérebro do sistema, capaz de:
 |---|---|---|
 | 1a | Leitura de 32 canais via 4x CD4051 (sensing) | Compilado, sem teste em hardware real |
 | 1b | Envio MIDI-USB nativo (Note On/Off) | Compilado, sem teste em hardware real |
-| 2 | Tela TFT (ST7735) + botões de configuração no hardware | Em planejamento (hardware da tela definido) |
+| 2 | Tela TFT (ST7735) + 2 encoders rotativos de configuração | Compilado, sem teste em hardware real |
 | 3 | Interface desktop de configuração | Em planejamento |
 
 ## Decisões já tomadas

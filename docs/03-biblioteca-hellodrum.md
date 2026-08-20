@@ -65,6 +65,33 @@ TinyUSB pré-compilada do core `arduino-esp32`) — ambos configurados em
 
 Build validado (compila e linka), **teste em hardware real ainda pendente**.
 
+## Configuração via encoders em vez de botões (Fase C — resolvido)
+
+A classe `HelloDrumButton` pressupõe 5 botões físicos (EDIT/UP/DOWN/NEXT/BACK),
+lidos via `readButtonState()` (que faz `digitalRead()` direto nos pinos do
+construtor). Como optamos por 2 encoders rotativos com chave em vez de botões
+(ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)), usamos o
+overload `readButton(bool set, bool up, bool down, bool next, bool back)` —
+que já existe na lib exatamente para isso, sem precisar modificar nada. O
+`main.cpp` traduz cada evento de encoder (giro/clique) num pulso momentâneo de
+um desses 5 sinais e chama `readButton()` manualmente a cada `loop()`;
+`HelloDrum::settingEnable()` continua sendo chamado normalmente para todos os
+pads, sem saber a diferença entre botão físico e encoder.
+
+**Pegadinha encontrada**: `settingName()` não é só cosmético — incrementa
+`nameIndexMax` (limite da navegação entre pads). Sem chamar isso uma vez por
+pad no `setup()`, a navegação fica travada no pad 0. Também guarda o
+**ponteiro** recebido (não copia a string), então os nomes dos pads precisam
+viver num buffer `static`/global, não num buffer temporário de escopo local.
+Detalhes em [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+
+**Observação (não é nosso bug)**: `HelloDrumButton::GetSettingItem()` não tem
+`return` para o caso de `padType[nameIndex]` não bater com nenhum dos tipos
+conhecidos (gera o warning "control reaches end of non-void function" no
+build) — inofensivo no nosso caso porque todos os nossos pads são
+`singlePiezoMUX` (`padType == Snum`), mas é uma fragilidade pré-existente da
+lib original, não introduzida por nós.
+
 ## Modificações em relação ao original
 
 ### 2026-08-20 — `padType[16]` → `padType[32]` e `showInstrument[]` (16 → 32 entradas)

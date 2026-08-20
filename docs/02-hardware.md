@@ -11,8 +11,9 @@
   ver foto `Modelo Tela.jpeg` na raiz do projeto). Substitui o OLED
   SSD1306/I2C previsto inicialmente — ver
   [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
-- Botões físicos de configuração (mínimo 5, conforme `HelloDrumButton`: EDIT, UP,
-  DOWN, NEXT, BACK).
+- 2x encoder rotativo com chave (push-button), para navegação/edição —
+  substitui os 5 botões discretos originalmente previstos. Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
 
 ## Ligação CD4051 ↔ ESP32-S3
 
@@ -72,12 +73,27 @@ DC CS BLK` (SPI, não I2C).
 > DC(9) que ficam nessa faixa mas são usados só digitalmente (sem conflito,
 > já que não fazemos `analogRead` neles).
 
-## Botões de configuração
+## Navegação/configuração: 2x encoder rotativo com chave
 
-## Botões de configuração
+Substitui os 5 botões discretos (EDIT/UP/DOWN/NEXT/BACK) que a classe
+`HelloDrumButton` da lib pressupõe originalmente — em vez de ligar 5 botões
+físicos, lemos 2 encoders (rotação + chave) e alimentamos manualmente
+`HelloDrumButton::readButton(set, up, down, next, back)` com os sinais
+equivalentes. Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)
+para o mapeamento completo e o racional.
 
-5 botões (EDIT, UP, DOWN, NEXT, BACK), conforme classe `HelloDrumButton` da lib —
-pinout TBD.
+| Encoder | Sinal | Função | GPIO (ESP32-S3, proposto) |
+|---|---|---|---|
+| 1 (pad/valor) | A | Quadratura | 15 |
+| 1 (pad/valor) | B | Quadratura | 16 |
+| 1 (pad/valor) | SW (chave) | EDIT/SET | 17 |
+| 2 (item/parâmetro) | A | Quadratura | 18 |
+| 2 (item/parâmetro) | B | Quadratura | 21 |
+| 2 (item/parâmetro) | SW (chave) | Reservada (sem função ainda) | 38 |
+
+> **Status: proposto, ainda não validado em hardware real.** Pinos fora da
+> faixa de strapping/USB/PSRAM e sem conflito com os pinos já usados pelos
+> 4x CD4051 e pela tela TFT (ver tabelas acima).
 
 ## Notas
 

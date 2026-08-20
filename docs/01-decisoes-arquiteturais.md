@@ -179,3 +179,69 @@ pesou mais que a velocidade extra da TFT_eSPI.
 - `TFT_eSPI`: mais rápida (usa DMA/SPI otimizado para ESP32) mas exige mais
   configuração inicial; guardado como alternativa caso a Adafruit se mostre
   lenta demais na prática (o que não é esperado para uma tela de config).
+
+## 2026-08-20 — Navegação: 2 encoders rotativos com chave (em vez de 5 botões)
+
+**Decisão**: usar 2 encoders rotativos com chave (push-button) para navegar e
+editar a configuração, em vez dos 5 botões discretos (EDIT/UP/DOWN/NEXT/BACK)
+que a classe `HelloDrumButton` pressupõe nos exemplos originais da lib.
+
+**Mapeamento adotado**:
+- **Encoder 1 (pad/valor)** — rotação: navega entre pads (fora do modo de
+  edição) ou ajusta o valor do parâmetro selecionado (dentro do modo de
+  edição) — o comportamento já muda automaticamente conforme o estado interno
+  da lib, sem lógica extra nossa. Chave: entra/confirma a edição do item atual
+  (equivalente ao botão EDIT/SET).
+- **Encoder 2 (item/parâmetro)** — rotação: navega entre os parâmetros do pad
+  selecionado (SENSITIVITY, THRESHOLD, SCAN TIME, ..., NOTE) — equivalente aos
+  botões NEXT/BACK. Chave: sem função definida ainda (reservada).
+
+**Contexto/Racional**: a lib já expõe exatamente o ponto de extensão certo
+para isso — `HelloDrumButton::readButton(bool set, bool up, bool down, bool
+next, bool back)` — um overload que recebe os 5 sinais diretamente, em vez de
+`readButtonState()` (que leria botões físicos via `digitalRead()` nos pinos do
+construtor). Não precisamos modificar a lib: o `main.cpp` lê os 2 encoders
+(via a lib `mathertel/RotaryEncoder`, decodificação em quadratura por
+interrupção) e a chave de cada um (debounce simples por tempo), traduz cada
+evento (giro ou clique) em um "pulso" momentâneo de um dos 5 sinais (LOW só
+durante a chamada em que o evento ocorreu, HIGH nas demais — imita uma
+pressionada rápida de botão físico) e chama `readButton()` manualmente a cada
+`loop()`. `HelloDrum::settingEnable()` (chamado para todos os pads a cada
+`loop()`, como nos exemplos originais) continua lendo os mesmos sinais
+internamente, sem saber a diferença entre um botão físico e um encoder.
+
+O construtor de `HelloDrumButton` ainda exige 5 pinos, mas como nunca chamamos
+`readButtonState()` (só `readButton()` manualmente), esses pinos nunca são
+lidos — usamos `255` como placeholder.
+
+**Bug/pegadinha encontrada durante a implementação**: `HelloDrum::settingName()`
+não é só cosmético — além de guardar o nome do pad em `showInstrument[]`, ele
+incrementa `nameIndexMax` (variável global da lib que limita até onde a
+navegação entre pads pode ir). Sem chamar `settingName()` uma vez por pad na
+inicialização, `nameIndexMax` fica 0 e a navegação via encoder fica travada no
+pad 0. Além disso, `settingName()` guarda o **ponteiro** que recebe (não copia
+a string) — por isso os nomes dos pads (`"Pad 1"`, `"Pad 2"`, ...) são escritos
+num buffer `static`/global (`padNames[NUM_PADS][8]` em `main.cpp`) que dura o
+programa todo, e não num buffer temporário de escopo local (que causaria um
+ponteiro pendente/lixo de memória depois de sair do loop de setup).
+
+**Biblioteca escolhida para os encoders**: `mathertel/RotaryEncoder` —
+decodificação em quadratura testada e estável, funciona bem por interrupção
+(`attachInterrupt` + `tick()` nos pinos A/B de cada encoder), sem exigir
+hardware dedicado (PCNT) do ESP32.
+
+**Status de validação**: build compila e linka com sucesso. **Ainda não
+testado em hardware real** — nem os encoders, nem a tela, nem os 4x CD4051
+foram montados na bancada até agora. Pontos que só dão pra confirmar com
+hardware real: sentido de giro dos encoders (CW/CCW pode estar invertido
+dependendo da fiação — fácil de corrigir trocando A/B ou invertendo o sinal no
+código), e se o `LatchMode::FOUR3` é o mais adequado para o modelo de encoder
+usado (pode precisar de `FOUR0` dependendo do encoder).
+
+**Alternativas descartadas**:
+- 5 botões discretos (EDIT/UP/DOWN/NEXT/BACK), como nos exemplos originais da
+  lib: descartado por preferência do usuário (encoders dão uma navegação mais
+  compacta e fluida com menos componentes físicos no painel).
+- Usar a chave do encoder 2 para alguma função imediatamente: deixada em
+  aberto por enquanto (reservada) até surgir uma necessidade concreta (ex:
+  atalho para "salvar tudo"/"voltar pra tela inicial").

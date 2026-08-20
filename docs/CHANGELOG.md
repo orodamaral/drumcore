@@ -2,6 +2,30 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (5)
+
+- Implementada a **Fase C**: tela TFT (ST7735, `Adafruit GFX` + `Adafruit
+  ST7735 and ST7789 Library`) e navegação/edição via **2 encoders rotativos
+  com chave** (lib `mathertel/RotaryEncoder`), em vez dos 5 botões discretos
+  originalmente previstos.
+- `firmware/src/main.cpp`: os encoders alimentam
+  `HelloDrumButton::readButton(set, up, down, next, back)` diretamente (sem
+  modificar a lib), e a tela mostra pad/item/valor atuais, com flash
+  transiente "EDITAR"/"OK" ao entrar/sair do modo de edição.
+- Pinout proposto para tela e encoders em [02-hardware.md](02-hardware.md).
+- **Bug/pegadinha encontrada e corrigida**: `settingName()` precisa ser
+  chamado uma vez por pad no `setup()` (incrementa `nameIndexMax`, que limita
+  a navegação entre pads) e precisa apontar para um buffer estático/global
+  (não temporário) já que guarda o ponteiro recebido, não uma cópia. Detalhes
+  em [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+- Build validado (compila e linka, RAM 11.4%, Flash 10.1%). **Ainda não
+  testado em hardware real** — falta confirmar sentido de giro dos encoders,
+  `LatchMode`, e a inicialização/cores da tela (`INITR_144GREENTAB`).
+- Edições feitas via os encoders ainda **não persistem** (sem EEPROM ativada
+  nesta fase, de propósito — habilitar `EEPROM_ESP.begin()` sem também
+  implementar `initMemory()` no primeiro boot deixaria sensibilidade/threshold
+  zerados e sensing instável). Persistência fica para uma fase futura.
+
 ## 2026-08-20 (4)
 
 - **Mudança de hardware**: tela definida como TFT 1.44" 128x128, driver ST7735S
