@@ -2,6 +2,17 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (15) — bugfix
+
+- **Corrigido**: sliders do editor de pad (app desktop) não refletiam a
+  mudança - arrastar e soltar fazia o valor "voltar" pro que era antes.
+  Causa: `set_pad` em campos numéricos responde com `ack` (não
+  `pad_config`), e `App.tsx` só registrava o `ack` no log, nunca atualizava
+  o estado local `pads` — como o slider é um input controlado ligado a
+  esse estado, ele sempre reexibia o valor antigo. Corrigido aplicando o
+  `ack` (`pad`/`field`/`value`) no estado local também. Afeta tanto o modo
+  demo quanto o módulo real (bug era só no app, não no protocolo/firmware).
+
 ## 2026-08-20 (14)
 
 - **Fase I**: tela inicial (grid 8x4 com o número de cada pad, acende verde

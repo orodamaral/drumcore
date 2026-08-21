@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MockDevice } from './mockDevice'
-import { PadConfig, PadField, PadType, parseIncoming } from './protocol'
+import { PadConfig, PadField, PadType, PAD_FIELDS, parseIncoming } from './protocol'
 import PadGrid from './components/PadGrid'
 import PadEditor from './components/PadEditor'
 import HardwareSimulator from './components/HardwareSimulator'
@@ -48,9 +48,23 @@ export default function App() {
       case 'error':
         appendLog(`Erro (${message.cmd}): ${message.message}`)
         break
-      case 'ack':
+      case 'ack': {
         appendLog(`OK: pad ${message.pad + 1} ${message.field} = ${message.value}`)
+
+        // set_pad em campos numericos (sensitivity, threshold, etc) responde
+        // com ack, nao com pad_config - sem isso, o slider correspondente no
+        // editor fica "voltando" pro valor antigo, porque o estado local
+        // (pads) nunca era atualizado depois do ack.
+        const field = message.field as PadField
+        if (message.cmd === 'set_pad' && (PAD_FIELDS as readonly string[]).includes(field)) {
+          setPads((prev) => {
+            const existing = prev[message.pad]
+            if (!existing || !existing.primary) return prev
+            return { ...prev, [message.pad]: { ...existing, [field]: message.value } }
+          })
+        }
         break
+      }
       default:
         break
     }
