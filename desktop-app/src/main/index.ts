@@ -11,7 +11,7 @@ function createWindow(): void {
     height: 720,
     minWidth: 760,
     minHeight: 560,
-    title: 'HelloDrum - Configuração',
+    title: 'DrumCore - Configuração',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

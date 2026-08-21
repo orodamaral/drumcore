@@ -19,6 +19,16 @@
 #include "EEPROM.h"
 #endif
 
+// [MODIFICADO - projeto DrumCore] definicao real do array declarado como
+// "extern" em hellodrum.h (era "static" ali, o que dava copias isoladas por
+// arquivo .cpp - ver comentario la). Precisa existir exatamente uma vez no
+// programa; aqui, junto do resto do estado interno da lib, e' o lugar certo.
+#ifdef __AVR_ATmega328P__
+int rawValue[16];
+#else
+int rawValue[64];
+#endif
+
 //Pad with a sensor.
 HelloDrum::HelloDrum(byte pin1)
 {

@@ -31,6 +31,7 @@ export class MockDevice {
   private hitTimer: ReturnType<typeof setInterval> | null = null
   private bleTimer: ReturnType<typeof setInterval> | null = null
   private bleConnected = false
+  private global = { midi_channel: 10, midi_output: 2 as 0 | 1 | 2, brightness: 80 }
 
   constructor(padCount = 32) {
     this.pads = Array.from({ length: padCount }, (_, i) => this.freshPad(i))
@@ -42,9 +43,9 @@ export class MockDevice {
       type: 'device_info',
       pads: this.pads.length,
       muxes: 4,
-      midi_channel: 10,
       ble_connected: this.bleConnected,
-      firmware_phase: 'H (demo)'
+      firmware_phase: 'J (demo)',
+      ...this.global
     }
   }
 
@@ -177,9 +178,41 @@ export class MockDevice {
         this.handleSetPad(cmd)
         break
 
+      case 'set_global':
+        this.handleSetGlobal(cmd)
+        break
+
+      case 'save_all':
+        this.emit({ type: 'log', message: 'Configuracao salva (save_all). (simulado)' })
+        this.emit(this.deviceInfo())
+        break
+
+      case 'restore_all':
+        this.emit({ type: 'log', message: 'Configuracao restaurada (restore_all). (simulado)' })
+        this.emit(this.deviceInfo())
+        break
+
       default:
         this.emit({ type: 'error', cmd: cmd.cmd ?? '?', message: 'unknown_cmd' })
     }
+  }
+
+  private handleSetGlobal(cmd: { field?: string; value?: number | string }): void {
+    const value = typeof cmd.value === 'number' ? cmd.value : -1
+
+    if (cmd.field === 'midi_channel' && value >= 1 && value <= 16) {
+      this.global.midi_channel = value
+    } else if (cmd.field === 'midi_output' && value >= 0 && value <= 2) {
+      this.global.midi_output = value as 0 | 1 | 2
+    } else if (cmd.field === 'brightness' && value >= 10 && value <= 100) {
+      this.global.brightness = value
+    } else {
+      this.emit({ type: 'error', cmd: 'set_global', message: 'value_out_of_range' })
+      return
+    }
+
+    this.emit({ type: 'ack', cmd: 'set_global', pad: -1, field: cmd.field ?? '', value })
+    this.emit(this.deviceInfo())
   }
 
   private emitPadConfig(i: number): void {

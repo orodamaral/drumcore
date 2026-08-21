@@ -529,11 +529,11 @@ idênticas nos dois casos.
 
 **Evitando colisão de nomes**: `BLEMIDI_CREATE_DEFAULT_INSTANCE()` (usada
 nos exemplos originais) cria uma variável chamada `MIDI` — colidiria com o
-`MIDI` que já usamos pro USB. Usamos `BLEMIDI_CREATE_INSTANCE("HelloDrum",
+`MIDI` que já usamos pro USB. Usamos `BLEMIDI_CREATE_INSTANCE("DrumCore",
 BleMidi)` em vez do default — isso nomeia a interface MIDI como `BleMidi` e,
 como efeito colateral da macro, cria também um objeto de transporte chamado
 `BLEBleMidi` (prefixo `BLE` + nome escolhido) — é nele (não em `BleMidi`)
-que registramos os callbacks de conexão. `"HelloDrum"` é o nome anunciado via
+que registramos os callbacks de conexão. `"DrumCore"` é o nome anunciado via
 Bluetooth (o que aparece ao parear).
 
 **Consumo de recursos**: build antes de adicionar BLE — RAM 11.9%, Flash
@@ -621,3 +621,166 @@ ajuste de raio/posição.
 - Barra de progresso linear em vez de velocímetro: mais simples de
   desenhar (só `fillRect` proporcional), mas o usuário pediu
   especificamente o visual de velocímetro.
+
+## 2026-08-21 — Fase J: rebranding "DrumCore" + redesenho completo da navegação (design/SPEC.md)
+
+**Decisão**: renomear o projeto de "HelloDrum" para "DrumCore" (exibido como
+"DRUMCORE" em telas/branding, "DrumCore" em prosa) e substituir inteiramente
+o sistema de tela/encoders das Fases C/I por uma navegação de 6 telas (BOOT,
+LIVE, PADS, PAD_EDIT, SIGNAL, GLOBAL), seguindo uma especificação de UI
+(`design/SPEC.md` + `design/Modulo Bateria UI.dc.html`) produzida com Claude
+Design a partir de uma conversa do usuário fora dessa sessão.
+
+**Contexto/Racional**: pedido direto do usuário ("bati um papo com o claude
+design... vamo implementar essa UI"). A biblioteca de terceiros vendorizada
+(`firmware/lib/HelloDrum-arduino-Library`, de Ryo Kosaka) **não** faz parte
+do rebranding — mantém seu nome, arquivos (`hellodrum.h`/`hellodrum.cpp`) e
+identificadores de classe (`HelloDrum`, `HelloDrumMUX_4051`,
+`HelloDrumButton`) originais. A pasta raiz do repositório também não foi
+renomeada (só o texto de branding em código/docs/UI).
+
+**O antigo sistema de tela/botões foi abandonado, não estendido**: as Fases
+C/I giravam em torno de `HelloDrumButton::readButton()`/`settingEnable()` —
+um fluxo desenhado pros 5 sinais (SET/UP/DOWN/NEXT/BACK) que os exemplos
+originais da lib esperam, e que já tínhamos adaptado pra 2 encoders (ver
+entrada de 2026-08-20 sobre navegação). O novo spec pede uma máquina de
+estados com semântica bem diferente (2 encoders com papéis distintos —
+"página" vs. "navegação/valor" —, gestos de hold de 600ms, edição em RAM
+com persistência só sob confirmação explícita) que não mapeia de forma
+natural pra esse fluxo de 5 sinais. Optamos por implementar a navegação
+inteira em `main.cpp` (novo `enum ScreenPage`, `FieldId`/`FieldDef` +
+`getFieldsForType()`/`getFieldValue()`/`setFieldValue()`, detecção de
+hold/aceleração por timestamp) e parar de chamar
+`HelloDrumButton::readButton()`/`settingEnable()`/`GetPadName()` etc. —
+`HelloDrumButton` deixou de ser instanciado. A lib continua fornecendo só a
+camada de sensing (`singlePiezoMUX()`, `dualPiezoMUX()`, etc.) e persistência
+(`initMemory()`/`loadMemory()`), que não mudou.
+
+**Sistema de campos dinâmico por tipo de sensor (`getFieldsForType()`)**:
+o spec original prevê 7 campos fixos por pad (SENSOR/SENSIB/THRESH/SCAN/
+MASK/CURVA/NOTA), mas a Fase G já tinha implementado os 8 tipos de sensor
+da lib, alguns com mais campos (ex: prato 3 zonas tem thresholds e notas
+extras pra edge/cup — até 10 campos). Optamos por manter o modelo de dados
+mais rico da Fase G (não reduzir pra só 4 tipos/7 campos como o spec
+simplificado sugeria) e fazer a tela PAD_EDIT rolar quando o tipo tem mais
+de 7 campos — mesma janela deslizante de 7 linhas usada na lista PADS,
+reaproveitando o padrão. `getFieldsForType()` espelha
+`PAD_TYPE_META[type].fields` do app desktop (`protocol.ts`), mas descrevendo
+como ler/escrever cada campo direto nos membros públicos de `HelloDrum` (via
+`getFieldValue()`/`setFieldValue()`), em vez de passar pelo fluxo de botões
+da lib.
+
+**Persistência: RAM-only nos encoders, auto-save no protocolo serial
+(divergência intencional)**: o spec é explícito — "Edição altera apenas o
+buffer em RAM. Persistência só acontece em GLOBAL > SALVAR." Implementamos
+isso literalmente pro caminho dos encoders/tela: `setFieldValue()` só
+altera os campos em RAM (seta uma flag `unsavedChanges`); só
+`saveAllToEeprom()` (chamado em `GLOBAL > SALVAR`) grava de fato, e
+`loadAllFromEeprom()` (`GLOBAL > RESTAURAR`) descarta as mudanças não
+salvas recarregando da EEPROM. **Mantivemos, de propósito, o comportamento
+antigo pro protocolo serial** (`handleSetPad()`/`handleSetGlobal()`
+continuam persistindo a cada campo alterado, como desde a Fase D/F) — o app
+desktop não tem (e não ganhou) um botão "salvar" equivalente ao da tela
+física, então esperar que o usuário abra a aba GLOBAL do app e clique
+"Salvar tudo" toda vez que arrasta um slider seria pior UX do que já
+funcionava. Os comandos `save_all`/`restore_all` foram adicionados ao
+protocolo mesmo assim (documentados em
+[04-protocolo-serial.md](04-protocolo-serial.md)), pra permitir que o app
+espelhe as mesmas ações da tela quando fizer sentido (ex: descartar edições
+feitas nos encoders antes de salvar) — na prática, redundante no caminho
+`set_pad`/`set_global`, mas não custa nada expor.
+
+**"SAIDA" (GLOBAL) virou USB/BLE/USB+BLE, não USB/DIN/USB+DIN**: o spec
+original (pensado sem contexto do nosso hardware específico) previa DIN
+(MIDI 5 pinos) como uma das opções de saída — não existe esse circuito no
+projeto (só USB-MIDI da Fase B e BLE-MIDI da Fase H). Em vez de implementar
+um "DIN" que nunca faria nada (stub morto), reinterpretamos a mesma posição
+na tela GLOBAL como USB/BLE/USB+BLE — as opções reais que o hardware tem.
+Isso muda o comportamento de `fireNote()`/`fireControlChange()`: antes (Fase
+H) os dois transportes saíam sempre juntos; agora um `byte midiOutput`
+(persistido) decide se USB, BLE, ou os dois recebem cada nota/CC.
+
+**"KIT" foi removido do spec, não implementado nem como placeholder**: o
+spec original pede um campo "KIT (01-nn)" na tela GLOBAL, sem detalhar o
+que uma troca de kit deveria fazer (múltiplos bancos de configuração de
+pads selecionáveis por kit). Perguntamos ao usuário se valia implementar
+de verdade ou só deixar fixo como placeholder; a resposta foi explícita —
+"não vamos implementar isso não, sem kits por enquanto". Por isso o campo
+não existe em lugar nenhum: nem `kitNumber` no firmware (nem em RAM, nem em
+EEPROM — o bloco de config global ficou com 3 bytes, não 4), nem
+`kit_number` no protocolo serial (`set_global`/`device_info`), nem na tela
+GLOBAL (que ficou com 5 linhas: MIDI CH, SAIDA, BRILHO, SALVAR, RESTAURAR —
+não 6), nem no app desktop ou no `HardwareSimulator.tsx`. Se o recurso for
+pedido de novo no futuro, é uma feature nova a projetar do zero (formato de
+persistência por kit, o que cada kit duplica ou não), não uma retomada de
+código existente.
+
+**Correção de linkage na lib vendorizada — `rawValue[]`**: a tela SIGNAL
+(osciloscópio simplificado do envelope do sensor) precisa que `main.cpp`
+leia os valores brutos do ADC que `HelloDrumMUX_4051::scan()` grava (dentro
+de `hellodrum.cpp`). O array `rawValue[]` era declarado `static` direto no
+header (`hellodrum.h`) — igual ao problema já documentado com
+`nameIndex`/`editCheck`/`padType[]` nas entradas anteriores, um `static` no
+escopo de arquivo/header vira uma cópia **separada e desconectada** por
+`.cpp` que faz `#include` (linkage interno), não uma variável
+compartilhada. Trocado para `extern int rawValue[64]` no header + a
+definição real (`int rawValue[64]`) uma única vez em `hellodrum.cpp`, junto
+do resto do estado interno da lib. Essa é a quarta vez que esse mesmo
+padrão de bug aparece nessa biblioteca — vale ficar atento a outras
+variáveis `static` de escopo de arquivo se precisarmos ler mais estado
+interno de fora no futuro.
+
+**Tela SIGNAL usa um envelope aproximado, não uma captura alinhada ao
+hit**: o ideal seria capturar exatamente as amostras do ADC durante a
+janela de scan/mask de um hit específico. Isso exigiria instrumentar
+`hellodrum.cpp` mais a fundo (fora do escopo de "só ler o que já existe").
+Optamos por manter um buffer de 120 amostras como uma janela deslizante
+contínua do canal em foco, atualizada a cada `loop()` enquanto a tela
+SIGNAL está visível, e redesenhada só quando percebemos um hit novo — na
+prática mostra o formato geral do envelope de um hit recente, mas não é uma
+captura cirurgicamente alinhada ao início do scan. Documentado como
+simplificação deliberada no comentário de `captureSignalSample()`.
+
+**Reskin do app desktop (Electron/React)**: paleta e tipografia seguem os
+mesmos tokens da tela do módulo (`design/SPEC.md` seção 4: BG/SURFACE/LINE/
+TXT_DIM/TXT/ACCENT/EDIT/HIT/OK; fontes Silkscreen + Space Grotesk, via
+Google Fonts — exigiu abrir a CSP do `index.html` pra `fonts.googleapis.com`/
+`fonts.gstatic.com`, já que o app é Electron com acesso à rede, não um
+artifact restrito). A API exposta pelo preload (`contextBridge`) foi
+renomeada de `window.helloDrum` para `window.drumCore` (`preload/index.ts`,
+`env.d.ts`, `App.tsx`). Nova aba "Global" no app pra configurar canal MIDI/
+saída/brilho via `set_global` (sem KIT — ver acima, o campo não existe).
+`HardwareSimulator.tsx` foi reescrito do zero (não incrementado) pra
+espelhar a nova máquina de 5 páginas em runtime (BOOT não entra, dura só a
+inicialização) e a nova semântica dos 2 encoders, incluindo o gesto de hold
+de 600ms — simulado no navegador via `onMouseDown`/`onMouseUp` com um
+`setTimeout`, já que não existe equivalente nativo de "manter pressionado"
+num `<button>` HTML.
+
+**Status de validação**: firmware compila e linka com sucesso via
+PlatformIO (`pio run`); app desktop com `npm run typecheck` e `npm run
+build` limpos. **Nada testado em hardware real** — em especial, a
+legibilidade das 6 telas numa TFT física de 1.44" (bem menor que qualquer
+preview), o sentido/aceleração dos encoders, e se o brilho via PWM
+(`ledcSetup`/`ledcAttachPin`/`ledcWrite` — API do core 3.x, mais antiga que
+o `ledcAttach()` de uma linha que tentamos primeiro e não existe nessa
+versão do core) fica suave ou "degrau" na prática.
+
+**Alternativas descartadas**:
+- Manter `HelloDrumButton`/`readButton()` e só trocar os textos exibidos:
+  descartado porque a semântica de encoder do spec (papéis fixos por
+  encoder, hold, edição em RAM) não é representável pelos 5 sinais
+  SET/UP/DOWN/NEXT/BACK sem gambiarras piores do que reescrever a
+  navegação direto em `main.cpp`.
+- Reduzir o modelo de dados de pad pra só os 4 tipos/7 campos do spec
+  simplificado: descartado — perderíamos os 8 tipos de sensor da Fase G
+  sem necessidade real, só pra bater 1:1 com um mockup que não tinha
+  contexto do nosso escopo mais amplo.
+- Implementar "DIN" como opção morta na tela GLOBAL (só pra bater com o
+  spec ao pé da letra): descartado — preferimos uma opção honesta e
+  funcional (BLE) a uma opção que nunca faria nada.
+- Dar ao app desktop um botão "Salvar"/"Restaurar" que efetivamente
+  passasse a exigir confirmação pra persistir `set_pad`/`set_global` (pra
+  unificar o modelo de persistência entre os dois caminhos): descartado —
+  mudaria a UX já validada do app (auto-save) sem pedido do usuário, só
+  por simetria com a tela física.

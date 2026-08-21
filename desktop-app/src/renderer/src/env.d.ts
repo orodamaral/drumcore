@@ -7,7 +7,7 @@ export interface PortInfo {
   manufacturer?: string
 }
 
-export interface HelloDrumApi {
+export interface DrumCoreApi {
   listPorts: () => Promise<PortInfo[]>
   connect: (path: string) => Promise<void>
   disconnect: () => Promise<void>
@@ -19,6 +19,6 @@ export interface HelloDrumApi {
 
 declare global {
   interface Window {
-    helloDrum: HelloDrumApi
+    drumCore: DrumCoreApi
   }
 }

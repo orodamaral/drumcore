@@ -23,6 +23,6 @@ const api = {
   }
 }
 
-contextBridge.exposeInMainWorld('helloDrum', api)
+contextBridge.exposeInMainWorld('drumCore', api)
 
-export type HelloDrumApi = typeof api
+export type DrumCoreApi = typeof api

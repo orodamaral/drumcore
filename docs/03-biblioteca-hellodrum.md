@@ -65,7 +65,20 @@ TinyUSB pré-compilada do core `arduino-esp32`) — ambos configurados em
 
 Build validado (compila e linka), **teste em hardware real ainda pendente**.
 
-## Configuração via encoders em vez de botões (Fase C — resolvido)
+## Configuração via encoders em vez de botões (Fase C — superada pela Fase J)
+
+> **Atualização (Fase J, 2026-08-21)**: a partir do redesenho de UI descrito
+> em [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md), `main.cpp`
+> **parou de instanciar `HelloDrumButton`** e de chamar
+> `readButton()`/`settingEnable()`/`GetPadName()`/`GetSettingItem()` — a
+> navegação/edição inteira passou a ser código nosso, direto em `main.cpp`
+> (`getFieldsForType()`/`getFieldValue()`/`setFieldValue()`). A seção abaixo
+> descreve a abordagem da Fase C, mantida aqui como registro histórico —
+> ainda é relevante se algum dia quisermos voltar a usar os 5 sinais
+> SET/UP/DOWN/NEXT/BACK da lib (ex: pra um painel de botões físicos
+> alternativo). A lib continua usada normalmente pra sensing
+> (`singlePiezoMUX()` etc.) e persistência (`loadMemory()`/`initMemory()`) —
+> só a camada de configuração via botões deixou de ser usada.
 
 A classe `HelloDrumButton` pressupõe 5 botões físicos (EDIT/UP/DOWN/NEXT/BACK),
 lidos via `readButtonState()` (que faz `digitalRead()` direto nos pinos do
@@ -150,3 +163,30 @@ sensibilidade do pad 1 escrevia no endereço 8, que é o `noteRim` do pad 0).
 `EEPROM_ESP.write`, e a versão AVR/não-ESP32 com `EEPROM.write`, ambas no
 mesmo padrão) foram corrigidos para `padNum * 10`, consistente com o resto do
 código.
+
+### 2026-08-21 — `rawValue[]`: `static` → `extern` (linkage interno impedia leitura externa)
+
+**Arquivos**: `firmware/lib/HelloDrum-arduino-Library/src/hellodrum.h` e
+`hellodrum.cpp`
+
+**Motivo**: a tela SIGNAL da Fase J (osciloscópio simplificado do envelope
+do sensor, ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md))
+precisa que `main.cpp` leia os valores brutos do ADC que
+`HelloDrumMUX_4051::scan()` grava em `rawValue[]`. O array era declarado
+`static int rawValue[16 ou 64]` direto no header — em C/C++, `static` no
+escopo de arquivo/header dá **linkage interno**: cada arquivo `.cpp` que
+inclui o header (`hellodrum.cpp` e `main.cpp`) passa a ter sua **própria
+cópia isolada** do array, não uma variável compartilhada. `main.cpp` estaria
+lendo sempre zeros do seu próprio `rawValue[]`, nunca o que
+`hellodrum.cpp` de fato escreve. Esse é o mesmo padrão de bug já visto (e
+corrigido de outras formas) com `nameIndex`/`editCheck`/`padType[]` nas
+fases anteriores — variáveis `static` de escopo de arquivo nessa lib
+tendem a esconder esse problema.
+
+**O que foi feito**: `rawValue[]` trocou de `static int rawValue[...]` para
+`extern int rawValue[...]` no header (só declara, não reserva memória), com
+a definição real (`int rawValue[...]`, sem `static`/`extern`) movida para
+`hellodrum.cpp`, logo após os `#include` de EEPROM — precisa existir
+exatamente uma vez no programa inteiro, e esse arquivo já é o "dono" natural
+do estado interno de sensing. Nenhuma lógica de `scan()` foi alterada, só a
+visibilidade do array.

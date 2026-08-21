@@ -1,6 +1,6 @@
 # Interface Desktop de Configuração
 
-Aplicação desktop para configuração do módulo HelloDrum (sensibilidade,
+Aplicação desktop para configuração do módulo DrumCore (sensibilidade,
 threshold, curva, nota MIDI por pad). Comunica com o módulo via porta serial
 USB-CDC usando um protocolo NDJSON — ver
 [docs/04-protocolo-serial.md](../docs/04-protocolo-serial.md) pro contrato

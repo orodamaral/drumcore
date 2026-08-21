@@ -37,6 +37,17 @@ Cada linha enviada pelo app é um objeto com um campo `cmd`.
 | `get_pad` | `pad` (0-31) | Configuração de um pad. Resposta: `pad_config`. |
 | `get_all_pads` | — | Configuração de todos os 32 pads (32 respostas `pad_config` em sequência). |
 | `set_pad` | `pad` (0-31), `field`, `value` | Altera um parâmetro de um pad, aplica imediatamente e persiste em EEPROM. Resposta varia por campo (ver tabela) ou `error`. |
+| `set_global` | `field`, `value` | Altera uma configuração global (ver tabela abaixo), aplica imediatamente e persiste em EEPROM. Resposta: `ack` + `device_info`. |
+| `save_all` | — | Grava toda a configuração atual (32 pads + globais) na EEPROM. Resposta: `log` + `device_info`. Esse comando existe principalmente pro caminho dos encoders/tela (Fase J — ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)), onde a edição só fica em RAM até `GLOBAL > SALVAR`; pelo protocolo serial ele é redundante na prática, já que `set_pad`/`set_global` já persistem a cada mudança. |
+| `restore_all` | — | Descarta qualquer mudança em RAM e recarrega os 32 pads + globais da EEPROM. Resposta: `pad_config` × 32 + `log` + `device_info`. |
+
+`field` aceito em `set_global`:
+
+| `field` | Tipo de `value` | Faixa/limite |
+|---|---|---|
+| `midi_channel` | número | `1-16` |
+| `midi_output` | número | `0` USB, `1` BLE, `2` USB+BLE — sem MIDI DIN, o hardware não tem esse circuito (ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)) |
+| `brightness` | número | `10-100` (%, controla o brilho da tela via PWM) |
 
 `field` aceito em `set_pad` (nomes do protocolo, não os nomes internos da
 lib — ver [05-tipos-de-sensor.md](05-tipos-de-sensor.md) pro que cada campo
@@ -70,7 +81,7 @@ Cada linha enviada pelo módulo é um objeto com um campo `type`.
 | `type` | Campos | Quando é enviado |
 |---|---|---|
 | `pong` | — | Resposta a `ping`. |
-| `device_info` | `pads`, `muxes`, `midi_channel`, `ble_connected`, `firmware_phase` | Resposta a `get_device_info`. `ble_connected` indica se há um dispositivo pareado via BLE-MIDI naquele momento (ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)) — o módulo envia MIDI por USB e BLE simultaneamente, não é um "modo" a escolher. |
+| `device_info` | `pads`, `muxes`, `midi_channel`, `midi_output`, `brightness`, `ble_connected`, `firmware_phase` | Resposta a `get_device_info`, `set_global`, `save_all` e `restore_all`. `ble_connected` indica se há um dispositivo pareado via BLE-MIDI naquele momento (ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)). `midi_output` controla se o MIDI sai por USB, BLE ou os dois — antes (Fase H) saía sempre pelos dois simultaneamente; agora é configurável via `set_global`. |
 | `pad_config` | Ver abaixo | Resposta a `get_pad`/`get_all_pads`, e a `set_pad` bem-sucedido em `label`/`pad_type`/`hihat_pedal_channel`. |
 | `hit` | `pad`, `zone`, `note`, `velocity` | Sempre que um pad é atingido (telemetria em tempo real). `zone` varia por tipo: `"bow"`, `"head"`, `"rim"`, `"edge"`, `"cup"`, `"open"`, `"closed"`, `"pedal"` ou `"choke"` — ver [05-tipos-de-sensor.md](05-tipos-de-sensor.md). |
 | `ack` | `cmd`, `pad`, `field`, `value` | Confirmação de um `set_pad` com campo numérico simples. |

@@ -2,6 +2,58 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-21 — Fase J: rebranding + redesenho da UI do firmware
+
+- **Renomeação do projeto**: "HelloDrum" → "DrumCore" (nome de exibição
+  "DRUMCORE" em telas/branding, "DrumCore" em prosa). A biblioteca de
+  terceiros vendorizada (`firmware/lib/HelloDrum-arduino-Library`, de Ryo
+  Kosaka) mantém seu nome original — não faz parte do rebranding.
+- **Redesenho completo da tela/navegação do firmware**
+  (`firmware/src/main.cpp`), seguindo uma especificação de UI produzida com
+  Claude Design (`design/SPEC.md`). Substitui o sistema de botões/tela das
+  Fases C/I por 6 telas: BOOT, LIVE (grade 8x4 dos 32 pads, com flash ao
+  bater), PADS (lista rolável dos 32 pads), PAD_EDIT (edição dos parâmetros
+  do pad em foco, lista de campos dinâmica por tipo de sensor), SIGNAL
+  (osciloscópio simplificado do envelope do sensor) e GLOBAL (canal MIDI,
+  saída MIDI, brilho da tela via PWM, e ações SALVAR/RESTAURAR com toast —
+  sem "KIT", ver abaixo).
+- **Dois encoders com semântica nova**: ENC1 navega entre páginas/pad em
+  foco (clique alterna PAD_EDIT↔SIGNAL, hold de 600ms volta pra LIVE); ENC2
+  navega a lista/edita o valor em foco (clique confirma, hold de 600ms volta
+  um nível). Ambos com aceleração de valor (>8 giros/s pula de passo 1 pra
+  5).
+- **Mudança de modelo de persistência**: editar um pad pelos
+  encoders/tela agora só altera um buffer em RAM — só grava na EEPROM
+  quando o usuário confirma GLOBAL > SALVAR (GLOBAL > RESTAURAR descarta as
+  mudanças não salvas, recarregando da EEPROM). Diverge intencionalmente do
+  caminho do protocolo serial (usado pelo app desktop), que continua
+  salvando cada campo imediatamente ao mudar — o app desktop não tem um
+  botão "salvar" equivalente.
+- Como o hardware não tem circuito de MIDI DIN (5 pinos), a opção "SAIDA"
+  da tela GLOBAL (que na especificação original previa USB/DIN/USB+DIN) foi
+  adaptada pra USB/BLE/USB+BLE, os dois transportes que o projeto de fato
+  tem (USB-MIDI da Fase B e BLE-MIDI da Fase H).
+- O campo "KIT" do spec original **não foi implementado**, nem como
+  placeholder — o usuário pediu explicitamente pra não implementar por
+  enquanto. Não existe em nenhuma camada (firmware, protocolo serial, app
+  desktop, simulador). Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+- **Correção de linkage na lib vendorizada**: o array `rawValue[]`
+  (`hellodrum.h`/`hellodrum.cpp`) era `static` no header, causando uma cópia
+  isolada por arquivo `.cpp` (linkage interno). Trocado para `extern` no
+  header + definição única no `.cpp`, permitindo que `main.cpp` leia os
+  valores brutos do ADC pra desenhar a tela SIGNAL.
+- **Reskin visual completo do app desktop** (Electron/React), seguindo a
+  mesma paleta e tipografia da tela do módulo (tokens de cor BG/SURFACE/
+  LINE/TXT_DIM/TXT/ACCENT/EDIT/HIT/OK; fontes Silkscreen + Space Grotesk via
+  Google Fonts). API exposta pelo preload do Electron renomeada de
+  `window.helloDrum` para `window.drumCore`. Nova aba "Global" no app
+  desktop pra configurar canal MIDI/saída/brilho. `HardwareSimulator.tsx`
+  reescrito do zero pra espelhar a nova máquina de estados de 5 páginas e a
+  nova semântica dos dois encoders, incluindo o gesto de "hold" de 600ms
+  (simulado via mouse down/up no navegador).
+- Validado: compilação do firmware via PlatformIO (`pio run`, sucesso) e
+  `npm run typecheck` + `npm run build` no app desktop (ambos limpos).
+
 ## 2026-08-20 (15) — bugfix
 
 - **Corrigido**: sliders do editor de pad (app desktop) não refletiam a
@@ -44,7 +96,7 @@ Registro cronológico do que foi feito no projeto (mais recente no topo).
   Confirmei a API lendo os próprios exemplos vendorizados da HelloDrum-lib
   (`examples/BLE/`, `examples/MUX/muxSensing_BLEMIDI`) e o código-fonte da
   lib BLE-MIDI direto do GitHub antes de implementar.
-- Nome anunciado via Bluetooth: `"HelloDrum"`. Instância nomeada `BleMidi`
+- Nome anunciado via Bluetooth: `"DrumCore"`. Instância nomeada `BleMidi`
   (em vez do nome padrão `MIDI` que a lib usaria, que colidiria com o `MIDI`
   já usado pro USB).
 - `device_info` ganhou o campo `ble_connected`; o firmware reenvia

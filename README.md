@@ -1,4 +1,4 @@
-# HelloDrum — Módulo MIDI-USB para Bateria Eletrônica (ESP32-S3)
+# DRUMCORE — Módulo MIDI-USB para Bateria Eletrônica (ESP32-S3)
 
 Módulo de disparo MIDI para bateria eletrônica, baseado em ESP32-S3, com suporte a
 32 entradas analógicas (via 4x multiplexador CD4051), tela OLED e botões de
@@ -10,7 +10,7 @@ de Ryo Kosaka (vendorizada e adaptada em [firmware/lib/HelloDrum-arduino-Library
 ## Estrutura do projeto
 
 ```
-HelloDrum/
+DrumCore/
 ├── docs/                 Documentação do projeto (decisões, hardware, progresso)
 ├── firmware/             Firmware ESP32-S3 (PlatformIO)
 │   ├── platformio.ini

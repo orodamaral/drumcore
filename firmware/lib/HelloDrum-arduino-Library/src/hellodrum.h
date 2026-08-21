@@ -171,10 +171,18 @@ static bool button_next;
 static bool button_back;
 static byte UP[10] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 
+// [MODIFICADO - projeto DrumCore] "static" removido de proposito - um
+// array static declarado direto no header vira uma copia SEPARADA e
+// desconectada por arquivo .cpp que faz #include (linkage interno). Isso
+// impedia o firmware (main.cpp) de ler os valores brutos que mux.scan()
+// grava aqui de dentro de hellodrum.cpp - precisamos disso pra tela SIGNAL
+// (osciloscopio do envelope do pad). Sem "static" o array passa a ter
+// linkage externo (uma unica instancia compartilhada de verdade pelo
+// programa todo). Ver docs/01-decisoes-arquiteturais.md.
 #ifdef __AVR_ATmega328P__
-static int rawValue[16]; //2 * 8chanel Mux
+extern int rawValue[16]; //2 * 8chanel Mux
 #else
-static int rawValue[64]; //8 * 8chanel Mux
+extern int rawValue[64]; //8 * 8chanel Mux
 #endif
 
 class HelloDrum

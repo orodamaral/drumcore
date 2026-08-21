@@ -173,12 +173,30 @@ export interface PadConfigConsumed {
 
 export type PadConfig = PadConfigPrimary | PadConfigConsumed
 
+// GLOBAL (design/SPEC.md SCR 5) - saida agora e' USB/BLE/USB+BLE, nao ha'
+// circuito de MIDI DIN nesse hardware (ver docs/01-decisoes-arquiteturais.md).
+export const MIDI_OUTPUTS = [0, 1, 2] as const
+export type MidiOutput = (typeof MIDI_OUTPUTS)[number]
+export const MIDI_OUTPUT_LABELS: Record<MidiOutput, string> = {
+  0: 'USB',
+  1: 'BLE',
+  2: 'USB + BLE'
+}
+
+export interface GlobalConfig {
+  midi_channel: number
+  midi_output: MidiOutput
+  brightness: number
+}
+
 export type IncomingMessage =
   | { type: 'pong' }
   | ({ type: 'device_info' } & {
       pads: number
       muxes: number
       midi_channel: number
+      midi_output: MidiOutput
+      brightness: number
       ble_connected: boolean
       firmware_phase: string
     })
