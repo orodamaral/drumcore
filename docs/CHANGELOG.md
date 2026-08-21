@@ -2,6 +2,28 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (14)
+
+- **Fase I**: tela inicial (grid 8x4 com o número de cada pad, acende verde
+  ao ser atingido) que aparece após 4s ocioso e dá lugar à tela de
+  configuração assim que qualquer encoder é usado. A tela de configuração
+  ganhou um velocímetro (arco + agulha) mostrando onde o valor atual do
+  parâmetro cai entre o mínimo e o máximo.
+- Grid mapeado 1:1 com a fiação real: linha = MUX físico (0-3), coluna =
+  canal dentro do MUX (0-7).
+- Velocímetro desenhado via trigonometria (`drawGauge()`), já que a
+  Adafruit GFX não tem desenho de arco nativo; faixa min/max de cada
+  parâmetro inferida por substring no rótulo (`getGaugeRange()`), já que a
+  lib não expõe isso estruturado.
+- Simulador do módulo (`HardwareSimulator.tsx`) atualizado com os mesmos
+  dois estados — grid com hits simulados periodicamente, velocímetro via
+  SVG — usando as mesmas constantes de tempo do firmware
+  (`IDLE_TIMEOUT_MS`, `PAD_FLASH_MS`).
+- Build/typecheck do firmware e do app validados. **Nada testado em
+  hardware real** — em especial a legibilidade do velocímetro na tela
+  física de 1.44" ainda precisa de confirmação. Detalhes em
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+
 ## 2026-08-20 (13)
 
 - **Fase H**: BLE-MIDI (`lathoub/Arduino-BLE-MIDI`, stack Bluedroid já

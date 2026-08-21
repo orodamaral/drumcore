@@ -561,3 +561,63 @@ Android/Windows. Validar isso é o próximo passo assim que houver hardware.
   necessidade imediata dado que Bluedroid já cabe confortavelmente no
   orçamento de flash/RAM atual — guardado como alternativa se surgir
   problema real de recursos ou estabilidade em hardware.
+
+## 2026-08-20 — Tela inicial (grid de pads) + velocímetro na configuração
+
+**Decisão**: a tela TFT ganhou dois estados novos — uma **tela inicial**
+(grid 8x4 com o número de cada pad, que acende verde ao ser atingido) que
+aparece quando o módulo está ocioso, e um **velocímetro** (arco + agulha)
+na tela de configuração, mostrando visualmente onde o valor atual do
+parâmetro cai entre o mínimo e o máximo.
+
+**Contexto/Racional**: pedido direto do usuário, pra tornar a tela mais
+"bonitinha"/útil no dia a dia (ver ela tocando em vez de só um menu estático
+de configuração). O grid 8x4 não é arbitrário — mapeia direto pra `i =
+mux*8 + canal`, então cada LINHA do grid corresponde a um CD4051 físico. Não
+tentamos mostrar `padType`/consumo de canal nessa tela (ficaria poluído) —
+canais consumidos simplesmente nunca acendem (nunca recebem hit), o que já
+é auto-explicativo na prática.
+
+**Transição entre telas**: baseada em tempo sem interação
+(`lastConfigInteractionMs`, atualizado em `processConfigInput()` a cada
+evento real de qualquer encoder) — depois de `IDLE_TIMEOUT_MS` (4s) sem
+nenhum giro/clique, a tela volta pro grid. Qualquer interação leva de volta
+pra tela de configuração imediatamente. Não distinguimos "está editando" vs
+"só navegando" pra esse timeout — qualquer input já reseta o relógio, então
+não há risco de a tela "fugir" pro grid no meio de um ajuste de valor.
+
+**Velocímetro sem suporte nativo a arco**: a Adafruit_GFX não tem desenho
+de arco — aproximamos com segmentos de reta via trigonometria (5 marcas
+fixas + 1 agulha, arco de 150° a 30°, abrindo pra baixo — visual clássico
+de painel). Implementado em `drawGauge()`.
+
+**De onde vem o min/max de cada parâmetro**: a lib não expõe isso
+estruturado (só o rótulo em texto via `GetSettingItem()`), então
+`getGaugeRange()` decide a faixa por *substring* no rótulo (`"SENS"` /
+`"THRE"` / `"SCAN"` / `"MASK"` → 1-100, `"CURVE"` → 0-4, `"NOTE"` → 0-127) —
+cobre todos os rótulos que existem nos arrays `item[]`/`itemD[]`/
+`itemCY2[]`/`itemCY3[]`/`itemHH[]`/`itemHH2[]`/`itemHHC[]` de `hellodrum.h`
+(confirmado lendo cada um). No app desktop isso já existe de forma
+estruturada (`FieldSpec.min`/`.max` em `protocol.ts`), então o simulador usa
+essa fonte diretamente, sem precisar do hack de substring.
+
+**Simulador atualizado em paralelo**: `HardwareSimulator.tsx` replica os
+dois estados novos (grid com hits simulados periodicamente, velocímetro via
+SVG) usando as mesmas constantes de tempo (`IDLE_TIMEOUT_MS`,
+`PAD_FLASH_MS`) pra ficar fiel ao firmware. Ver
+[06-simulador-hardware.md](06-simulador-hardware.md).
+
+**Status de validação**: build/typecheck do firmware e do app passam
+limpo. **Nada testado em hardware real** — em especial, a legibilidade do
+velocímetro numa tela física de 1.44" (bem menor que a visualização em
+tela de computador) só dá pra confirmar na prática; pode precisar de
+ajuste de raio/posição.
+
+**Alternativas descartadas**:
+- Mostrar o `padType` ou status de canal consumido na tela inicial:
+  descartado por poluir uma tela pensada pra ser só "ver o que está
+  tocando" — essa informação já está disponível na tela de configuração e
+  no app desktop.
+- Barra de progresso linear em vez de velocímetro: mais simples de
+  desenhar (só `fillRect` proporcional), mas o usuário pediu
+  especificamente o visual de velocímetro.

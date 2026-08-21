@@ -35,10 +35,18 @@ TypeScript/React, rodando no navegador/Electron.
   isso reproduz uma característica real da lib (`HelloDrumButton::readButton()`
   só processa NEXT/BACK quando **não** está em modo de edição).
 - Canais consumidos por um pad de 2 canais mostram "Canal ocupado", sem
-  item/valor — mesmo texto usado em `renderScreen()`.
+  item/valor — mesmo texto usado em `renderConfigView()`.
 - A lista de parâmetros por pad vem da mesma fonte usada no editor da aba
   "Configuração" (`PAD_TYPE_META` em `protocol.ts`) — os campos mostrados
   por tipo de sensor são consistentes entre as duas telas.
+- **Tela inicial (grid)**: depois de 4s sem girar/clicar nenhum encoder
+  (`IDLE_TIMEOUT_MS`, mesmo valor do firmware), a tela mostra um grid 8x4
+  com o número de cada pad (linha = MUX físico, coluna = canal dentro do
+  MUX) — qualquer interação volta pra tela de configuração na hora.
+- **Velocímetro**: ao ver um parâmetro numérico, um arco com agulha mostra
+  onde o valor atual cai entre o mínimo e o máximo (mesmo desenho do
+  `drawGauge()` do firmware — arco de 150° a 30°, 5 marcas, agulha
+  amarela).
 
 ## O que é só aproximação (não pixel-perfeito com o hardware real)
 
@@ -61,6 +69,13 @@ TypeScript/React, rodando no navegador/Electron.
   "tick" de scroll do mouse é um passo direto, sem essa nuance.
 - **Chave do encoder 2**: no firmware ainda não tem função definida
   (reservada). Aqui também não faz nada.
+- **Hits simulados no grid**: o simulador dispara um hit aleatório num pad
+  primário a cada 1.2s só pra exercitar o flash verde — no firmware real
+  isso vem de sensing de verdade, sem intervalo fixo.
+- **Fonte do min/max do velocímetro**: aqui vem direto de
+  `FieldSpec.min`/`.max` (`protocol.ts`), que já é estruturado. No firmware,
+  como a lib não expõe isso, a faixa é inferida por substring no rótulo do
+  item (`getGaugeRange()`) — mesmo resultado, forma diferente de obter.
 
 ## Quando isso deixa de ser necessário
 

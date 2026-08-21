@@ -33,6 +33,7 @@ cérebro do sistema, capaz de:
 | 2c | Protocolo serial NDJSON (módulo ↔ app desktop) | Compilado, sem teste em hardware real |
 | 2d | Nome livre por pad (editável só pelo app desktop) | Compilado/build ok, sem teste em hardware real |
 | 2e | 8 tipos de sensor por pad + topologia de canais configurável pelo app | Compilado/build ok, sem teste em hardware real |
+| 2f | Tela inicial (grid de pads) + velocímetro na configuração | Compilado/build ok, sem teste em hardware real |
 | 3 | Interface desktop de configuração (Electron/React) | Build/typecheck ok, sem teste com módulo real (só modo demo) |
 | 3b | Simulador do LCD + encoders no app desktop (preview sem hardware) | Implementado e funcional |
 

@@ -29,6 +29,10 @@
   core) como transporte adicional - todo hit/CC vai tanto pro USB-MIDI
   (Fase B) quanto pro BLE-MIDI simultaneamente, quando houver um
   dispositivo pareado. Ver docs/01-decisoes-arquiteturais.md.
+  Fase I: tela inicial (grid 8x4 com o numero de cada pad, acende verde nos
+  hits) que aparece quando ocioso e da lugar a tela de configuracao (agora
+  com um velocimetro pro valor do item) assim que algum encoder e' usado.
+  Ver docs/01-decisoes-arquiteturais.md.
 
   Pinout usado aqui: ver docs/02-hardware.md (marcado como proposto/a validar
   no hardware real).
@@ -49,6 +53,7 @@
 #include <ArduinoJson.h>
 #include <BLEMIDI_Transport.h>
 #include <hardware/BLEMIDI_ESP32.h>
+#include <math.h>
 
 // ---------------------------------------------------------------------------
 // Pinout - CD4051 (4x, 32 canais)
@@ -75,6 +80,18 @@
 #define TFT_DC 9
 #define TFT_RST 14
 #define TFT_BLK 13
+
+// Tela inicial (Fase I): grid 8x4 com o numero de cada pad (mapeia direto
+// pra i = mux*8 + canal, ou seja, cada linha do grid e' um CD4051 fisico).
+// Fica visivel quando ocioso (sem interacao com os encoders por
+// IDLE_TIMEOUT_MS) e some assim que qualquer encoder e' girado/clicado.
+#define GRID_COLS 8
+#define GRID_ROWS 4
+#define GRID_CELL_W (128 / GRID_COLS) // 16px
+#define GRID_CELL_H (128 / GRID_ROWS) // 32px
+#define PAD_FLASH_MS 200              // quanto tempo o quadrado fica verde apos um hit
+#define GRID_REDRAW_MS 80             // intervalo de redesenho enquanto ocioso (deixa os flashes apagarem)
+#define IDLE_TIMEOUT_MS 4000          // tempo sem interacao pra voltar pra tela inicial
 
 // ---------------------------------------------------------------------------
 // Pinout - 2 encoders rotativos com chave
@@ -247,6 +264,11 @@ byte padTypes[NUM_PADS];
 byte hihatPedalChannel[NUM_PADS];
 bool channelPrimary[NUM_PADS];
 
+// Estado da tela inicial (grid) - ver renderScreen()/renderHomeGrid().
+unsigned long padHitFlashUntil[NUM_PADS] = {0}; // millis() at aonde cada quadrado deve continuar verde
+unsigned long lastConfigInteractionMs = 0;      // ultima vez que algum encoder foi girado/clicado
+bool forceScreenRedraw = true;                  // sinaliza pra quem for desenhar que precisa redesenhar tudo (nao so o que mudou)
+
 void recomputeChannelPrimary()
 {
     for (byte i = 0; i < NUM_PADS; i++)
@@ -296,6 +318,8 @@ void IRAM_ATTR isrItemEncoder()
 // que aqui os sinais vem dos encoders em vez de botoes fisicos.
 void processConfigInput(bool set, bool up, bool down, bool next, bool back)
 {
+    lastConfigInteractionMs = millis(); // qualquer evento real mantem a tela de config visivel
+
     button.readButton(set, up, down, next, back);
 
     for (byte i = 0; i < NUM_PADS; i++)
@@ -362,14 +386,104 @@ int currentPadIndex()
     return -1;
 }
 
-// Mostra pad atual / item / valor na tela, com uma mensagem transiente ao
-// entrar/sair do modo de edicao (mesmo padrao dos exemplos originais da lib
-// com OLED, so que redesenhando a tela toda a cada mudanca).
-void renderScreen()
+// Descobre a faixa (min/max) do item atual pelo NOME (a lib nao expoe isso
+// estruturado, so o rotulo em texto via GetSettingItem() - ver os arrays
+// item[]/itemD[]/itemCY2[]/itemCY3[]/itemHH[]/itemHH2[]/itemHHC[] em
+// hellodrum.h pra confirmar que esses 5 padroes de substring cobrem todos os
+// rotulos possiveis). Usado so pra desenhar o velocimetro - a validacao de
+// valor em si continua sendo feita pela lib (settingEnable()) e pelo
+// protocolo serial (handleSetPad()).
+void getGaugeRange(const char *item, int &minVal, int &maxVal)
+{
+    if (strstr(item, "SENS") || strstr(item, "THRE") || strstr(item, "SCAN") || strstr(item, "MASK"))
+    {
+        minVal = 1;
+        maxVal = 100;
+    }
+    else if (strstr(item, "CURVE"))
+    {
+        minVal = 0;
+        maxVal = 4;
+    }
+    else if (strstr(item, "NOTE"))
+    {
+        minVal = 0;
+        maxVal = 127;
+    }
+    else
+    {
+        minVal = 0;
+        maxVal = 100; // fallback generico - nao deveria ser usado na pratica
+    }
+}
+
+// Desenha um velocimetro (arco + agulha) mostrando onde "value" cai entre
+// minVal e maxVal. O arco vai de 150 graus (esquerda, minimo) a 30 graus
+// (direita, maximo), abrindo pra baixo - visual classico de painel. A lib
+// Adafruit_GFX nao tem desenho de arco nativo, entao aproximamos com
+// segmentos de reta via trigonometria.
+void drawGauge(int value, int minVal, int maxVal, int cx, int cy, int radius)
+{
+    if (maxVal <= minVal)
+    {
+        maxVal = minVal + 1; // seguranca contra divisao por zero
+    }
+    float t = (float)(value - minVal) / (float)(maxVal - minVal);
+    if (t < 0)
+    {
+        t = 0;
+    }
+    if (t > 1)
+    {
+        t = 1;
+    }
+
+    const float startDeg = 150.0f;
+    const float endDeg = 30.0f;
+
+    // 5 marcas fixas (0%, 25%, 50%, 75%, 100%) - so pra dar a nocao de escala.
+    for (int k = 0; k <= 4; k++)
+    {
+        float tk = k / 4.0f;
+        float angleRad = (startDeg - tk * (startDeg - endDeg)) * PI / 180.0f;
+        int x1 = cx + (int)((radius - 5) * cosf(angleRad));
+        int y1 = cy - (int)((radius - 5) * sinf(angleRad));
+        int x2 = cx + (int)(radius * cosf(angleRad));
+        int y2 = cy - (int)(radius * sinf(angleRad));
+        tft.drawLine(x1, y1, x2, y2, 0x39C7 /* cinza medio, RGB565 */);
+    }
+
+    // Agulha, na posicao proporcional ao valor atual.
+    float needleRad = (startDeg - t * (startDeg - endDeg)) * PI / 180.0f;
+    int nx = cx + (int)((radius - 3) * cosf(needleRad));
+    int ny = cy - (int)((radius - 3) * sinf(needleRad));
+    tft.drawLine(cx, cy, nx, ny, ST77XX_YELLOW);
+    tft.fillCircle(cx, cy, 3, ST77XX_YELLOW);
+
+    // Numeros min/max nas pontas do arco.
+    tft.setTextColor(ST77XX_WHITE);
+    tft.setTextSize(1);
+    tft.setCursor(cx - radius - 2, cy + 6);
+    tft.print(minVal);
+    tft.setCursor(cx + radius - 14, cy + 6);
+    tft.print(maxVal);
+}
+
+// Tela de configuracao: pad atual / item / valor (com velocimetro), com uma
+// mensagem transiente ao entrar/sair do modo de edicao (mesmo padrao dos
+// exemplos originais da lib com OLED, so que redesenhando a tela toda a
+// cada mudanca).
+void renderConfigView()
 {
     static const char *lastPad = nullptr;
     static const char *lastItem = nullptr;
     static int lastValue = -1;
+
+    if (forceScreenRedraw)
+    {
+        lastPad = nullptr; // forca recalcular tudo abaixo (viemos da tela inicial)
+        forceScreenRedraw = false;
+    }
 
     if (button.GetEditState())
     {
@@ -431,10 +545,82 @@ void renderScreen()
     tft.setCursor(4, 40);
     tft.print(item);
 
+    int minVal, maxVal;
+    getGaugeRange(item, minVal, maxVal);
+    drawGauge(value, minVal, maxVal, 64, 78, 24);
+
     tft.setTextColor(ST77XX_WHITE);
     tft.setTextSize(3);
-    tft.setCursor(4, 60);
+    tft.setCursor(36, 96);
     tft.print(value);
+}
+
+// Tela inicial (Fase I): grid 8x4 com o numero de cada pad, acende
+// verde por PAD_FLASH_MS quando o pad e' atingido (qualquer zona). So
+// redesenha tudo (custoso via SPI) a cada GRID_REDRAW_MS ou na primeira
+// vez que entra nesse modo - o suficiente pra parecer responsivo sem
+// redesenhar em todo loop().
+void renderHomeGrid()
+{
+    static unsigned long lastDrawMs = 0;
+    unsigned long now = millis();
+
+    if (!forceScreenRedraw && (now - lastDrawMs) < GRID_REDRAW_MS)
+    {
+        return;
+    }
+    forceScreenRedraw = false;
+    lastDrawMs = now;
+
+    tft.fillScreen(ST77XX_BLACK);
+
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        byte col = i % GRID_COLS;
+        byte row = i / GRID_COLS;
+        int x = col * GRID_CELL_W;
+        int y = row * GRID_CELL_H;
+        bool hot = now < padHitFlashUntil[i];
+
+        if (hot)
+        {
+            tft.fillRect(x + 1, y + 1, GRID_CELL_W - 2, GRID_CELL_H - 2, ST77XX_GREEN);
+        }
+        else
+        {
+            tft.drawRect(x + 1, y + 1, GRID_CELL_W - 2, GRID_CELL_H - 2, 0x39C7 /* cinza medio */);
+        }
+
+        tft.setTextColor(hot ? ST77XX_BLACK : ST77XX_WHITE);
+        tft.setTextSize(1);
+        tft.setCursor(x + 3, y + (GRID_CELL_H / 2) - 3);
+        tft.print(i + 1);
+    }
+}
+
+// Alterna entre a tela inicial (grid) e a tela de configuracao, conforme
+// tempo desde a ultima interacao com os encoders (lastConfigInteractionMs,
+// atualizado em processConfigInput()). Ver
+// docs/01-decisoes-arquiteturais.md.
+void renderScreen()
+{
+    bool wantHome = (millis() - lastConfigInteractionMs) > IDLE_TIMEOUT_MS;
+
+    static bool showingHome = false;
+    if (wantHome != showingHome)
+    {
+        showingHome = wantHome;
+        forceScreenRedraw = true;
+    }
+
+    if (showingHome)
+    {
+        renderHomeGrid();
+    }
+    else
+    {
+        renderConfigView();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -853,6 +1039,16 @@ void handlePadResult(byte i)
 {
     HelloDrum &pad = pads[i];
     byte type = padTypes[i];
+
+    if (pad.hit || pad.hitRim || pad.hitCup)
+    {
+        // qualquer zona atingida acende o quadrado desse pad na tela
+        // inicial (grid) - ver renderHomeGrid(). hitRim/hitCup ficam
+        // sempre false pros tipos que nao os usam (ver
+        // docs/01-decisoes-arquiteturais.md), entao esse check unico serve
+        // pra todos os tipos sem precisar duplicar por case.
+        padHitFlashUntil[i] = millis() + PAD_FLASH_MS;
+    }
 
     switch (type)
     {
