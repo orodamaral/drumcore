@@ -29,10 +29,23 @@ export class MockDevice {
   private pads: MockPad[]
   private primary: boolean[]
   private hitTimer: ReturnType<typeof setInterval> | null = null
+  private bleTimer: ReturnType<typeof setInterval> | null = null
+  private bleConnected = false
 
   constructor(padCount = 32) {
     this.pads = Array.from({ length: padCount }, (_, i) => this.freshPad(i))
     this.primary = Array.from({ length: padCount }, () => true)
+  }
+
+  private deviceInfo(): IncomingMessage {
+    return {
+      type: 'device_info',
+      pads: this.pads.length,
+      muxes: 4,
+      midi_channel: 10,
+      ble_connected: this.bleConnected,
+      firmware_phase: 'H (demo)'
+    }
   }
 
   private freshPad(i: number): MockPad {
@@ -82,11 +95,26 @@ export class MockDevice {
       const note = this.noteForZone(pad, zone)
       this.emit({ type: 'hit', pad: pad.pad, zone, note, velocity })
     }, 1800)
+
+    // Simula pareamento/desconexao BLE-MIDI periodicamente, so pra
+    // demonstrar o indicador na UI - no firmware real isso reflete um
+    // dispositivo de verdade pareando (ver docs/01-decisoes-arquiteturais.md).
+    this.bleTimer = setInterval(() => {
+      this.bleConnected = !this.bleConnected
+      this.emit({
+        type: 'log',
+        message: this.bleConnected ? 'BLE-MIDI: dispositivo pareado. (simulado)' : 'BLE-MIDI: dispositivo desconectado. (simulado)'
+      })
+      this.emit(this.deviceInfo())
+    }, 15000)
   }
 
   stop(): void {
     if (this.hitTimer) clearInterval(this.hitTimer)
     this.hitTimer = null
+    if (this.bleTimer) clearInterval(this.bleTimer)
+    this.bleTimer = null
+    this.bleConnected = false
   }
 
   private randomZoneFor(pad: MockPad): string {
@@ -132,13 +160,7 @@ export class MockDevice {
         break
 
       case 'get_device_info':
-        this.emit({
-          type: 'device_info',
-          pads: this.pads.length,
-          muxes: 4,
-          midi_channel: 10,
-          firmware_phase: 'G (demo)'
-        })
+        this.emit(this.deviceInfo())
         break
 
       case 'get_all_pads':

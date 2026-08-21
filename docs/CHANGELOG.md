@@ -2,6 +2,31 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-08-20 (13)
+
+- **Fase H**: BLE-MIDI (`lathoub/Arduino-BLE-MIDI`, stack Bluedroid já
+  embutida no core) como transporte adicional — todo hit/CC vai tanto pro
+  USB-MIDI quanto pro BLE-MIDI simultaneamente (não é um "modo" a escolher;
+  o BLE só efetivamente transmite quando há um dispositivo pareado).
+  Confirmei a API lendo os próprios exemplos vendorizados da HelloDrum-lib
+  (`examples/BLE/`, `examples/MUX/muxSensing_BLEMIDI`) e o código-fonte da
+  lib BLE-MIDI direto do GitHub antes de implementar.
+- Nome anunciado via Bluetooth: `"HelloDrum"`. Instância nomeada `BleMidi`
+  (em vez do nome padrão `MIDI` que a lib usaria, que colidiria com o `MIDI`
+  já usado pro USB).
+- `device_info` ganhou o campo `ble_connected`; o firmware reenvia
+  `device_info` automaticamente a cada pareamento/desconexão BLE, sem o app
+  precisar dar poll. App desktop: indicador "BLE ●/○" na barra superior,
+  modo demo simula pareamento/desconexão periódicos pra exercitar a UI.
+- Consumo de recursos antes/depois: RAM 11.9%→19.8%, Flash 10.9%→30.0% (a
+  stack Bluedroid é pesada em flash, mas ainda com bastante margem no board
+  N8 de 8MB). Build validado, nenhum warning novo.
+- **Nada testado em hardware real** — essa fase é mais especulativa que as
+  anteriores: compilar não garante que USB-MIDI e BLE-MIDI realmente
+  coexistem em runtime sem briga de stack, nem que o pareamento (a lib usa
+  bonding BLE) funciona de primeira em iOS/Android/Windows. Detalhes em
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+
 ## 2026-08-20 (12)
 
 - Criado esquemático visual de ligação (ESP32-S3 ↔ 4x CD4051 ↔ tela TFT ↔ 2

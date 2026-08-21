@@ -70,12 +70,12 @@ Cada linha enviada pelo módulo é um objeto com um campo `type`.
 | `type` | Campos | Quando é enviado |
 |---|---|---|
 | `pong` | — | Resposta a `ping`. |
-| `device_info` | `pads`, `muxes`, `midi_channel`, `firmware_phase` | Resposta a `get_device_info`. |
+| `device_info` | `pads`, `muxes`, `midi_channel`, `ble_connected`, `firmware_phase` | Resposta a `get_device_info`. `ble_connected` indica se há um dispositivo pareado via BLE-MIDI naquele momento (ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)) — o módulo envia MIDI por USB e BLE simultaneamente, não é um "modo" a escolher. |
 | `pad_config` | Ver abaixo | Resposta a `get_pad`/`get_all_pads`, e a `set_pad` bem-sucedido em `label`/`pad_type`/`hihat_pedal_channel`. |
 | `hit` | `pad`, `zone`, `note`, `velocity` | Sempre que um pad é atingido (telemetria em tempo real). `zone` varia por tipo: `"bow"`, `"head"`, `"rim"`, `"edge"`, `"cup"`, `"open"`, `"closed"`, `"pedal"` ou `"choke"` — ver [05-tipos-de-sensor.md](05-tipos-de-sensor.md). |
 | `ack` | `cmd`, `pad`, `field`, `value` | Confirmação de um `set_pad` com campo numérico simples. |
 | `error` | `cmd`, `message` | Comando inválido, campo desconhecido, valor fora da faixa, canal consumido, JSON malformado, etc. |
-| `log` | `message` | Mensagens informativas de boot/diagnóstico (antes eram `Serial.println` livres). |
+| `log` | `message` | Mensagens informativas de boot/diagnóstico (antes eram `Serial.println` livres), e também pareamento/desconexão do BLE-MIDI. |
 
 ### `pad_config` — canal consumido (`primary: false`)
 

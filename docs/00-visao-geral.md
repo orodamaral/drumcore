@@ -12,7 +12,9 @@ cérebro do sistema, capaz de:
    [05-tipos-de-sensor.md](05-tipos-de-sensor.md).
 2. Converter os sinais lidos em eventos MIDI (Note On/Off, Control Change) e
    enviá-los via **USB-MIDI nativo** (classe de dispositivo USB, plug-and-play,
-   sem necessidade de driver ou software intermediário como Hairless MIDI).
+   sem necessidade de driver ou software intermediário como Hairless MIDI) e
+   também via **BLE-MIDI** (Bluetooth, simultâneo ao USB) — ver
+   [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
 3. Prever uma tela (TFT ST7735 128x128, SPI) e 2 encoders rotativos com chave
    para configuração do módulo diretamente no hardware (sensibilidade,
    threshold, curva, nota MIDI de cada pad, etc).
@@ -25,6 +27,7 @@ cérebro do sistema, capaz de:
 |---|---|---|
 | 1a | Leitura de 32 canais via 4x CD4051 (sensing) | Compilado, sem teste em hardware real |
 | 1b | Envio MIDI-USB nativo (Note On/Off) | Compilado, sem teste em hardware real |
+| 1c | Envio BLE-MIDI simultâneo ao USB (Bluetooth) | Compilado, sem teste em hardware real |
 | 2 | Tela TFT (ST7735) + 2 encoders rotativos de configuração | Compilado, sem teste em hardware real |
 | 2b | Persistência EEPROM (config por pad sobrevive a reboot) | Compilado, sem teste em hardware real |
 | 2c | Protocolo serial NDJSON (módulo ↔ app desktop) | Compilado, sem teste em hardware real |

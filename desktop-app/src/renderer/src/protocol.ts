@@ -175,7 +175,13 @@ export type PadConfig = PadConfigPrimary | PadConfigConsumed
 
 export type IncomingMessage =
   | { type: 'pong' }
-  | ({ type: 'device_info' } & { pads: number; muxes: number; midi_channel: number; firmware_phase: string })
+  | ({ type: 'device_info' } & {
+      pads: number
+      muxes: number
+      midi_channel: number
+      ble_connected: boolean
+      firmware_phase: string
+    })
   | ({ type: 'pad_config' } & PadConfig)
   | ({ type: 'hit' } & { pad: number; zone: string; note: number; velocity: number })
   | { type: 'ack'; cmd: string; pad: number; field: string; value: number }

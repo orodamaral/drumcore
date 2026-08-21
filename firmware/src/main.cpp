@@ -25,6 +25,10 @@
   topologia de canais - cada pad pode consumir 1 ou 2 canais adjacentes
   (nenhum tipo dessa lib usa mais de 2), configuravel so pelo app desktop.
   Ver docs/01-decisoes-arquiteturais.md e docs/05-tipos-de-sensor.md.
+  Fase H: BLE-MIDI (lathoub/Arduino-BLE-MIDI, stack Bluedroid do proprio
+  core) como transporte adicional - todo hit/CC vai tanto pro USB-MIDI
+  (Fase B) quanto pro BLE-MIDI simultaneamente, quando houver um
+  dispositivo pareado. Ver docs/01-decisoes-arquiteturais.md.
 
   Pinout usado aqui: ver docs/02-hardware.md (marcado como proposto/a validar
   no hardware real).
@@ -43,6 +47,8 @@
 #include <Adafruit_ST7735.h>
 #include <RotaryEncoder.h>
 #include <ArduinoJson.h>
+#include <BLEMIDI_Transport.h>
+#include <hardware/BLEMIDI_ESP32.h>
 
 // ---------------------------------------------------------------------------
 // Pinout - CD4051 (4x, 32 canais)
@@ -193,6 +199,18 @@ HelloDrum pads[NUM_PADS] = {
 // esse objeto como transporte.
 Adafruit_USBD_MIDI usb_midi;
 MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
+
+// Instancia BLE-MIDI (Fase H) - transporte adicional, em paralelo ao
+// USB-MIDI acima. A macro cria dois objetos: o transporte "BLEBleMidi"
+// (usado so pra registrar os callbacks de conexao abaixo) e a interface
+// MIDI "BleMidi" (usada pra enviar notas/CC, igual a "MIDI" do USB).
+// "HelloDrum" e' o nome anunciado via Bluetooth (o que aparece ao pareear).
+BLEMIDI_CREATE_INSTANCE("HelloDrum", BleMidi)
+
+// true enquanto houver um dispositivo pareado via BLE-MIDI - os callbacks
+// que atualizam essa flag (onBleMidiConnected/onBleMidiDisconnected) sao
+// definidos mais abaixo (dependem de sendLog(), que ainda nao existe aqui).
+volatile bool bleMidiConnected = false;
 
 // Tela TFT (driver ST7735S, variante 1.44" 128x128 - ver Modelo Tela.jpeg).
 Adafruit_ST7735 tft(TFT_CS, TFT_DC, TFT_RST);
@@ -481,8 +499,30 @@ void sendDeviceInfo()
     doc["pads"] = NUM_PADS;
     doc["muxes"] = NUM_MUX;
     doc["midi_channel"] = DRUM_MIDI_CHANNEL;
-    doc["firmware_phase"] = "G";
+    doc["ble_connected"] = bleMidiConnected;
+    doc["firmware_phase"] = "H";
     sendJsonLine(doc);
+}
+
+// Callbacks do BLE-MIDI (Fase H) - chamados pela stack BLE (Bluedroid,
+// roda numa task propria) quando um central conecta/desconecta. Registrados
+// em setup() via BLEBleMidi.setHandleConnected()/setHandleDisconnected() -
+// "BLEBleMidi" e' o nome do objeto de transporte que a macro
+// BLEMIDI_CREATE_INSTANCE("HelloDrum", BleMidi) gera automaticamente
+// (prefixo "BLE" + nome da instancia). Reenviam device_info pra o app saber
+// do novo estado sem precisar dar poll.
+void onBleMidiConnected()
+{
+    bleMidiConnected = true;
+    sendLog("BLE-MIDI: dispositivo pareado.");
+    sendDeviceInfo();
+}
+
+void onBleMidiDisconnected()
+{
+    bleMidiConnected = false;
+    sendLog("BLE-MIDI: dispositivo desconectado.");
+    sendDeviceInfo();
 }
 
 void sendPadConfig(byte padIndex)
@@ -776,12 +816,33 @@ void pollSerialCommands()
     }
 }
 
+// Envia pros dois transportes que estiverem disponiveis (USB e/ou BLE) -
+// nao sao mutuamente exclusivos, ver docs/01-decisoes-arquiteturais.md.
 void fireNote(byte note, byte velocity)
 {
     if (TinyUSBDevice.mounted())
     {
         MIDI.sendNoteOn(note, velocity, DRUM_MIDI_CHANNEL);
         MIDI.sendNoteOff(note, 0, DRUM_MIDI_CHANNEL);
+    }
+
+    if (bleMidiConnected)
+    {
+        BleMidi.sendNoteOn(note, velocity, DRUM_MIDI_CHANNEL);
+        BleMidi.sendNoteOff(note, 0, DRUM_MIDI_CHANNEL);
+    }
+}
+
+void fireControlChange(byte cc, byte value)
+{
+    if (TinyUSBDevice.mounted())
+    {
+        MIDI.sendControlChange(cc, value, DRUM_MIDI_CHANNEL);
+    }
+
+    if (bleMidiConnected)
+    {
+        BleMidi.sendControlChange(cc, value, DRUM_MIDI_CHANNEL);
     }
 }
 
@@ -910,10 +971,7 @@ void handlePadResult(byte i)
         if (pad.pedalCC != lastPedalCC[i])
         {
             lastPedalCC[i] = pad.pedalCC;
-            if (TinyUSBDevice.mounted())
-            {
-                MIDI.sendControlChange(HIHAT_PEDAL_CC, pad.pedalCC, DRUM_MIDI_CHANNEL);
-            }
+            fireControlChange(HIHAT_PEDAL_CC, pad.pedalCC);
         }
         break;
     }
@@ -978,6 +1036,14 @@ void setup()
         delay(10);
         TinyUSBDevice.attach();
     }
+
+    // BLE-MIDI (Fase H) - transporte adicional, em paralelo ao USB-MIDI
+    // acima. "BLEBleMidi" e' o objeto de transporte (nao a interface MIDI)
+    // gerado pela macro BLEMIDI_CREATE_INSTANCE - so ele expõe os callbacks
+    // de conexao.
+    BLEBleMidi.setHandleConnected(onBleMidiConnected);
+    BLEBleMidi.setHandleDisconnected(onBleMidiDisconnected);
+    BleMidi.begin();
 
     if (!EEPROM_ESP.begin(EEPROM_SIZE))
     {
@@ -1064,7 +1130,7 @@ void setup()
     tft.fillScreen(ST77XX_BLACK);
 
     delay(500);
-    sendLog("HelloDrum - Fase G: tipos de sensor + protocolo serial + EEPROM + tela TFT + 2 encoders (32 canais, 4x CD4051, USB-MIDI)");
+    sendLog("HelloDrum - Fase H: BLE-MIDI + tipos de sensor + protocolo serial + EEPROM + tela TFT + 2 encoders (32 canais, 4x CD4051, USB-MIDI + BLE-MIDI)");
 }
 
 void loop()

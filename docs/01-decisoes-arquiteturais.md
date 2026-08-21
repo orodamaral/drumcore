@@ -490,3 +490,74 @@ chimbal físico 2 zonas de verdade.
   canal 20): descartado por complexidade desproporcional ao ganho — a
   convenção "sempre o canal seguinte" já resolve o problema de forma simples
   e o usuário só precisa cabear o 2º sensor no próximo slot do MUX.
+
+## 2026-08-20 — BLE-MIDI como transporte adicional (simultâneo ao USB-MIDI)
+
+**Decisão**: enviar todo hit/CC tanto por USB-MIDI (Fase B) quanto por
+BLE-MIDI, simultaneamente — não é um "modo" que se escolhe, os dois
+transportes ficam sempre ativos, e o BLE só efetivamente transmite quando
+houver um dispositivo pareado.
+
+**Contexto/Racional**: o pedido foi "implementar também o modo BLE-MIDI" —
+li isso como "adicionar", não "substituir". Como os dois transportes usam
+periféricos independentes do ESP32-S3 (USB OTG vs. rádio 2.4GHz) e a
+biblioteca já expõe um jeito de saber se há alguém pareado
+(`setHandleConnected`/`setHandleDisconnected`), simultâneo ficou mais simples
+de implementar do que um esquema de troca de modo (que exigiria persistir
+"modo atual" em EEPROM, expor isso no protocolo/app, etc. — sem ganho claro
+já que os dois cabem ao mesmo tempo).
+
+**Biblioteca escolhida**: `lathoub/Arduino-BLE-MIDI` (BLE-MIDI 1.0), a mesma
+que os exemplos originais da HelloDrum-lib já usam
+(`examples/BLE/SimpleSensing_BLEMIDI`, `examples/MUX/muxSensing_BLEMIDI`) —
+confirmei a API lendo esses exemplos e o código-fonte da lib direto do
+GitHub antes de escrever qualquer coisa. Ela usa a mesma `MIDI Library`
+(FortySevenEffects) que já usávamos pro USB, só troca o transporte — mesmo
+padrão da Fase B (Adafruit_USBD_MIDI).
+
+**Bluedroid em vez de NimBLE**: essa lib suporta duas stacks BLE no ESP32,
+escolhidas por qual header se inclui — `hardware/BLEMIDI_ESP32.h` (Bluedroid,
+já embutida no core `arduino-esp32`, sem dependência extra) ou
+`hardware/BLEMIDI_ESP32_NimBLE.h` (precisa da lib `h2zero/NimBLE-Arduino`
+separada). Escolhemos Bluedroid pra não introduzir mais uma dependência de
+terceiros com compatibilidade de versão incerta com o nosso core (3.20017) —
+NimBLE é mais leve em RAM/flash e geralmente recomendado pra projetos novos,
+mas nosso orçamento de recursos já está confortável mesmo com Bluedroid (ver
+abaixo), então não valeu a pena o risco extra agora. Trocar pra NimBLE depois
+é só troca de `#include`, as macros (`BLEMIDI_CREATE_INSTANCE`) são
+idênticas nos dois casos.
+
+**Evitando colisão de nomes**: `BLEMIDI_CREATE_DEFAULT_INSTANCE()` (usada
+nos exemplos originais) cria uma variável chamada `MIDI` — colidiria com o
+`MIDI` que já usamos pro USB. Usamos `BLEMIDI_CREATE_INSTANCE("HelloDrum",
+BleMidi)` em vez do default — isso nomeia a interface MIDI como `BleMidi` e,
+como efeito colateral da macro, cria também um objeto de transporte chamado
+`BLEBleMidi` (prefixo `BLE` + nome escolhido) — é nele (não em `BleMidi`)
+que registramos os callbacks de conexão. `"HelloDrum"` é o nome anunciado via
+Bluetooth (o que aparece ao parear).
+
+**Consumo de recursos**: build antes de adicionar BLE — RAM 11.9%, Flash
+10.9%. **Depois** — RAM 19.8%, Flash 30.0% (de 327680 bytes de RAM e
+3342336 bytes de Flash disponíveis). O salto grande é em Flash (a stack
+Bluedroid é pesada), mas
+ainda com bastante margem no board N8 (8MB). Nenhum conflito de biblioteca
+apareceu — o `library.properties` da BLE-MIDI declara `NimBLE-Arduino` e
+`ArduinoBLE` como dependências (usadas só pelas variantes de hardware que
+não usamos), mas o LDF do PlatformIO (modo "chain", segue os `#include`
+reais) não tentou puxar nenhuma das duas.
+
+**Status de validação**: build compila e linka com sucesso. **Nada testado
+em hardware real** — isso é ainda mais especulativo que as fases anteriores,
+porque compilar não garante que USB-MIDI e BLE-MIDI realmente coexistem em
+runtime sem briga de stack/watchdog, nem que o pareamento (a lib usa
+`ESP_LE_AUTH_BOND`, ou seja, pede bonding) funciona de primeira em iOS/
+Android/Windows. Validar isso é o próximo passo assim que houver hardware.
+
+**Alternativas descartadas**:
+- Modo único selecionável (USB *ou* BLE, não os dois): descartado — mais
+  complexidade (persistência de modo, UI pra trocar) sem necessidade, já
+  que os dois transportes cabem ativos ao mesmo tempo sem conflito aparente.
+- NimBLE-Arduino: mais leve, mas dependência extra de terceiros sem
+  necessidade imediata dado que Bluedroid já cabe confortavelmente no
+  orçamento de flash/RAM atual — guardado como alternativa se surgir
+  problema real de recursos ou estabilidade em hardware.

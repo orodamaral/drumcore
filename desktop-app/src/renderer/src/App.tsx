@@ -20,6 +20,7 @@ export default function App() {
   const [selectedPad, setSelectedPad] = useState(0)
   const [lastHit, setLastHit] = useState<{ pad: number; velocity: number } | null>(null)
   const [log, setLog] = useState<string[]>([])
+  const [bleConnected, setBleConnected] = useState(false)
 
   const mockDeviceRef = useRef<MockDevice | null>(null)
 
@@ -32,6 +33,9 @@ export default function App() {
     if (!message) return
 
     switch (message.type) {
+      case 'device_info':
+        setBleConnected(message.ble_connected)
+        break
       case 'pad_config':
         setPads((prev) => ({ ...prev, [message.pad]: message }))
         break
@@ -84,6 +88,7 @@ export default function App() {
       mockDeviceRef.current = mock
       setConnected(true)
       send({ cmd: 'get_all_pads' })
+      send({ cmd: 'get_device_info' })
       return
     }
 
@@ -91,6 +96,7 @@ export default function App() {
     await window.helloDrum.connect(selectedPort)
     setConnected(true)
     send({ cmd: 'get_all_pads' })
+    send({ cmd: 'get_device_info' })
   }
 
   async function disconnect(): Promise<void> {
@@ -103,6 +109,7 @@ export default function App() {
     setConnected(false)
     setPads({})
     setLastHit(null)
+    setBleConnected(false)
   }
 
   function updatePadField(pad: number, field: PadField, value: number): void {
@@ -166,7 +173,16 @@ export default function App() {
             <button onClick={disconnect}>Desconectar</button>
           )}
 
-          <span className={`status-dot ${connected ? 'online' : 'offline'}`} />
+          <span className={`status-dot ${connected ? 'online' : 'offline'}`} title="Conexão serial (USB)" />
+
+          {connected && (
+            <span
+              className={`ble-badge ${bleConnected ? 'online' : 'offline'}`}
+              title={bleConnected ? 'Dispositivo pareado via BLE-MIDI' : 'Sem dispositivo pareado via BLE-MIDI'}
+            >
+              BLE {bleConnected ? '●' : '○'}
+            </span>
+          )}
         </div>
       </header>
 

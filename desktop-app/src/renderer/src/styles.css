@@ -79,6 +79,22 @@ button:disabled {
   box-shadow: 0 0 6px #3ddc84;
 }
 
+.ble-badge {
+  font-family: 'IBM Plex Mono', 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid #383e4a;
+  color: #8b90a0;
+  background: #262b34;
+}
+
+.ble-badge.online {
+  color: #5b8cff;
+  border-color: #5b8cff;
+  background: color-mix(in srgb, #5b8cff 15%, #262b34);
+}
+
 .tabbar {
   display: flex;
   gap: 4px;
