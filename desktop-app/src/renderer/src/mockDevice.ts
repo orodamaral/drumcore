@@ -1,4 +1,6 @@
 import {
+  AutoTuneStatus,
+  AUTOTUNE_HIT_TARGET,
   PadConfigPrimary,
   PadField,
   PAD_FIELDS,
@@ -16,6 +18,10 @@ function usesSecondChannel(type: PadType): boolean {
   return PAD_TYPE_META[type].channels === 2
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
 interface MockPad extends PadConfigPrimary {
   openHH: boolean // estado simulado do pedal (so relevante pros tipos "pedal")
 }
@@ -31,7 +37,15 @@ export class MockDevice {
   private hitTimer: ReturnType<typeof setInterval> | null = null
   private bleTimer: ReturnType<typeof setInterval> | null = null
   private bleConnected = false
-  private global = { midi_channel: 10, midi_output: 2 as 0 | 1 | 2, brightness: 80 }
+  private global = { midi_channel: 10, midi_output: 2 as 0 | 1 | 2 }
+
+  // Simulacao do assistente de auto-tune (Fase O) - so' pra demonstrar a UI,
+  // nao ha' ADC de verdade pra medir. Ver docs/01-decisoes-arquiteturais.md.
+  private autoTuneTimer: ReturnType<typeof setTimeout> | null = null
+  private autoTunePad = -1
+  private autoTuneHitCount = 0
+  private autoTuneResult: { sensitivity: number; threshold: number; scan_time: number; mask_time: number } | null =
+    null
 
   constructor(padCount = 32) {
     this.pads = Array.from({ length: padCount }, (_, i) => this.freshPad(i))
@@ -42,9 +56,9 @@ export class MockDevice {
     return {
       type: 'device_info',
       pads: this.pads.length,
-      muxes: 4,
+      muxes: 2, // 2x CD4067/HW-178 (16 canais cada) desde a Fase K
       ble_connected: this.bleConnected,
-      firmware_phase: 'J (demo)',
+      firmware_phase: 'K (demo)',
       ...this.global
     }
   }
@@ -62,12 +76,17 @@ export class MockDevice {
       scan_time: 10,
       mask_time: 30,
       curve_type: 0,
+      retrigger: 0,
+      gain: 100,
+      xtalk: 0,
+      xtalk_group: 0,
       rim_sensitivity: 20,
       rim_threshold: 3,
       note: 36 + i,
       note_rim: 39,
       note_cup: 40,
       hihat_pedal_channel: -1,
+      enabled: true,
       openHH: true
     }
   }
@@ -88,7 +107,7 @@ export class MockDevice {
   start(): void {
     this.emit({ type: 'log', message: 'Modo demo ativo - simulando o modulo, sem hardware real conectado.' })
     this.hitTimer = setInterval(() => {
-      const candidates = this.pads.filter((_, i) => this.primary[i])
+      const candidates = this.pads.filter((p, i) => this.primary[i] && p.enabled)
       if (candidates.length === 0) return
       const pad = candidates[Math.floor(Math.random() * candidates.length)]
       const velocity = 40 + Math.floor(Math.random() * 87)
@@ -116,6 +135,9 @@ export class MockDevice {
     if (this.bleTimer) clearInterval(this.bleTimer)
     this.bleTimer = null
     this.bleConnected = false
+    if (this.autoTuneTimer) clearTimeout(this.autoTuneTimer)
+    this.autoTuneTimer = null
+    this.autoTunePad = -1
   }
 
   private randomZoneFor(pad: MockPad): string {
@@ -135,12 +157,17 @@ export class MockDevice {
       case 6:
       case 7:
         return 'pedal'
+      case 8: {
+        const r = Math.random()
+        return r < 0.6 ? 'head' : r < 0.85 ? 'edge' : 'rim'
+      }
       default:
         return 'bow'
     }
   }
 
   private noteForZone(pad: MockPad, zone: string): number {
+    if (zone === 'rim' && pad.pad_type === 8) return pad.note_cup // caixa 3 zonas: "rim" usa o slot note_cup
     if (zone === 'rim' || zone === 'edge' || zone === 'closed') return pad.note_rim
     if (zone === 'cup') return pad.note_cup
     return pad.note
@@ -192,6 +219,18 @@ export class MockDevice {
         this.emit(this.deviceInfo())
         break
 
+      case 'start_autotune':
+        this.handleStartAutotune(cmd)
+        break
+
+      case 'cancel_autotune':
+        this.handleCancelAutotune()
+        break
+
+      case 'apply_autotune':
+        this.handleApplyAutotune()
+        break
+
       default:
         this.emit({ type: 'error', cmd: cmd.cmd ?? '?', message: 'unknown_cmd' })
     }
@@ -204,8 +243,6 @@ export class MockDevice {
       this.global.midi_channel = value
     } else if (cmd.field === 'midi_output' && value >= 0 && value <= 2) {
       this.global.midi_output = value as 0 | 1 | 2
-    } else if (cmd.field === 'brightness' && value >= 10 && value <= 100) {
-      this.global.brightness = value
     } else {
       this.emit({ type: 'error', cmd: 'set_global', message: 'value_out_of_range' })
       return
@@ -213,6 +250,95 @@ export class MockDevice {
 
     this.emit({ type: 'ack', cmd: 'set_global', pad: -1, field: cmd.field ?? '', value })
     this.emit(this.deviceInfo())
+  }
+
+  private emitAutoTuneStatus(state: AutoTuneStatus['state'], extra: Partial<AutoTuneStatus> = {}): void {
+    this.emit({
+      type: 'autotune_status',
+      pad: this.autoTunePad,
+      state,
+      hit_count: this.autoTuneHitCount,
+      hit_target: AUTOTUNE_HIT_TARGET,
+      ...extra
+    })
+  }
+
+  private handleStartAutotune(cmd: { pad?: number }): void {
+    const pad = typeof cmd.pad === 'number' ? this.pads[cmd.pad] : undefined
+    if (!pad || cmd.pad === undefined || !this.primary[cmd.pad]) {
+      this.emit({ type: 'error', cmd: 'start_autotune', message: 'invalid_pad' })
+      return
+    }
+    if (!pad.enabled) {
+      this.emit({ type: 'error', cmd: 'start_autotune', message: 'channel_disabled' })
+      return
+    }
+
+    if (this.autoTuneTimer) clearTimeout(this.autoTuneTimer)
+    this.autoTunePad = cmd.pad
+    this.autoTuneHitCount = 0
+    this.autoTuneResult = null
+
+    this.emitAutoTuneStatus('noise')
+
+    // Fase "ruido" simulada - so' espera um tempo fixo, nao ha' ADC de
+    // verdade pra medir nada aqui.
+    this.autoTuneTimer = setTimeout(() => {
+      this.emitAutoTuneStatus('collecting')
+      this.scheduleAutoTuneHit()
+    }, 2000)
+  }
+
+  // Simula um golpe chegando a cada ~600-900ms, ate' completar AUTOTUNE_HIT_TARGET.
+  private scheduleAutoTuneHit(): void {
+    this.autoTuneTimer = setTimeout(() => {
+      this.autoTuneHitCount++
+      if (this.autoTuneHitCount >= AUTOTUNE_HIT_TARGET) {
+        const pad = this.pads[this.autoTunePad]
+        // Resultado plausivel - so' pra demonstrar a UI (variacao pequena
+        // em torno do que o pad ja tinha configurado).
+        this.autoTuneResult = {
+          sensitivity: clamp(pad.sensitivity + Math.round((Math.random() - 0.5) * 10), 1, 100),
+          threshold: clamp(pad.threshold + Math.round((Math.random() - 0.5) * 6), 1, 100),
+          scan_time: clamp(8 + Math.round(Math.random() * 6), 1, 100),
+          mask_time: clamp(25 + Math.round(Math.random() * 10), 1, 100)
+        }
+        this.emitAutoTuneStatus('done', this.autoTuneResult)
+      } else {
+        this.emitAutoTuneStatus('collecting')
+        this.scheduleAutoTuneHit()
+      }
+    }, 600 + Math.random() * 300)
+  }
+
+  private handleCancelAutotune(): void {
+    if (this.autoTuneTimer) clearTimeout(this.autoTuneTimer)
+    this.autoTuneTimer = null
+    const pad = this.autoTunePad
+    this.autoTunePad = -1
+    this.autoTuneHitCount = 0
+    this.autoTuneResult = null
+    this.emit({ type: 'autotune_status', pad, state: 'idle', hit_count: 0, hit_target: AUTOTUNE_HIT_TARGET })
+  }
+
+  private handleApplyAutotune(): void {
+    if (this.autoTunePad < 0 || !this.autoTuneResult) {
+      this.emit({ type: 'error', cmd: 'apply_autotune', message: 'not_ready' })
+      return
+    }
+    const pad = this.pads[this.autoTunePad]
+    pad.sensitivity = this.autoTuneResult.sensitivity
+    pad.threshold = this.autoTuneResult.threshold
+    pad.scan_time = this.autoTuneResult.scan_time
+    pad.mask_time = this.autoTuneResult.mask_time
+
+    const appliedPad = this.autoTunePad
+    this.autoTunePad = -1
+    this.autoTuneHitCount = 0
+    this.autoTuneResult = null
+
+    this.emit({ type: 'autotune_status', pad: appliedPad, state: 'idle', hit_count: 0, hit_target: AUTOTUNE_HIT_TARGET })
+    this.emitPadConfig(appliedPad)
   }
 
   private emitPadConfig(i: number): void {
@@ -281,6 +407,17 @@ export class MockDevice {
         }
         pad.hihat_pedal_channel = value
       }
+      this.emitPadConfig(pad.pad)
+      return
+    }
+
+    if (cmd.field === 'enabled') {
+      const value = typeof cmd.value === 'number' ? cmd.value : -1
+      if (value !== 0 && value !== 1) {
+        this.emit({ type: 'error', cmd: 'set_pad', message: 'value_out_of_range' })
+        return
+      }
+      pad.enabled = value === 1
       this.emitPadConfig(pad.pad)
       return
     }

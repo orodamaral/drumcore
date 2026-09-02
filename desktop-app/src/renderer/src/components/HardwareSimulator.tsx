@@ -20,9 +20,17 @@ import {
 // verdade / modo demo via protocolo serial).
 const PAD_COUNT = 32
 
-type Page = 'LIVE' | 'PADS' | 'PAD_EDIT' | 'SIGNAL' | 'GLOBAL'
+type Page = 'LIVE' | 'PADS' | 'PAD_EDIT' | 'SIGNAL' | 'GLOBAL' | 'AUTOTUNE'
 
-const GLOBAL_ROWS = ['MIDI CH', 'SAIDA', 'BRILHO', 'SALVAR', 'RESTAURAR'] as const
+const GLOBAL_ROWS = ['MIDI CH', 'SAIDA', 'SALVAR', 'RESTAURAR'] as const
+
+const AUTOTUNE_HIT_TARGET = 8
+
+interface AutoTuneSimState {
+  phase: 'noise' | 'collecting' | 'done'
+  hitCount: number
+  result?: { sensitivity: number; threshold: number; scan_time: number; mask_time: number }
+}
 
 function blankPad(i: number, type: PadType = 0): PadConfigPrimary {
   return {
@@ -37,12 +45,17 @@ function blankPad(i: number, type: PadType = 0): PadConfigPrimary {
     scan_time: 10,
     mask_time: 30,
     curve_type: 0,
+    retrigger: 0,
+    gain: 100,
+    xtalk: 0,
+    xtalk_group: 0,
     rim_sensitivity: 20,
     rim_threshold: 3,
     note: 36 + i,
     note_rim: 39,
     note_cup: 40,
-    hihat_pedal_channel: -1
+    hihat_pedal_channel: -1,
+    enabled: true
   }
 }
 
@@ -64,14 +77,14 @@ function createPreviewPads(): PadConfig[] {
     }
   }
 
-  set(0, 0, 'Caixa')
-  set(1, 1, 'Tom 1')
-  set(3, 3, 'Crash')
-  set(5, 5, 'Ride')
-  set(7, 4, 'Chimbal', { hihat_pedal_channel: 9 })
-  set(9, 6, 'Pedal Chimbal')
-  set(10, 2, 'Chimbal Simples', { hihat_pedal_channel: 9 })
-  set(11, 7, 'Pedal Óptico')
+  set(0, 8, 'Caixa')
+  set(2, 1, 'Tom 1')
+  set(4, 3, 'Crash')
+  set(6, 5, 'Ride')
+  set(8, 4, 'Chimbal', { hihat_pedal_channel: 10 })
+  set(10, 6, 'Pedal Chimbal')
+  set(11, 2, 'Chimbal Simples', { hihat_pedal_channel: 10 })
+  set(12, 7, 'Pedal Óptico')
 
   return pads
 }
@@ -102,7 +115,7 @@ function fakeEnvelope(seed: number, threshold: number): number[] {
 
 export default function HardwareSimulator() {
   const [pads, setPads] = useState<PadConfig[]>(() => createPreviewPads())
-  const [global, setGlobalState] = useState<GlobalConfig>({ midi_channel: 10, midi_output: 2, brightness: 80 })
+  const [global, setGlobalState] = useState<GlobalConfig>({ midi_channel: 10, midi_output: 2 })
 
   const [page, setPage] = useState<Page>('LIVE')
   const [padsListSelection, setPadsListSelection] = useState(0)
@@ -113,6 +126,7 @@ export default function HardwareSimulator() {
   const [globalSelection, setGlobalSelection] = useState(0)
   const [globalEditing, setGlobalEditing] = useState(false)
   const [toast, setToast] = useState<{ line1: string; line2: string } | null>(null)
+  const [autoTune, setAutoTune] = useState<AutoTuneSimState | null>(null)
   const [padHitFlash, setPadHitFlash] = useState<number[]>(() => new Array(PAD_COUNT).fill(0))
   const [enc1Angle, setEnc1Angle] = useState(0)
   const [enc2Angle, setEnc2Angle] = useState(0)
@@ -125,6 +139,8 @@ export default function HardwareSimulator() {
   const lastEnc2StepMs = useRef(0)
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
   const signalSeed = useRef(0)
+  const autoTuneTimer = useRef<ReturnType<typeof setTimeout>>()
+  const autoTuneHitCountRef = useRef(0) // fonte da verdade pro agendamento - autoTune (state) e' so' pra render
 
   const pad = pads[editPadIndex]
   const fields = fieldsFor(pad)
@@ -136,7 +152,76 @@ export default function HardwareSimulator() {
   }
 
   function goToLive(): void {
+    if (autoTuneTimer.current) clearTimeout(autoTuneTimer.current)
+    setAutoTune(null)
     setPage('LIVE')
+  }
+
+  // Assistente de auto-calibração (Fase O) - versão ilustrativa, sem ADC
+  // real: uma sequência de tempos fixos simula a fase de ruído e a
+  // contagem de golpes, terminando num resultado plausível. Ver
+  // docs/01-decisoes-arquiteturais.md.
+  function startAutoTuneSim(): void {
+    if (autoTuneTimer.current) clearTimeout(autoTuneTimer.current)
+    autoTuneHitCountRef.current = 0
+    setAutoTune({ phase: 'noise', hitCount: 0 })
+    setPage('AUTOTUNE')
+
+    autoTuneTimer.current = setTimeout(() => {
+      setAutoTune({ phase: 'collecting', hitCount: 0 })
+      scheduleAutoTuneHit()
+    }, 2000)
+  }
+
+  function scheduleAutoTuneHit(): void {
+    autoTuneTimer.current = setTimeout(() => {
+      autoTuneHitCountRef.current += 1
+      const hitCount = autoTuneHitCountRef.current
+
+      if (hitCount >= AUTOTUNE_HIT_TARGET) {
+        const current = pads[editPadIndex]
+        const base = current?.primary ? current : blankPad(editPadIndex)
+        setAutoTune({
+          phase: 'done',
+          hitCount,
+          result: {
+            sensitivity: clamp(base.sensitivity + Math.round((Math.random() - 0.5) * 10), 1, 100),
+            threshold: clamp(base.threshold + Math.round((Math.random() - 0.5) * 6), 1, 100),
+            scan_time: clamp(8 + Math.round(Math.random() * 6), 1, 100),
+            mask_time: clamp(25 + Math.round(Math.random() * 10), 1, 100)
+          }
+        })
+      } else {
+        setAutoTune({ phase: 'collecting', hitCount })
+        scheduleAutoTuneHit()
+      }
+    }, 600 + Math.random() * 300)
+  }
+
+  function cancelAutoTuneSim(): void {
+    if (autoTuneTimer.current) clearTimeout(autoTuneTimer.current)
+    setAutoTune(null)
+    setPage('PAD_EDIT')
+  }
+
+  function applyAutoTuneSim(): void {
+    if (autoTune?.phase !== 'done' || !autoTune.result) return
+    const result = autoTune.result
+    setPads((prev) => {
+      const next = [...prev]
+      const target = next[editPadIndex]
+      if (!target.primary) return prev
+      next[editPadIndex] = {
+        ...target,
+        sensitivity: result.sensitivity,
+        threshold: result.threshold,
+        scan_time: result.scan_time,
+        mask_time: result.mask_time
+      }
+      return next
+    })
+    setAutoTune(null)
+    setPage('PAD_EDIT')
   }
 
   function accelStep(min: number, max: number): number {
@@ -147,6 +232,7 @@ export default function HardwareSimulator() {
   }
 
   function onEnc1Rotate(delta: number): void {
+    if (page === 'AUTOTUNE') return // sem navegacao durante o assistente
     setEnc1Angle((a) => a + delta * 36)
 
     if (page === 'PAD_EDIT' || page === 'SIGNAL') {
@@ -163,6 +249,7 @@ export default function HardwareSimulator() {
   }
 
   function onEnc1Click(): void {
+    if (page === 'AUTOTUNE') return
     if (page === 'PAD_EDIT') {
       signalSeed.current += 1
       setPage('SIGNAL')
@@ -188,11 +275,28 @@ export default function HardwareSimulator() {
     }
 
     if (page === 'PAD_EDIT') {
+      // Item 0 e' sempre o toggle "ATIVO" (nao e' um PadField, igual ao
+      // FIELD_ENABLED do firmware - ver docs/01-decisoes-arquiteturais.md,
+      // Fase N). Itens 1..fields.length sao os campos normais do tipo
+      // (fields[i-1]). O ultimo item e' sempre "CALIBRAR" (FIELD_AUTOTUNE,
+      // Fase O) - so' dispara no clique, nao entra em modo de edicao.
+      const totalItems = 2 + fields.length
       if (!editingValue) {
-        setEditItemIndex((i) => clamp(i + delta, 0, Math.max(0, fields.length - 1)))
+        setEditItemIndex((i) => clamp(i + delta, 0, Math.max(0, totalItems - 1)))
         return
       }
-      const spec = fields[editItemIndex]
+      if (editItemIndex === 0) {
+        setPads((prev) => {
+          const next = [...prev]
+          const target = next[editPadIndex]
+          if (!target.primary) return prev
+          const value = clamp((target.enabled ? 1 : 0) + delta, 0, 1)
+          next[editPadIndex] = { ...target, enabled: value === 1 }
+          return next
+        })
+        return
+      }
+      const spec = fields[editItemIndex - 1]
       if (!spec || !pad?.primary) return
       const step = accelStep(spec.min, spec.max) * (delta > 0 ? 1 : -1)
       setPads((prev) => {
@@ -218,8 +322,6 @@ export default function HardwareSimulator() {
             return { ...g, midi_channel: clamp(g.midi_channel + step, 1, 16) }
           case 1:
             return { ...g, midi_output: (((g.midi_output + step) % 3 + 3) % 3) as GlobalConfig['midi_output'] }
-          case 2:
-            return { ...g, brightness: clamp(g.brightness + step * 10, 10, 100) }
           default:
             return g
         }
@@ -236,18 +338,27 @@ export default function HardwareSimulator() {
       return
     }
     if (page === 'PAD_EDIT') {
+      if (editItemIndex === fields.length + 1) {
+        if (pad?.primary && pad.enabled) {
+          startAutoTuneSim()
+        }
+        return
+      }
       setEditingValue((v) => !v)
       return
     }
     if (page === 'GLOBAL') {
-      if (globalSelection === 3) {
+      if (globalSelection === 2) {
         showToast('SALVO', '32 PADS (SIMULADO)')
-      } else if (globalSelection === 4) {
+      } else if (globalSelection === 3) {
         setPads(createPreviewPads())
         showToast('RESTAURADO', '32 PADS (SIMULADO)')
       } else {
         setGlobalEditing((v) => !v)
       }
+    }
+    if (page === 'AUTOTUNE' && autoTune?.phase === 'done') {
+      applyAutoTuneSim()
     }
   }
 
@@ -260,6 +371,7 @@ export default function HardwareSimulator() {
     setGlobalEditing(false)
     if (page === 'PAD_EDIT') setPage('PADS')
     else if (page === 'SIGNAL') setPage('PAD_EDIT')
+    else if (page === 'AUTOTUNE') cancelAutoTuneSim()
   }
 
   function bindEncoder(
@@ -298,8 +410,10 @@ export default function HardwareSimulator() {
   const enc2Handlers = bindEncoder(holdFired2, holdTimer2, onEnc2Rotate, onEnc2Click, onEnc2Hold)
 
   function resetPreview(): void {
+    if (autoTuneTimer.current) clearTimeout(autoTuneTimer.current)
+    setAutoTune(null)
     setPads(createPreviewPads())
-    setGlobalState({ midi_channel: 10, midi_output: 2, brightness: 80 })
+    setGlobalState({ midi_channel: 10, midi_output: 2 })
     setPage('LIVE')
     setPadsListSelection(0)
     setPadsListTop(0)
@@ -315,7 +429,7 @@ export default function HardwareSimulator() {
   // tela LIVE, não afeta as outras telas.
   useEffect(() => {
     const t = setInterval(() => {
-      const primaryIndices = pads.map((p, i) => (p?.primary ? i : -1)).filter((i) => i >= 0)
+      const primaryIndices = pads.map((p, i) => (p?.primary && p.enabled ? i : -1)).filter((i) => i >= 0)
       if (primaryIndices.length === 0) return
       const i = primaryIndices[Math.floor(Math.random() * primaryIndices.length)]
       setPadHitFlash((prev) => {
@@ -330,6 +444,12 @@ export default function HardwareSimulator() {
   useEffect(() => {
     const t = setInterval(() => forceTick((n) => n + 1), 60)
     return () => clearInterval(t)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (autoTuneTimer.current) clearTimeout(autoTuneTimer.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -355,21 +475,24 @@ export default function HardwareSimulator() {
       <div className="hw-sim-device">
         <div className="hw-sim-screen">
           <div className="hw-sim-titlebar">
-            <span className="hw-sim-title-left">{page}</span>
+            <span className="hw-sim-title-left">{page === 'AUTOTUNE' ? 'CALIBRAR' : page}</span>
             <span className="hw-sim-title-right">
               {page === 'LIVE' && 'USB · BLE'}
               {page === 'PADS' && `${padsListSelection + 1}/32`}
-              {(page === 'PAD_EDIT' || page === 'SIGNAL') && `PAD ${editPadIndex + 1}`}
+              {(page === 'PAD_EDIT' || page === 'SIGNAL' || page === 'AUTOTUNE') && `PAD ${editPadIndex + 1}`}
             </span>
           </div>
 
           {page === 'LIVE' && (
             <div className="hw-sim-grid">
-              {Array.from({ length: PAD_COUNT }, (_, i) => (
-                <div key={i} className={`hw-sim-cell${now < padHitFlash[i] ? ' hot' : ''}`}>
-                  {String(i + 1).padStart(2, '0')}
-                </div>
-              ))}
+              {Array.from({ length: PAD_COUNT }, (_, i) => {
+                const off = pads[i]?.primary && !pads[i].enabled
+                return (
+                  <div key={i} className={`hw-sim-cell${now < padHitFlash[i] ? ' hot' : ''}${off ? ' off' : ''}`}>
+                    {String(i + 1).padStart(2, '0')}
+                  </div>
+                )
+              })}
             </div>
           )}
 
@@ -379,11 +502,12 @@ export default function HardwareSimulator() {
                 const i = padsListTop + row
                 const p = pads[i]
                 const sel = i === padsListSelection
+                const off = Boolean(p?.primary && !p.enabled)
                 return (
                   <div key={i} className={`hw-sim-list-row${sel ? ' selected' : ''}`}>
                     <span className="hw-sim-list-idx">P{String(i + 1).padStart(2, '0')}</span>
                     <span className="hw-sim-list-type">{p?.primary ? PAD_TYPE_META[p.pad_type].label.split(' ')[0] : '--'}</span>
-                    <span className="hw-sim-list-note">{p?.primary ? `N${p.note}` : ''}</span>
+                    <span className={`hw-sim-list-note${off ? ' off' : ''}`}>{off ? 'OFF' : p?.primary ? `N${p.note}` : ''}</span>
                   </div>
                 )
               })}
@@ -403,8 +527,14 @@ export default function HardwareSimulator() {
                   <div className="hw-sim-list-row hw-sim-list-row-info">
                     <span className="hw-sim-list-type">{PAD_TYPE_META[pad.pad_type].label}</span>
                   </div>
+                  <div className={`hw-sim-list-row${editItemIndex === 0 ? ' selected' : ''}`}>
+                    <span className="hw-sim-list-type">ATIVO</span>
+                    <span className={`hw-sim-value-box${editItemIndex === 0 && editingValue ? ' editing' : ''}`}>
+                      {pad.enabled ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
                   {fields.map((spec, i) => {
-                    const sel = i === editItemIndex
+                    const sel = i + 1 === editItemIndex
                     const editingThis = sel && editingValue
                     return (
                       <div key={spec.field} className={`hw-sim-list-row${sel ? ' selected' : ''}`}>
@@ -413,6 +543,10 @@ export default function HardwareSimulator() {
                       </div>
                     )
                   })}
+                  <div className={`hw-sim-list-row${editItemIndex === fields.length + 1 ? ' selected' : ''}`}>
+                    <span className="hw-sim-list-type">CALIBRAR</span>
+                    <span className="hw-sim-value-box">INICIAR&gt;</span>
+                  </div>
                 </>
               )}
             </div>
@@ -451,9 +585,7 @@ export default function HardwareSimulator() {
                     ? String(global.midi_channel)
                     : i === 1
                       ? MIDI_OUTPUT_LABELS[global.midi_output]
-                      : i === 2
-                        ? `${global.brightness}%`
-                        : '>'
+                      : '>'
                 return (
                   <div key={label} className={`hw-sim-list-row${sel ? ' selected' : ''}`}>
                     <span className="hw-sim-list-type">{label}</span>
@@ -461,6 +593,53 @@ export default function HardwareSimulator() {
                   </div>
                 )
               })}
+            </div>
+          )}
+
+          {page === 'AUTOTUNE' && autoTune && (
+            <div className="hw-sim-autotune">
+              {autoTune.phase === 'noise' && (
+                <>
+                  <p className="hw-sim-autotune-title">OUÇA O RUÍDO</p>
+                  <p className="hw-sim-autotune-sub">não toque no pad...</p>
+                </>
+              )}
+              {autoTune.phase === 'collecting' && (
+                <>
+                  <p className="hw-sim-autotune-title">BATA NO PAD</p>
+                  <p className="hw-sim-autotune-sub">intensidade normal/forte</p>
+                  <p className="hw-sim-autotune-count">
+                    {autoTune.hitCount}/{AUTOTUNE_HIT_TARGET}
+                  </p>
+                  <div className="hw-sim-autotune-bar">
+                    <div
+                      className="hw-sim-autotune-bar-fill"
+                      style={{ width: `${(100 * autoTune.hitCount) / AUTOTUNE_HIT_TARGET}%` }}
+                    />
+                  </div>
+                </>
+              )}
+              {autoTune.phase === 'done' && autoTune.result && (
+                <>
+                  <p className="hw-sim-autotune-title done">CALIBRADO!</p>
+                  <div className="hw-sim-list-row">
+                    <span className="hw-sim-list-type">SENSIB</span>
+                    <span className="hw-sim-value-box">{autoTune.result.sensitivity}</span>
+                  </div>
+                  <div className="hw-sim-list-row">
+                    <span className="hw-sim-list-type">THRESH</span>
+                    <span className="hw-sim-value-box">{autoTune.result.threshold}</span>
+                  </div>
+                  <div className="hw-sim-list-row">
+                    <span className="hw-sim-list-type">SCAN</span>
+                    <span className="hw-sim-value-box">{autoTune.result.scan_time}</span>
+                  </div>
+                  <div className="hw-sim-list-row">
+                    <span className="hw-sim-list-type">MASK</span>
+                    <span className="hw-sim-value-box">{autoTune.result.mask_time}</span>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -475,6 +654,12 @@ export default function HardwareSimulator() {
             <div className="hw-sim-footer">
               <span>ENC2 GIRA VALOR</span>
               <span className="hw-sim-footer-accent">PUSH OK</span>
+            </div>
+          )}
+          {page === 'AUTOTUNE' && (
+            <div className="hw-sim-footer">
+              <span>{autoTune?.phase === 'done' ? 'PUSH APLICA' : 'HOLD CANCELA'}</span>
+              {autoTune?.phase === 'done' && <span className="hw-sim-footer-accent">HOLD SAI</span>}
             </div>
           )}
         </div>

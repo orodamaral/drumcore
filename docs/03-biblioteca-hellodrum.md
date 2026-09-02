@@ -10,8 +10,9 @@ Git deste projeto).
 - **Sensores**: piezo simples e duplo (com aro/rim), prato 2 zonas (Roland) e 3
   zonas (Yamaha), hi-hat via SoftPot/FSR/óptico (TCRT5000) ou controlador Roland
   VH10/VH11, pedal de hi-hat (FSR).
-- **Multiplexação**: `HelloDrumMUX_4051` (8 canais) e `HelloDrumMUX_4067` (16
-  canais) — ver detalhes de como múltiplos MUXes coexistem em
+- **Multiplexação**: `HelloDrumMUX_4051` (8 canais, usada nas Fases A-J) e
+  `HelloDrumMUX_4067` (16 canais, usada a partir da Fase K com o breakout
+  "HW-178") — ver detalhes de como múltiplos MUXes coexistem em
   [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
 - **Curvas de velocidade**: `setCurve(curveType)`.
 - **Persistência**: `loadMemory()`/`initMemory()`, usando EEPROM (no ESP32, via
@@ -32,19 +33,25 @@ Git deste projeto).
 ## API principal (classe `HelloDrum`, uso via MUX)
 
 ```cpp
-HelloDrumMUX_4051 mux(S0, S1, S2, pinADC);   // um por chip CD4051
-HelloDrum pad(indiceNoRawValue);              // ver cálculo do índice abaixo
+HelloDrumMUX_4067 mux(S0, S1, S2, S3, pinADC); // um por placa HW-178/CD4067
+HelloDrum pad(indiceNoRawValue);                // ver cálculo do índice abaixo
 
 // no loop():
-mux.scan();               // popula rawValue[] para os 8 canais deste MUX
+mux.scan();               // popula rawValue[] para os 16 canais deste MUX
 pad.settingEnable();      // habilita fluxo de configuração via botões físicos
 pad.singlePiezoMUX();     // faz a leitura/detecção de hit para este pad
 if (pad.hit) { /* pad.note, pad.velocity disponíveis */ }
 ```
 
-**Cálculo do índice do pad quando há múltiplos MUX**: `pin1 = muxNum * 8 + canal_local`,
-onde `muxNum` é a ordem de instanciação do `HelloDrumMUX_4051` (0 para o 1º MUX
-criado no código, 1 para o 2º, etc — ver `muxIndex` estático em `hellodrum.cpp`).
+**Cálculo do índice do pad quando há múltiplos MUX**: `pin1 = muxNum * canais_por_mux + canal_local`
+(`canais_por_mux` = 8 para `HelloDrumMUX_4051`, 16 para `HelloDrumMUX_4067` —
+ver `scan()` de cada classe em `hellodrum.cpp`), onde `muxNum` é a ordem de
+instanciação (0 para o 1º MUX criado no código, 1 para o 2º, etc — ver
+`muxIndex` estático, **compartilhado entre as duas classes**: misturar
+`HelloDrumMUX_4051` e `HelloDrumMUX_4067` no mesmo projeto exigiria calcular
+os offsets manualmente, já que não é uma numeração por tipo). No nosso
+projeto (Fase K) usamos só `HelloDrumMUX_4067`, então `muxNum` vai só de 0 a
+1.
 
 ## MIDI: USB-MIDI nativo no ESP32-S3 (Fase B — resolvido)
 
@@ -190,3 +197,38 @@ a definição real (`int rawValue[...]`, sem `static`/`extern`) movida para
 exatamente uma vez no programa inteiro, e esse arquivo já é o "dono" natural
 do estado interno de sensing. Nenhuma lógica de `scan()` foi alterada, só a
 visibilidade do array.
+
+### 2026-08-22 — Campo `retrigger` + limiar decrescente no `mask_time` (Fase P)
+
+**Arquivos**: `firmware/lib/HelloDrum-arduino-Library/src/hellodrum.h` e
+`hellodrum.cpp`
+
+**Motivo**: pesquisa no microDRUM/nanoDRUM (Fase O) encontrou o parâmetro
+`Retrigger` — dentro do `mask_time`, deixa passar uma pancada nova se ela
+for bem mais forte que a anterior, em vez do corte rígido que a lib sempre
+teve. Diferente das mudanças anteriores (bug de índice, linkage), essa é a
+**primeira mudança de lógica de sensing** feita nessa lib vendorizada — foi
+necessária porque as variáveis que controlam o `mask_time`
+(`time_hit`/`time_end`/`loopTimes`) são **privadas** na classe `HelloDrum`,
+sem nenhum jeito de implementar isso de fora sem reescrever a detecção de
+hit inteira em `main.cpp`.
+
+**O que foi feito**: novo campo público `byte retrigger` (default `0` nos
+dois construtores — `0` preserva o comportamento original exatamente, sem
+nenhuma mudança de resultado pra quem não usar o recurso). Nas 4 funções
+que fazem a comparação `if (time_hit - time_end < maskTime) { return; }`
+(`singlePiezoSensing()`, `dualPiezoSensing()`, `cymbal2zoneSensing()`,
+`cymbal3zoneSensing()` — confirmado por grep que são os únicos 4 pontos
+desse padrão no arquivo inteiro; `HHMUX()`/`HH2zoneMUX()` e variantes já
+chamam essas mesmas 4 funções por dentro, então também são cobertas), o
+`return` incondicional passou a ser condicional: quando `retrigger > 0`,
+calcula um piso que decai com o tempo desde o pico anterior
+(`piso = pico_anterior - tempo_decorrido*(retrigger+1)/16`, mesma fórmula
+do microDRUM) e só corta se a pancada nova não superar esse piso. O código
+original já tinha o comentário `//compare time to cancel retrigger`
+exatamente nesse ponto — o autor original parece já ter tido esse conceito
+em mente, só nunca chegou a implementar o decaimento.
+
+Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase P)
+pro racional completo, incluindo por que `Gain` e `Xtalk` (implementados na
+mesma fase) **não** precisaram de nenhuma mudança na lib.

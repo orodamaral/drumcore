@@ -1,0 +1,397 @@
+<title>Ligação do Piezo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #101418;
+    --surface: #1e252b;
+    --surface-2: #262f37;
+    --line: #38434d;
+    --txt-dim: #7a8894;
+    --txt: #e6edf3;
+    --accent: #00d2ff;
+    --edit: #ffb020;
+    --hit: #ff7a1a;
+    --ok: #35d07f;
+    --font-display: 'Space Grotesk', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--txt);
+    font-family: var(--font-display);
+    line-height: 1.5;
+  }
+
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(28px, 4.5vw, 38px);
+    font-weight: 700;
+    margin: 0 0 12px;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+
+  .lede {
+    color: var(--txt-dim);
+    font-size: 16px;
+    max-width: 62ch;
+    margin: 0 0 40px;
+  }
+
+  h2 {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 56px 0 16px;
+    text-wrap: balance;
+  }
+
+  h2 .step {
+    display: inline-block;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    margin-right: 10px;
+  }
+
+  p { margin: 0 0 16px; max-width: 66ch; }
+
+  code, .mono {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+
+  .pin {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  /* ---- componentes ---- */
+  .parts {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .parts li {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .parts .qty {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .parts .name { font-size: 15px; }
+  .parts .note { color: var(--txt-dim); font-size: 13px; }
+
+  /* ---- esquematico ---- */
+  figure {
+    margin: 24px 0 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px 16px 12px;
+  }
+  figure svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    color: var(--txt-dim);
+  }
+  figcaption {
+    font-size: 13px;
+    color: var(--txt-dim);
+    padding: 12px 6px 4px;
+    border-top: 1px solid var(--line);
+    margin-top: 12px;
+  }
+  figcaption b { color: var(--txt); font-weight: 600; }
+
+  /* ---- tabela de pinos ---- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 24px;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  th {
+    color: var(--txt-dim);
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  td.mono { color: var(--accent); }
+
+  /* ---- callout ---- */
+  .callout {
+    margin: 40px 0;
+    border: 1px solid #4a3a1a;
+    background: linear-gradient(180deg, rgba(255,176,32,0.08), rgba(255,176,32,0.03));
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .callout .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--edit);
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .callout .tag::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--edit);
+    display: inline-block;
+  }
+  .callout h3 {
+    font-size: 17px;
+    margin: 0 0 10px;
+    font-weight: 600;
+  }
+  .callout p { margin: 0 0 12px; max-width: none; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout ol { margin: 0 0 12px; padding-left: 20px; }
+  .callout li { margin-bottom: 6px; }
+
+  .sources {
+    font-size: 13px;
+    color: var(--txt-dim);
+  }
+  .sources a { color: var(--accent); }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    color: var(--txt-dim);
+    font-size: 13px;
+  }
+</style>
+
+<div class="page">
+  <p class="eyebrow">DrumCore &middot; referência de hardware</p>
+  <h1>Ligação do sensor piezo (teste sem MUX)</h1>
+  <p class="lede">
+    Enquanto os 2x CD4067 não chegam, dá pra testar um pad dual-zone
+    (corpo + aro) ligando 2 piezos direto em 2 pinos do ESP32-S3 —
+    <span class="pin">GPIO17</span> e <span class="pin">GPIO18</span>.
+    Essa página cobre os componentes, o esquemático e um achado
+    importante no firmware que vale corrigir antes de testar.
+  </p>
+
+  <h2><span class="step">Componentes</span>Lista de compras</h2>
+  <ul class="parts">
+    <li>
+      <span class="qty">×2</span>
+      <span class="name">Sensor piezoelétrico (disco cerâmico, 2 fios)</span>
+      <span class="note">o mesmo tipo já usado nos outros pads</span>
+    </li>
+    <li>
+      <span class="qty">×2</span>
+      <span class="name">Resistor 100 kΩ, ¼ W</span>
+      <span class="note">um por piezo — não é opcional, ver abaixo</span>
+    </li>
+    <li>
+      <span class="qty">—</span>
+      <span class="name">Protoboard + jumpers</span>
+      <span class="note">ou solda direta nos fios do piezo</span>
+    </li>
+  </ul>
+
+  <h2><span class="step">Esquemático</span>Como ligar cada piezo</h2>
+  <p>
+    O resistor de 100 kΩ fica <b>em paralelo</b> com os dois terminais do
+    piezo — não em série. Ele é o que define o "repouso" do sensor: sem
+    ele, o pino do ESP32 fica flutuando (lê ruído, dispara sozinho); com
+    ele, o pino fica perto de 0&nbsp;V quando nada bate, e sobe quando o
+    piezo é atingido.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 820 470" role="img" aria-label="Esquemático de dois piezos, cada um com um resistor de 100 quiloohms em paralelo entre seus terminais, com o terminal de sinal indo para GPIO17 ou GPIO18 do ESP32-S3 e o terminal de terra de ambos ligado a um barramento GND comum.">
+      <defs>
+        <marker id="pad" markerWidth="10" markerHeight="10" refX="5" refY="5">
+          <circle cx="5" cy="5" r="4" fill="currentColor" />
+        </marker>
+      </defs>
+
+      <!-- Canal 1: corpo / GPIO17 -->
+      <g transform="translate(200,0)">
+        <text x="0" y="24" text-anchor="middle" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="currentColor">Piezo 1 — corpo</text>
+
+        <circle cx="0" cy="80" r="46" fill="none" stroke="currentColor" stroke-width="2.5"/>
+        <circle cx="0" cy="80" r="22" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.55"/>
+
+        <!-- leads saindo do piezo, abrindo pros dois trilhos -->
+        <path d="M 0 126 L 0 150" stroke="currentColor" stroke-width="2" fill="none"/>
+        <path d="M 0 150 L -60 150 L -60 176" stroke="currentColor" stroke-width="2" fill="none"/>
+        <path d="M 0 150 L 60 150 L 60 176" stroke="currentColor" stroke-width="2" fill="none"/>
+
+        <!-- trilho sinal (esquerda) -->
+        <line x1="-60" y1="176" x2="-60" y2="410" stroke="#00d2ff" stroke-width="2.5"/>
+        <!-- trilho GND (direita) -->
+        <line x1="60" y1="176" x2="60" y2="410" stroke="currentColor" stroke-width="2"/>
+
+        <!-- resistor 100k em paralelo, em ponte entre os dois trilhos -->
+        <rect x="-60" y="252" width="120" height="26" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="0" y="245" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="currentColor">100 kΩ</text>
+
+        <!-- terminal de sinal -->
+        <circle cx="-60" cy="410" r="4.5" fill="#00d2ff"/>
+        <text x="-60" y="436" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="600" fill="#00d2ff">GPIO17</text>
+
+        <!-- rotulo do trilho GND descendo ao barramento -->
+        <line x1="60" y1="410" x2="60" y2="430" stroke="currentColor" stroke-width="2"/>
+      </g>
+
+      <!-- Canal 2: aro / GPIO18 -->
+      <g transform="translate(620,0)">
+        <text x="0" y="24" text-anchor="middle" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="currentColor">Piezo 2 — aro</text>
+
+        <circle cx="0" cy="80" r="46" fill="none" stroke="currentColor" stroke-width="2.5"/>
+        <circle cx="0" cy="80" r="22" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.55"/>
+
+        <path d="M 0 126 L 0 150" stroke="currentColor" stroke-width="2" fill="none"/>
+        <path d="M 0 150 L -60 150 L -60 176" stroke="currentColor" stroke-width="2" fill="none"/>
+        <path d="M 0 150 L 60 150 L 60 176" stroke="currentColor" stroke-width="2" fill="none"/>
+
+        <line x1="-60" y1="176" x2="-60" y2="410" stroke="#00d2ff" stroke-width="2.5"/>
+        <line x1="60" y1="176" x2="60" y2="410" stroke="currentColor" stroke-width="2"/>
+
+        <rect x="-60" y="252" width="120" height="26" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="0" y="245" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="currentColor">100 kΩ</text>
+
+        <circle cx="-60" cy="410" r="4.5" fill="#00d2ff"/>
+        <text x="-60" y="436" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="600" fill="#00d2ff">GPIO18</text>
+
+        <line x1="60" y1="410" x2="60" y2="430" stroke="currentColor" stroke-width="2"/>
+      </g>
+
+      <!-- barramento GND comum -->
+      <line x1="260" y1="430" x2="680" y2="430" stroke="currentColor" stroke-width="2"/>
+      <line x1="470" y1="430" x2="470" y2="454" stroke="currentColor" stroke-width="2"/>
+      <circle cx="470" cy="454" r="4.5" fill="currentColor"/>
+      <text x="470" y="470" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="600" fill="currentColor">GND (comum)</text>
+    </svg>
+    <figcaption>
+      <b>Cada piezo tem seu próprio resistor de 100 kΩ em paralelo</b> entre
+      os dois terminais — o terminal de sinal (ciano) segue pro GPIO
+      correspondente, o de terra (cinza) junta com o do outro piezo num
+      GND comum do ESP32-S3. Sem o resistor, o pino fica boiando e
+      dispara sozinho — foi exatamente o sintoma visto no teste com fio
+      solto.
+    </figcaption>
+  </figure>
+
+  <h2><span class="step">Pinos</span>Referência rápida</h2>
+  <table>
+    <thead>
+      <tr><th>Sinal</th><th>Vai em</th><th>Papel</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Piezo 1 — sinal</td><td class="mono">GPIO17</td><td>corpo (zona "bow"), aparece como Pad 1</td></tr>
+      <tr><td>Piezo 2 — sinal</td><td class="mono">GPIO18</td><td>aro (zona "rim"), consumido pelo Pad 1</td></tr>
+      <tr><td>Ambos — terra</td><td class="mono">GND</td><td>qualquer GND do header esquerdo ou direito</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Já removi do firmware o <code>pull-up</code> interno que eu tinha ligado
+    nesses 2 pinos pro teste com fio solto — com o resistor de 100&nbsp;kΩ
+    de verdade, ele não é necessário (e atrapalharia o repouso perto de
+    0&nbsp;V que o resistor cria sozinho).
+  </p>
+
+  <div class="callout">
+    <span class="tag">Achado no firmware</span>
+    <h3>A fórmula de leitura do ESP32 pode estar invertendo o sensor</h3>
+    <p>
+      Fui atrás do circuito de referência oficial da
+      <code>HelloDrum-arduino-Library</code> pra desenhar o esquemático
+      acima, e reparei em algo que vale corrigir antes de testar com um
+      piezo de verdade:
+    </p>
+    <ol>
+      <li>
+        O circuito oficial ("Single Piezo" e "ESP32 with MUX", ambos do
+        próprio autor) mostra exatamente o que está desenhado acima —
+        resistor em paralelo, repouso perto de 0&nbsp;V, sinal <b>sobe</b>
+        numa batida.
+      </li>
+      <li>
+        Mas <code>hellodrum.cpp</code> tem um trecho só pra ESP32
+        (<code>piezoValue = 1023 - bruto/4</code>) que <b>inverte</b> essa
+        leitura — repouso (bruto perto de 0) vira o valor <i>mais alto</i>
+        possível, e uma batida forte (bruto perto do máximo) vira o valor
+        <i>mais baixo</i>. Com o circuito oficial, isso faria o pad disparar
+        parado e ficar quieto justamente quando bate.
+      </li>
+    </ol>
+    <p>
+      Ainda não testei isso com um piezo de verdade (só com fio
+      solto, que não prova nada sobre essa fórmula) — antes de você
+      montar o circuito acima, quer que eu corrija essa inversão no
+      firmware, ou prefere testar primeiro do jeito que está pra
+      confirmarmos o sintoma com dados reais?
+    </p>
+  </div>
+
+  <p class="sources">
+    Esquemático baseado nos diagramas oficiais "Single Piezo Circuit" e
+    "ESP32 with MUX" de
+    <a href="https://github.com/RyoKosaka/HelloDrum-arduino-Library" target="_blank" rel="noopener">RyoKosaka/HelloDrum-arduino-Library</a>
+    (<a href="https://open-e-drums.com" target="_blank" rel="noopener">open-e-drums.com</a>).
+  </p>
+
+  <footer>
+    DrumCore &middot; módulo MIDI-USB/BLE para bateria eletrônica &middot; ver <code>docs/02-hardware.md</code>
+  </footer>
+</div>

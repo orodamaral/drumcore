@@ -16,9 +16,9 @@ nem aqui.
 
 O hardware (tela TFT, encoders) ainda não chegou. Em vez de esperar pra
 poder ver/ajustar como a navegação e os textos ficam na tela pequena, esse
-simulador reproduz a mesma máquina de estados de `design/SPEC.md` (5 páginas
-em runtime — BOOT não entra, já que só dura a inicialização), rodando em
-TypeScript/React dentro do app desktop.
+simulador reproduz a mesma máquina de estados de `design/SPEC.md` (6 páginas
+em runtime — BOOT não entra, já que só dura a inicialização; AUTOTUNE
+adicionada na Fase O), rodando em TypeScript/React dentro do app desktop.
 
 ## Como usar
 
@@ -48,6 +48,12 @@ TypeScript/React dentro do app desktop.
 - **SIGNAL**: mostra um envelope **ilustrativo** (o navegador não tem ADC
   real pra ler) — só pra validar o layout da tela (eixos, VEL/PEAK,
   SCAN/MASK/THR), não os valores em si.
+- **AUTOTUNE** (Fase O): acessada pelo item `CALIBRAR`, sempre o último
+  campo de `PAD_EDIT`. Sequência **cronometrada** (não reage a cliques nos
+  encoders simulando "pancadas" de verdade) — 2s de "ruído", depois uma
+  contagem de golpes até 8 a intervalos de ~600-900ms, terminando num
+  resultado plausível pra sensibilidade/threshold/scan/mask. `PUSH` aplica
+  (só em RAM, mesma convenção do resto), hold de qualquer encoder cancela.
 - **GLOBAL**: canal MIDI, saída (USB/BLE/USB+BLE), brilho, e as ações
   SALVAR/RESTAURAR (mostram o mesmo toast "SALVO"/"RESTAURADO" da tela real,
   900ms). Sem "KIT" — não implementado, ver
@@ -86,6 +92,11 @@ TypeScript/React dentro do app desktop.
 - **Envelope da tela SIGNAL é sintético**: gerado por uma função local
   (`fakeEnvelope()`), não vem de nenhuma leitura real — o navegador não tem
   acesso a um ADC. Serve só pra validar o layout, não os valores.
+- **AUTOTUNE é uma sequência cronometrada, não uma calibração real**: os
+  "golpes" avançam sozinhos por temporizador (`setTimeout` em cadeia), sem
+  nenhuma leitura de sensor de verdade — mesma limitação do SIGNAL. O
+  resultado final é plausível (variação pequena em torno dos valores atuais
+  do pad), só pra demonstrar a UI do assistente.
 - **Hits simulados na tela LIVE**: o simulador dispara um hit aleatório num
   pad primário a cada 1.2s só pra exercitar o flash — no firmware real isso
   vem de sensing de verdade, sem intervalo fixo.

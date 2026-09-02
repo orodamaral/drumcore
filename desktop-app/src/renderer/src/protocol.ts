@@ -7,6 +7,10 @@ export const PAD_FIELDS = [
   'scan_time',
   'mask_time',
   'curve_type',
+  'retrigger',
+  'gain',
+  'xtalk',
+  'xtalk_group',
   'rim_sensitivity',
   'rim_threshold',
   'note',
@@ -19,7 +23,7 @@ export const PAD_LABEL_MAX_LEN = 19
 
 // Tipos de sensor - ver docs/05-tipos-de-sensor.md. Nenhum tipo usa mais de
 // 2 canais (limitação da própria lib base).
-export const PAD_TYPES = [0, 1, 2, 3, 4, 5, 6, 7] as const
+export const PAD_TYPES = [0, 1, 2, 3, 4, 5, 6, 7, 8] as const
 export type PadType = (typeof PAD_TYPES)[number]
 
 export interface FieldSpec {
@@ -34,7 +38,12 @@ const SENSING_FIELDS: FieldSpec[] = [
   { field: 'threshold', label: 'Threshold', min: 0, max: 100 },
   { field: 'scan_time', label: 'Scan time', min: 0, max: 100 },
   { field: 'mask_time', label: 'Mask time', min: 0, max: 100 },
-  { field: 'curve_type', label: 'Curva', min: 0, max: 4 }
+  { field: 'curve_type', label: 'Curva', min: 0, max: 4 },
+  // Fase P (inspirado no microDRUM/nanoDRUM - github.com/massimobernava/md-firmware):
+  { field: 'retrigger', label: 'Retrigger', min: 0, max: 100 },
+  { field: 'gain', label: 'Gain (calibração)', min: 10, max: 200 },
+  { field: 'xtalk', label: 'Crosstalk', min: 0, max: 100 },
+  { field: 'xtalk_group', label: 'Grupo de crosstalk', min: 0, max: 4 }
 ]
 
 export interface PadTypeMeta {
@@ -138,6 +147,20 @@ export const PAD_TYPE_META: Record<PadType, PadTypeMeta> = {
       { field: 'rim_sensitivity', label: 'Sensibilidade do pedal', min: 0, max: 100 },
       { field: 'note', label: 'Nota (pedal chick)', min: 0, max: 127 }
     ]
+  },
+  8: {
+    label: 'Caixa 3 zonas (centro/borda/aro)',
+    channels: 2,
+    isHihatCymbal: false,
+    isHihatPedal: false,
+    fields: [
+      ...SENSING_FIELDS,
+      { field: 'rim_sensitivity', label: 'Threshold da borda (edge)', min: 0, max: 100 },
+      { field: 'rim_threshold', label: 'Threshold do aro (rim)', min: 0, max: 100 },
+      { field: 'note', label: 'Nota (centro)', min: 0, max: 127 },
+      { field: 'note_rim', label: 'Nota (borda)', min: 0, max: 127 },
+      { field: 'note_cup', label: 'Nota (aro)', min: 0, max: 127 }
+    ]
   }
 }
 
@@ -155,6 +178,14 @@ export interface PadConfigPrimary {
   scan_time: number
   mask_time: number
   curve_type: number
+  /** 0 = desligado (mask_time é corte rígido). >0: pancada bem mais forte que a anterior pode furar o mask_time (Fase P). */
+  retrigger: number
+  /** 10-200 = 0.10x-2.00x, 100 = neutro. Multiplicador de calibração aplicado ao sensor antes do threshold (Fase P). */
+  gain: number
+  /** 0 = desligado. Suprime o hit se outro pad do mesmo xtalk_group bateu bem mais forte no mesmo instante (Fase P). */
+  xtalk: number
+  /** 0 = nenhum grupo. Pads no mesmo grupo se suprimem mutuamente via xtalk (Fase P). */
+  xtalk_group: number
   rim_sensitivity: number
   rim_threshold: number
   note: number
@@ -162,6 +193,8 @@ export interface PadConfigPrimary {
   note_cup: number
   /** -1 = nenhum pedal linkado. Só relevante pra pad_type 2 (chimbal simples) e 4 (chimbal 2 zonas). */
   hihat_pedal_channel: number
+  /** false = canal desligado (slot sem sensor físico conectado) - firmware ignora esse canal por completo (Fase N). */
+  enabled: boolean
 }
 
 export interface PadConfigConsumed {
@@ -186,7 +219,24 @@ export const MIDI_OUTPUT_LABELS: Record<MidiOutput, string> = {
 export interface GlobalConfig {
   midi_channel: number
   midi_output: MidiOutput
-  brightness: number
+}
+
+// Assistente de auto-calibração (Fase O, inspirado no "Auto Tune" do
+// microDRUM/nanoDRUM - github.com/massimobernava/md-firmware). "collecting"
+// cobre as sub-fases internas do firmware (waiting/rising/decaying/cooldown)
+// - o app só precisa saber "esperando o usuário bater" vs "processando".
+export const AUTOTUNE_HIT_TARGET = 8
+export type AutoTuneUiState = 'idle' | 'noise' | 'collecting' | 'done' | 'aborted'
+export interface AutoTuneStatus {
+  pad: number
+  state: AutoTuneUiState
+  hit_count: number
+  hit_target: number
+  sensitivity?: number
+  threshold?: number
+  scan_time?: number
+  mask_time?: number
+  reason?: 'timeout' | 'channel_disabled'
 }
 
 export type IncomingMessage =
@@ -196,12 +246,12 @@ export type IncomingMessage =
       muxes: number
       midi_channel: number
       midi_output: MidiOutput
-      brightness: number
       ble_connected: boolean
       firmware_phase: string
     })
   | ({ type: 'pad_config' } & PadConfig)
   | ({ type: 'hit' } & { pad: number; zone: string; note: number; velocity: number })
+  | ({ type: 'autotune_status' } & AutoTuneStatus)
   | { type: 'ack'; cmd: string; pad: number; field: string; value: number }
   | { type: 'error'; cmd: string; message: string }
   | { type: 'log'; message: string }

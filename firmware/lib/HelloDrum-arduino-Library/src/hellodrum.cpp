@@ -19,6 +19,29 @@
 #include "EEPROM.h"
 #endif
 
+// [MODIFICADO - projeto DrumCore, 2026-09-01] "PULLUP" (linha 11 acima) e'
+// a flag opcional da lib pra sensor com pull-up (comentada por padrao -
+// "UNTESTED" no comentario original do autor), mas o core arduino-esp32
+// ja' define uma macro PULLUP=0x04 pra outra coisa (flag de modo do
+// pinMode(), em esp32-hal-gpio.h, incluida via "Arduino.h" acima). Como
+// "#ifdef PULLUP" so' verifica se o NOME esta' definido (nao o valor), da'
+// sempre verdadeiro no ESP32 - TODOS os "#ifdef PULLUP" deste arquivo
+// ficavam sempre ativos, nunca "desligados" como o autor pretendia. Dois
+// efeitos reais encontrados: (1) begin() chamava pinMode(pin, INPUT_PULLUP)
+// usando pin1/pin2 como se fossem GPIOs de verdade - mas nesse projeto
+// (MUX 4067) esses valores sao' indices de canal (0-31), nao pinos
+// fisicos; quando o indice coincidia com um GPIO reservado internamente
+// (flash/PSRAM), pinMode() corrompia/travava o sistema - a causa raiz do
+// bug investigado na Fase Q (docs/01-decisoes-arquiteturais.md), padrao
+// "ok ate' uns 26, quebra a partir de 27+". (2) as funcoes de sensing
+// (singlePiezoSensing, dualPiezoSensing, etc.) invertiam a leitura do
+// sensor (1023/1024 - valor) incondicionalmente, o que teria deixado a
+// deteccao de toque errada assim que pads/MUX de verdade fossem
+// conectados. "#undef" aqui desliga os dois de uma vez, pra qualquer
+// "#ifdef PULLUP" no resto do arquivo passar a se comportar como o autor
+// pretendia (desligado por padrao).
+#undef PULLUP
+
 // [MODIFICADO - projeto DrumCore] definicao real do array declarado como
 // "extern" em hellodrum.h (era "static" ali, o que dava copias isoladas por
 // arquivo .cpp - ver comentario la). Precisa existir exatamente uma vez no
@@ -32,11 +55,41 @@ int rawValue[64];
 //Pad with a sensor.
 HelloDrum::HelloDrum(byte pin1)
 {
+  begin(pin1);
+}
+
+//Pad with 2 sensors.
+HelloDrum::HelloDrum(byte pin1, byte pin2)
+{
+  begin(pin1, pin2);
+}
+
+// [MODIFICADO - projeto DrumCore, 2026-08-31] construtor padrao trivial -
+// NAO mexe em padIndex/padNum (isso so acontece em begin(), chamado
+// explicitamente depois). Existe pra permitir "HelloDrum pads[N];" (array
+// default, sem lista de inicializadores) - ver hellodrum.h pro racional
+// completo (evita estourar a pilha da tarefa principal com N>=27).
+HelloDrum::HelloDrum()
+{
+}
+
+void HelloDrum::begin(byte pin1)
+{
   pin_1 = pin1;
 
-#ifdef PULLUP
-  pinMode(pin_1, INPUT_PULLUP);
-#endif
+  // [MODIFICADO - projeto DrumCore, 2026-09-01] bloco "#ifdef PULLUP"
+  // removido - causa raiz do travamento investigado na Fase Q
+  // (docs/01-decisoes-arquiteturais.md). "PULLUP" parece uma flag opcional
+  // da lib (comentada por padrao no topo do arquivo, "#define PULLUP //<--
+  // uncomment..."), mas o core arduino-esp32 ja define PULLUP=0x04 (flag
+  // de modo do pinMode(), em esp32-hal-gpio.h) - "#ifdef PULLUP" da'
+  // sempre verdadeiro no ESP32, diferente do que o autor "comentou". Isso
+  // chamava pinMode(pin_1, INPUT_PULLUP) em TODO begin(), usando pin1/pin2
+  // como se fossem GPIOs de verdade - mas nesse projeto (MUX 4067) esses
+  // valores sao' indices de canal do MUX (0-31), nao pinos fisicos. Quando
+  // o indice coincide com um GPIO reservado internamente (flash/PSRAM), o
+  // pinMode() corrompe/trava o sistema - exatamente o padrao "ok ate' uns
+  // 26, quebra a partir de 27+" da investigacao original.
 
   //initial EEPROM value
   sensitivity = 100;   //0
@@ -49,22 +102,21 @@ HelloDrum::HelloDrum(byte pin1)
   note = 38;           //7
   noteRim = 39;        //8
   noteCup = 40;        //9
+  retrigger = 0;       // Fase P - 0 = comportamento original (sem retrigger)
 
   //Give the instance a pad number.
   padNum = padIndex;
   padIndex++;
 }
 
-//Pad with 2 sensors.
-HelloDrum::HelloDrum(byte pin1, byte pin2)
+void HelloDrum::begin(byte pin1, byte pin2)
 {
   pin_1 = pin1;
   pin_2 = pin2;
 
-#ifdef PULLUP
-  pinMode(pin_1, INPUT_PULLUP);
-  pinMode(pin_2, INPUT_PULLUP);
-#endif
+  // [MODIFICADO - projeto DrumCore, 2026-09-01] bloco "#ifdef PULLUP"
+  // removido - mesmo motivo do begin(byte pin1) acima, ver comentario la'
+  // (colisao com o PULLUP=0x04 ja definido pelo core arduino-esp32).
 
   //initial value
   sensitivity = 100;   //0
@@ -77,6 +129,7 @@ HelloDrum::HelloDrum(byte pin1, byte pin2)
   note = 38;           //7
   noteRim = 39;        //8
   noteCup = 40;        //9
+  retrigger = 0;       // Fase P - 0 = comportamento original (sem retrigger)
 
   //Give the instance a pad number.
   padNum = padIndex;
@@ -152,7 +205,14 @@ HelloDrumKnob::HelloDrumKnob(byte pin1)
 void HelloDrum::singlePiezoSensing(byte sens, byte thre, byte scanTime, byte maskTime)
 {
 #ifdef ESP32
-  piezoValue = 1023 - piezoValue / 4;
+  // [MODIFICADO - projeto DrumCore, 2026-09-01] era "1023 - piezoValue / 4"
+  // (invertia a leitura) - so' a normalizacao de 12 pra 10 bits e' necessaria
+  // aqui, sem inverter. Confirmado com hardware real (piezo + resistor de
+  // 100k em paralelo, circuito oficial da lib - ver docs/01-decisoes-
+  // arquiteturais.md Fase S): em repouso o valor bruto fica baixo (perto de
+  // 0), sobe numa pancada. Com a inversao antiga, repouso virava o valor
+  // MAIS ALTO possivel - disparava hit sem parar, mesmo sem nenhum toque.
+  piezoValue = piezoValue / 4;
 #endif
 
 #ifdef PULLUP
@@ -173,13 +233,22 @@ void HelloDrum::singlePiezoSensing(byte sens, byte thre, byte scanTime, byte mas
     //compare time to cancel retrigger
     if (time_hit - time_end < maskTime)
     {
-      return; //Ignore the scan
+      // Fase P (DrumCore): retrigger==0 mantem o corte rigido original.
+      // >0 deixa passar dentro do mask_time so' se a pancada nova for bem
+      // mais forte que a anterior (limiar decrescente com o tempo).
+      bool allowRetrigger = false;
+      if (retrigger > 0)
+      {
+        int decayFloor = velocity - (int)((time_hit - time_end) * (retrigger + 1) / 16);
+        allowRetrigger = decayFloor > 0 && piezoValue > decayFloor;
+      }
+      if (!allowRetrigger)
+      {
+        return; //Ignore the scan
+      }
     }
-    else
-    {
-      velocity = piezoValue; //first peak
-      loopTimes = 1;         //start scan trigger
-    }
+    velocity = piezoValue; //first peak
+    loopTimes = 1;         //start scan trigger
   }
 
   //peak scan start
@@ -233,8 +302,10 @@ void HelloDrum::dualPiezoSensing(byte sens, byte thre, byte scanTime, byte maskT
 {
 
 #ifdef ESP32
-  piezoValue = 1023 - piezoValue / 4;
-  RimPiezoValue = 1023 - RimPiezoValue / 4;
+  // [MODIFICADO - projeto DrumCore, 2026-09-01] ver singlePiezoSensing()
+  // acima pro racional completo - mesma correcao (so' normaliza, nao inverte).
+  piezoValue = piezoValue / 4;
+  RimPiezoValue = RimPiezoValue / 4;
 #endif
 
 #ifdef PULLUP
@@ -257,14 +328,24 @@ void HelloDrum::dualPiezoSensing(byte sens, byte thre, byte scanTime, byte maskT
 
     if (time_hit - time_end < maskTime)
     {
-      return;
+      // Fase P (DrumCore) - ver singlePiezoSensing() pro racional. Aqui o
+      // "pico" e' o maior entre pele e aro, dos dois lados (anterior/novo).
+      bool allowRetrigger = false;
+      if (retrigger > 0)
+      {
+        int prevPeak = velocity > velocityRim ? velocity : velocityRim;
+        int newPeak = piezoValue > RimPiezoValue ? piezoValue : RimPiezoValue;
+        int decayFloor = prevPeak - (int)((time_hit - time_end) * (retrigger + 1) / 16);
+        allowRetrigger = decayFloor > 0 && newPeak > decayFloor;
+      }
+      if (!allowRetrigger)
+      {
+        return;
+      }
     }
-    else
-    {
-      velocity = piezoValue; //first peak
-      velocityRim = RimPiezoValue;
-      loopTimes = 1;
-    }
+    velocity = piezoValue; //first peak
+    velocityRim = RimPiezoValue;
+    loopTimes = 1;
   }
 
   //peak scan start
@@ -362,8 +443,10 @@ void HelloDrum::cymbal2zoneSensing(byte sens, byte thre, byte scanTime, byte mas
 {
 
 #ifdef ESP32
-  piezoValue = 1023 - piezoValue / 4;
-  sensorValue = 1023 - sensorValue / 4;
+  // [MODIFICADO - projeto DrumCore, 2026-09-01] ver singlePiezoSensing()
+  // pro racional completo (so' normaliza, nao inverte).
+  piezoValue = piezoValue / 4;
+  sensorValue = sensorValue / 4;
 #endif
 
 #ifdef PULLUP
@@ -386,9 +469,19 @@ void HelloDrum::cymbal2zoneSensing(byte sens, byte thre, byte scanTime, byte mas
 
     if (time_hit - time_end < maskTime)
     {
-      return;
+      // Fase P (DrumCore) - ver singlePiezoSensing() pro racional.
+      bool allowRetrigger = false;
+      if (retrigger > 0)
+      {
+        int newPeak = abs(piezoValue - sensorValue);
+        int decayFloor = velocity - (int)((time_hit - time_end) * (retrigger + 1) / 16);
+        allowRetrigger = decayFloor > 0 && newPeak > decayFloor;
+      }
+      if (!allowRetrigger)
+      {
+        return;
+      }
     }
-    else
     {
       velocity = abs(piezoValue - sensorValue); //first peak //ここコメント化ありうる。
       firstSensorValue = sensorValue;
@@ -508,8 +601,10 @@ void HelloDrum::cymbal3zoneSensing(byte sens, byte thre, byte scanTime, byte mas
 {
 
 #ifdef ESP32
-  piezoValue = 1023 - piezoValue / 4;
-  sensorValue = 1023 - sensorValue / 4;
+  // [MODIFICADO - projeto DrumCore, 2026-09-01] ver singlePiezoSensing()
+  // pro racional completo (so' normaliza, nao inverte).
+  piezoValue = piezoValue / 4;
+  sensorValue = sensorValue / 4;
 #endif
 
 #ifdef PULLUP
@@ -534,9 +629,19 @@ void HelloDrum::cymbal3zoneSensing(byte sens, byte thre, byte scanTime, byte mas
 
     if (time_hit - time_end < maskTime)
     {
-      return;
+      // Fase P (DrumCore) - ver singlePiezoSensing() pro racional.
+      bool allowRetrigger = false;
+      if (retrigger > 0)
+      {
+        int newPeak = abs(piezoValue - sensorValue);
+        int decayFloor = velocity - (int)((time_hit - time_end) * (retrigger + 1) / 16);
+        allowRetrigger = decayFloor > 0 && newPeak > decayFloor;
+      }
+      if (!allowRetrigger)
+      {
+        return;
+      }
     }
-    else
     {
       velocity = abs(piezoValue - sensorValue); //first peak //ここコメント化ありうる。
       firstSensorValue = sensorValue;

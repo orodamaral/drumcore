@@ -190,6 +190,24 @@ class HelloDrum
 public:
   HelloDrum(byte pin1, byte pin2);
   HelloDrum(byte pin1);
+  // [MODIFICADO - projeto DrumCore, 2026-08-31] construtor padrao (trivial,
+  // nao mexe em padIndex) + begin() explicito. Motivo: um array estatico
+  // com N>=27 elementos inicializados via lista de construtores nao-triviais
+  // (a forma antiga, "HelloDrum pads[32] = { HelloDrum(0,1), ... }")
+  // trava o boot (watchdog reset antes do setup(), sem nenhum erro visivel) -
+  // isolado e confirmado com um teste minimo: 26 elementos funciona, 27 nao.
+  // Sem garantia de RVO (nao estamos em C++17 aqui), os temporarios de cada
+  // elemento do initializer-list de um array agregado podem ficar vivos
+  // simultaneamente ate o fim da instrucao inteira - com sizeof(HelloDrum)
+  // ~100 bytes, 27+ elementos estouram a pilha de 4KB da tarefa principal
+  // (CONFIG_ESP_MAIN_TASK_STACK_SIZE), que e' onde os construtores globais
+  // rodam (antes do setup()). Usar array default + begin() por pad dentro
+  // do setup() evita isso: cada chamada e' sequencial, sem acumular, e
+  // roda na tarefa do loop (pilha maior). Ver
+  // docs/01-decisoes-arquiteturais.md pro diagnostico completo.
+  HelloDrum();
+  void begin(byte pin1, byte pin2);
+  void begin(byte pin1);
 
   void singlePiezoMUX(byte sens, byte thre, byte scan, byte mask);
   void singlePiezoMUX();
@@ -280,6 +298,15 @@ public:
   byte curvetype;
   byte rimThreshold;
   byte rimSensitivity;
+
+  // Retrigger (adicionado pelo projeto DrumCore, Fase P - ver
+  // docs/01-decisoes-arquiteturais.md e
+  // github.com/massimobernava/md-firmware). 0 = desligado, comportamento
+  // original da lib (mask_time e' um corte rigido). >0 = dentro do
+  // mask_time, uma pancada nova so' passa se for bem mais forte que a
+  // anterior (limiar decrescente com o tempo) - evita perder golpes em
+  // rufos/rolls rapidos.
+  byte retrigger;
 
 private:
   byte pin_1;

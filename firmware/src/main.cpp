@@ -20,6 +20,12 @@
   docs/01-decisoes-arquiteturais.md pro racional completo e as adaptações
   feitas (não tínhamos DIN MIDI, o app desktop continua com auto-save).
 
+  Fase K: troca da multiplexação de 4x CD4051 (8 canais cada) para 2x
+  CD4067/HW-178 (16 canais cada) - mesmas 32 entradas, só menos placas pra
+  montar. Só a camada de MUX mudou (HelloDrumMUX_4067 em vez de _4051, 4
+  pinos de seleção S0-S3 em vez de 3); pads[]/rawValue[]/EEPROM/protocolo
+  continuam iguais. Ver docs/01-decisoes-arquiteturais.md.
+
   Pinout: ver docs/02-hardware.md. Build: ver firmware/platformio.ini.
 */
 
@@ -36,43 +42,184 @@
 #include <hardware/BLEMIDI_ESP32.h>
 #include <math.h>
 
+// Religamento manual do hardware USB nativo (Fase Q, 2026-09-01) - ver
+// docs/01-decisoes-arquiteturais.md pro relato completo da investigacao.
+// No ESP32/Adafruit TinyUSB Arduino, Adafruit_USBD_Device::begin() NAO liga
+// o periferico USB de verdade (e' um stub vazio nesse chip - a lib assume
+// que o core arduino-esp32 faz isso). O caminho automatico do core
+// (USB.begin(), via CDC/MSC/DFU_ON_BOOT) so' dispara com essas flags
+// ligadas, e QUANDO usado aqui travou o boot (a tarefa "usbd" do CORE
+// chamando tud_task() da ADAFRUIT - duas pilhas TinyUSB diferentes
+// misturadas, incompativeis, nucleo trava, watchdog aborta em loop).
+// A funcao abaixo e' a mesma sequencia que a PROPRIA lib Adafruit usa nas
+// outras placas que suporta (SAMD/RP2040/nRF) - reset do periferico,
+// configuracao dos pinos D+/D- (USBPHY_DM_NUM/DP_NUM), reset do core DWC2,
+// tusb_init() - só que ela vem DESLIGADA de proposito no arquivo da lib
+// pra ESP32 (Adafruit_TinyUSB_esp32.cpp, bloco "#if 0", comentario "This
+// port implemented is not needed and left here for reference only").
+// Replicamos aqui (sem editar o arquivo vendorizado da lib) porque e' a
+// unica forma encontrada que efetivamente religa o hardware sem misturar
+// as duas pilhas TinyUSB diferentes que coexistem nesse binario (a
+// precompilada do core, libarduino_tinyusb.a, e a da Adafruit, compilada a
+// partir do source) - usa so' as pecas de baixo nivel da Adafruit (mesma
+// origem do tud_task() que "ganha" no link via -Wl,--allow-multiple-definition,
+// ver platformio.ini), entao fica tudo consistente/da mesma implementacao.
+#include "soc/soc.h"
+#include "soc/periph_defs.h"
+#include "soc/usb_periph.h"
+#include "soc/usb_struct.h"
+#include "soc/usb_reg.h"
+#include "hal/usb_hal.h"
+#include "driver/gpio.h"
+#include "driver/periph_ctrl.h"
+#include "esp_rom_gpio.h"
+
+#define USBD_STACK_SZ (4096)
+
+static void usbHardwareTask(void *param)
+{
+    (void)param;
+    while (1)
+    {
+        tud_task();
+    }
+}
+
+static void configureUsbPins(usb_hal_context_t *usb)
+{
+    for (const usb_iopin_dsc_t *iopin = usb_periph_iopins; iopin->pin != -1; ++iopin)
+    {
+        if ((usb->use_external_phy) || (iopin->ext_phy_only == 0))
+        {
+            esp_rom_gpio_pad_select_gpio(iopin->pin);
+            if (iopin->is_output)
+            {
+                esp_rom_gpio_connect_out_signal(iopin->pin, iopin->func, false, false);
+            }
+            else
+            {
+                esp_rom_gpio_connect_in_signal(iopin->pin, iopin->func, false);
+                if ((iopin->pin != GPIO_FUNC_IN_LOW) && (iopin->pin != GPIO_FUNC_IN_HIGH))
+                {
+                    PIN_INPUT_ENABLE(GPIO_PIN_MUX_REG[iopin->pin]);
+                }
+            }
+            esp_rom_gpio_pad_unhold(iopin->pin);
+        }
+    }
+    if (!usb->use_external_phy)
+    {
+        gpio_set_drive_capability((gpio_num_t)USBPHY_DM_NUM, GPIO_DRIVE_CAP_3);
+        gpio_set_drive_capability((gpio_num_t)USBPHY_DP_NUM, GPIO_DRIVE_CAP_3);
+    }
+}
+
+void bringUpNativeUsbHardware()
+{
+    periph_module_reset(PERIPH_USB_MODULE);
+    periph_module_enable(PERIPH_USB_MODULE);
+
+    usb_hal_context_t hal = {.use_external_phy = false};
+    usb_hal_init(&hal);
+    configureUsbPins(&hal);
+
+    USB0.grstctl |= USB_CSFTRST;
+    while ((USB0.grstctl & USB_CSFTRST) == USB_CSFTRST)
+    {
+    }
+
+    // API nova do TinyUSB (versao vendorizada aqui exige role/speed
+    // explicitos - o tusb_init() sem argumentos so' compila se
+    // CFG_TUSB_RHPORT0_MODE estiver definido em tusb_config.h, o que nao e'
+    // o caso nesse port ESP32 da Adafruit).
+    tusb_rhport_init_t rhInit = {.role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_AUTO};
+    tusb_init(0, &rhInit);
+
+    xTaskCreate(usbHardwareTask, "usbd", USBD_STACK_SZ, NULL, configMAX_PRIORITIES - 1, NULL);
+}
+
 // ---------------------------------------------------------------------------
-// Pinout - CD4051 (4x, 32 canais)
+// Pinout - Fase L (+ ajustes de contiguidade fisica, ver
+// docs/01-decisoes-arquiteturais.md). Usa o pinout REAL da placa comprada
+// (dev board ESP32-S3 c/ headers fisicos esquerdo/direito - ver
+// docs/02-hardware.md). Cada subsistema sai inteiro de um unico header:
+//   HEADER ESQUERDO (tem 3V3 no topo e GND na base - unico lado c/ alimentacao):
+//     - CD4067 (S0-S3, SIG0/SIG1): GPIO4,5,6,7,15,16 - sequencia continua
+//       na ordem fisica real do header, logo abaixo do 3V3/RST.
+//     - TFT: GPIO9,10,11,12,13,14 - contiguos entre si, na base do header
+//       (logo acima do 5V/GND), na ordem fisica de baixo pra cima BLK,CS,
+//       DC,RES,SDA,SCL (ver defines abaixo) - escolhido assim (2026-08-31)
+//       pra espelhar a ordem fisica do proprio conector da tela (GND,VCC,
+//       SCL,SDA,RES,DC,CS,BLK): GND da tela vai pro GND da base do header
+//       (mesma extremidade), e subindo os demais sinais casam um a um com
+//       a sequencia da tela, sem entrelacar fios. So o VCC foge da
+//       sequencia (o 3V3 so existe no topo do header) - fio isolado
+//       inevitavel. Isso deixa de formar um unico feixe continuo com o
+//       MUX (GPIO17,18,8 ficam livres entre os dois grupos), troca
+//       aceita de proposito em favor de bater com o conector da tela.
+//   HEADER DIREITO (so GND, encoders usam so pull-up interno - sem VCC):
+//     - Encoder 1 + Encoder 2: GPIO1,2,42,41,40,39 - sequencia continua na
+//       ordem fisica real do header (...44,1,2,42,41,40,39,38...), pulando
+//       so o GPIO38 (LED embutido, ver abaixo). Corrige o pinout anterior
+//       (42,41,40 / 37,36,35), que tinha um vao de 2 pinos (39,38) no meio
+//       por evitar o GPIO38; como bonus, tambem deixa de depender do
+//       GPIO35-37 (risco anotado de PSRAM octal, ver
+//       docs/01-decisoes-arquiteturais.md).
+// SIG0/SIG1 usam GPIO15/16 (ADC2, nao ADC1) - o conflito classico de ADC2
+// e' com o driver Wi-Fi (arbitragem de RF); este projeto nunca inicializa
+// Wi-Fi (so' BLE, que nao usa esse caminho), entao a rescricao "so ADC1"
+// das fases anteriores foi relaxada aqui de proposito.
 // ---------------------------------------------------------------------------
+
+// --- CD4067 (2x, 32 canais) - header ESQUERDO ---
 #define MUX_S0 4
 #define MUX_S1 5
 #define MUX_S2 6
+#define MUX_S3 7
 
-#define MUX0_Z 1
-#define MUX1_Z 2
-#define MUX2_Z 7
-#define MUX3_Z 8
+#define MUX0_Z 15 // SIG do HW-178 #0 (pads 0-15) - ADC2_4
+#define MUX1_Z 16 // SIG do HW-178 #1 (pads 16-31) - ADC2_5
 
-#define NUM_MUX 4
-#define PADS_PER_MUX 8
+// TESTE TEMPORARIO (2026-09-01) - leitura direta de 2 pinos, sem MUX, pra
+// testar um pad dual-zone (canais 0/1, "Pad 1" na UI) enquanto o MUX
+// fisico nao chega. GPIO17/18: livres, ADC2, contiguos - ver
+// docs/02-hardware.md ("Notas" - pinos livres/sobressalentes). Usados em
+// loop() (sobrescreve rawValue[0]/[1] depois do scan dos MUX) e em
+// setup() (habilita o pad 0 como PAD_DUAL). Remover quando o MUX chegar.
+#define TEST_DIRECT_HEAD_PIN 17
+#define TEST_DIRECT_RIM_PIN 18
+
+#define NUM_MUX 2
+#define PADS_PER_MUX 16
 #define NUM_PADS (NUM_MUX * PADS_PER_MUX) // 32
 
-// ---------------------------------------------------------------------------
-// Pinout - Tela TFT ST7735 (SPI)
-// ---------------------------------------------------------------------------
-#define TFT_SCLK 12
-#define TFT_MOSI 11
+// --- Tela TFT ST7735 (SPI) - header ESQUERDO, base do header ---
+// Ordem fisica de baixo pra cima (perto do GND -> perto do MUX):
+// BLK(9), CS(10), DC(11), RES/RST(12), SDA/MOSI(13), SCL/SCLK(14) -
+// espelha o conector da propria tela (GND,VCC,SCL,SDA,RES,DC,CS,BLK) na
+// direcao oposta (GND da tela = GND da base do header).
+#define TFT_BLK 9
 #define TFT_CS 10
-#define TFT_DC 9
-#define TFT_RST 14
-#define TFT_BLK 13
+#define TFT_DC 11
+#define TFT_RST 12
+#define TFT_MOSI 13
+#define TFT_SCLK 14
 
 // ---------------------------------------------------------------------------
 // Pinout - 2 encoders rotativos com chave (ENC1 = pagina/pad em foco,
-// ENC2 = navegacao/valor - ver design/SPEC.md secao 1).
+// ENC2 = navegacao/valor - ver design/SPEC.md secao 1) - header DIREITO.
+// GPIO38 (fora dessa faixa) foi evitado por acionar um LED embutido
+// (BUILTIN LED) dessa placa - o LED RGB endereçável fica no GPIO48
+// (ja excluido por outro motivo, ver acima) - ver
+// docs/01-decisoes-arquiteturais.md (Fase L).
 // ---------------------------------------------------------------------------
-#define ENC1_A 15
-#define ENC1_B 16
-#define ENC1_SW 17
+#define ENC1_A 1
+#define ENC1_B 2
+#define ENC1_SW 42
 
-#define ENC2_A 18
-#define ENC2_B 21
-#define ENC2_SW 38
+#define ENC2_A 41
+#define ENC2_B 40
+#define ENC2_SW 39
 
 #define HOLD_MS 600     // duracao de "hold" nos dois encoders (design/SPEC.md)
 #define SW_DEBOUNCE_MS 25
@@ -126,13 +273,22 @@
 #define PAD_CYMBAL_3ZONE 5  // 2 canais - prato 3 zonas (bow + edge/cup por threshold, ex: PCY135/155)
 #define PAD_HIHAT_PEDAL 6   // 1 canal - controlador de pedal FSR/VH-10/VH-11
 #define PAD_HIHAT_OPTICAL 7 // 1 canal - controlador de pedal optico (TCRT5000)
-#define PAD_TYPE_COUNT 8
+// 2 canais - caixa 3 zonas (centro/pele=head, borda da pele=edge, aro=rim).
+// Reusa cymbal3zoneMUX()/cymbal3zoneSensing() da lib (mesma tecnica do prato
+// 3 zonas: 2 piezos, o segundo com 2 thresholds em sequencia) - o segundo
+// piezo (aro) e' o mesmo lugar onde o PAD_DUAL ja poe o sensor de aro; a
+// diferenca e' que aqui distinguimos "vibrou pouco no aro" (edge, hit perto
+// da borda da pele) de "vibrou muito no aro" (rim, aro de verdade), em vez
+// de tratar qualquer vibracao no aro como uma unica zona. Ver
+// docs/01-decisoes-arquiteturais.md e docs/05-tipos-de-sensor.md.
+#define PAD_SNARE_3ZONE 8
+#define PAD_TYPE_COUNT 9
 
 #define PAD_NO_LINK 255 // valor "nenhum" para hihatPedalChannel[]
 
 bool padTypeUsesSecondChannel(byte type)
 {
-    return type == PAD_DUAL || type == PAD_CYMBAL_2ZONE || type == PAD_HIHAT_2ZONE || type == PAD_CYMBAL_3ZONE;
+    return type == PAD_DUAL || type == PAD_CYMBAL_2ZONE || type == PAD_HIHAT_2ZONE || type == PAD_CYMBAL_3ZONE || type == PAD_SNARE_3ZONE;
 }
 
 bool padTypeIsHihatCymbal(byte type)
@@ -165,6 +321,8 @@ const char *padTypeShortName(byte type)
         return "HH-CTL";
     case PAD_HIHAT_OPTICAL:
         return "HH-OPT";
+    case PAD_SNARE_3ZONE:
+        return "SNR-3Z";
     default:
         return "?";
     }
@@ -184,45 +342,55 @@ const char *padTypeShortName(byte type)
 // EEPROM (persistencia)
 // Layout: 10 bytes/pad (campos da lib) + 1 byte flag primeiro-boot +
 // PAD_LABEL_MAX_LEN bytes/pad (nome) + 1 byte/pad (tipo) + 1 byte/pad
-// (link do pedal de chimbal) + 3 bytes de config global (midi_channel,
-// midi_output, brightness).
+// (link do pedal de chimbal) + 1 byte/pad (canal habilitado, Fase N) +
+// 1 byte/pad (retrigger, Fase P - persistido separado da lib de proposito,
+// ver docs/01-decisoes-arquiteturais.md) + 1 byte/pad (gain, Fase P) +
+// 1 byte/pad (xtalk, Fase P) + 1 byte/pad (xtalk_group, Fase P) +
+// 2 bytes de config global (midi_channel, midi_output).
 // ---------------------------------------------------------------------------
 #define EEPROM_BYTES_PER_PAD 10
 #define EEPROM_INIT_FLAG_ADDR (NUM_PADS * EEPROM_BYTES_PER_PAD)
 #define EEPROM_NAMES_ADDR (EEPROM_INIT_FLAG_ADDR + 1)
 #define EEPROM_TYPES_ADDR (EEPROM_NAMES_ADDR + NUM_PADS * PAD_LABEL_MAX_LEN)
 #define EEPROM_HIHAT_LINK_ADDR (EEPROM_TYPES_ADDR + NUM_PADS)
-#define EEPROM_GLOBAL_ADDR (EEPROM_HIHAT_LINK_ADDR + NUM_PADS)
-#define EEPROM_SIZE (EEPROM_GLOBAL_ADDR + 3)
+#define EEPROM_ENABLED_ADDR (EEPROM_HIHAT_LINK_ADDR + NUM_PADS)
+#define EEPROM_RETRIGGER_ADDR (EEPROM_ENABLED_ADDR + NUM_PADS)
+#define EEPROM_GAIN_ADDR (EEPROM_RETRIGGER_ADDR + NUM_PADS)
+#define EEPROM_XTALK_ADDR (EEPROM_GAIN_ADDR + NUM_PADS)
+#define EEPROM_XTALK_GROUP_ADDR (EEPROM_XTALK_ADDR + NUM_PADS)
+#define EEPROM_GLOBAL_ADDR (EEPROM_XTALK_GROUP_ADDR + NUM_PADS)
+#define EEPROM_SIZE (EEPROM_GLOBAL_ADDR + 2)
 #define EEPROM_INIT_MAGIC 0xA5
 
 #define padLabelEepromAddr(i) (EEPROM_NAMES_ADDR + (i) * PAD_LABEL_MAX_LEN)
 
-// Cada HelloDrumMUX_4051 recebe um muxNum sequencial automatico (0..3, na
+// Cada HelloDrumMUX_4067 recebe um muxNum sequencial automatico (0..1, na
 // ordem de instanciacao abaixo). Ver docs/01-decisoes-arquiteturais.md.
-HelloDrumMUX_4051 mux[NUM_MUX] = {
-    HelloDrumMUX_4051(MUX_S0, MUX_S1, MUX_S2, MUX0_Z),
-    HelloDrumMUX_4051(MUX_S0, MUX_S1, MUX_S2, MUX1_Z),
-    HelloDrumMUX_4051(MUX_S0, MUX_S1, MUX_S2, MUX2_Z),
-    HelloDrumMUX_4051(MUX_S0, MUX_S1, MUX_S2, MUX3_Z),
+HelloDrumMUX_4067 mux[NUM_MUX] = {
+    HelloDrumMUX_4067(MUX_S0, MUX_S1, MUX_S2, MUX_S3, MUX0_Z),
+    HelloDrumMUX_4067(MUX_S0, MUX_S1, MUX_S2, MUX_S3, MUX1_Z),
 };
 
-// pads[i] usa i diretamente como indice em rawValue[] (pin_1), pois os 4 MUX
-// acima sao instanciados em ordem (muxNum 0..3) e i == muxNum*PADS_PER_MUX +
+// pads[i] usa i diretamente como indice em rawValue[] (pin_1), pois os 2 MUX
+// acima sao instanciados em ordem (muxNum 0..1) e i == muxNum*PADS_PER_MUX +
 // canal. Cada pad e' construido com 2 pinos (i, i+1) quando i+1 existe -
 // assim um mesmo objeto ja suporta ser usado como single-channel (metodos
 // que so leem pin_1) OU dual-channel (metodos que tambem leem pin_2), sem
 // precisar reconstruir nada quando o tipo do pad muda em runtime.
-HelloDrum pads[NUM_PADS] = {
-    HelloDrum(0, 1),   HelloDrum(1, 2),   HelloDrum(2, 3),   HelloDrum(3, 4),
-    HelloDrum(4, 5),   HelloDrum(5, 6),   HelloDrum(6, 7),   HelloDrum(7, 8),
-    HelloDrum(8, 9),   HelloDrum(9, 10),  HelloDrum(10, 11), HelloDrum(11, 12),
-    HelloDrum(12, 13), HelloDrum(13, 14), HelloDrum(14, 15), HelloDrum(15, 16),
-    HelloDrum(16, 17), HelloDrum(17, 18), HelloDrum(18, 19), HelloDrum(19, 20),
-    HelloDrum(20, 21), HelloDrum(21, 22), HelloDrum(22, 23), HelloDrum(23, 24),
-    HelloDrum(24, 25), HelloDrum(25, 26), HelloDrum(26, 27), HelloDrum(27, 28),
-    HelloDrum(28, 29), HelloDrum(29, 30), HelloDrum(30, 31), HelloDrum(31),
-};
+//
+// [MODIFICADO - projeto DrumCore, 2026-08-31] array default (sem lista de
+// inicializadores) - cada pad e' inicializado via pads[i].begin(...) dentro
+// do setup() (ver la), nao aqui. Motivo: uma lista de 27+ chamadas de
+// construtor nao-trivial nesse array global travava o boot (watchdog reset
+// antes do setup(), sem erro visivel) - a inicializacao estatica roda na
+// tarefa principal, que tem so 4KB de pilha; sem garantia de RVO (nao
+// estamos em C++17), os temporarios de cada elemento podem ficar vivos
+// simultaneamente ate o fim da instrucao inteira, e sizeof(HelloDrum)~100
+// bytes x 27+ elementos estoura isso. Isolado e confirmado com um teste
+// minimo (26 funciona, 27 nao) - ver docs/01-decisoes-arquiteturais.md pro
+// diagnostico completo e firmware/lib/HelloDrum-arduino-Library/src/
+// hellodrum.h pro construtor padrao + begin() adicionados.
+HelloDrum pads[NUM_PADS];
 
 // Objeto USB-MIDI (TinyUSB) + instancia da lib MIDI (FortySevenEffects) usando
 // esse objeto como transporte.
@@ -234,7 +402,7 @@ MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
 // notas/CC); a macro tambem gera "BLEBleMidi" (o transporte, usado so pra
 // registrar os callbacks de conexao). "DrumCore" e' o nome anunciado via
 // Bluetooth.
-BLEMIDI_CREATE_INSTANCE("DrumCore", BleMidi)
+BLEMIDI_CREATE_INSTANCE("DRUMCORE", BleMidi)
 
 volatile bool bleMidiConnected = false;
 
@@ -263,15 +431,49 @@ char padNames[NUM_PADS][PAD_NAME_MAX_LEN];
 // pedal de chimbal linkado (so' relevante pra tipos hihat cymbal).
 // channelPrimary[i]: false se esse canal e' o "segundo canal" de um pad de
 // 2 canais no slot anterior - nesse caso nao e' sensoreado nem aparece como
-// pad independente. Ver docs/01-decisoes-arquiteturais.md.
+// pad independente. padEnabled[i]: false = canal desligado de proposito
+// (slot sem sensor fisico conectado, fica flutuando e capta ruido/
+// interferencia sem isso) - dispatchSensing()/handlePadResult() ignoram
+// esse canal por completo enquanto desligado. Ver
+// docs/01-decisoes-arquiteturais.md (Fase N).
 byte padTypes[NUM_PADS];
 byte hihatPedalChannel[NUM_PADS];
 bool channelPrimary[NUM_PADS];
+bool padEnabled[NUM_PADS];
+
+// padGain[i]: multiplicador de calibracao (10-200 = 0.10x-2.00x, 100 =
+// neutro) aplicado ao rawValue[] ANTES do dispatchSensing() - ver
+// applyPadGain(). padXtalk[i]/padXtalkGroup[i]: supressao de crosstalk
+// entre pads do mesmo grupo fisico (0 = nenhum grupo/desligado) - ver
+// suppressCrosstalk(). Nenhum dos dois precisa de suporte da lib
+// vendorizada. Fase P - ver docs/01-decisoes-arquiteturais.md.
+byte padGain[NUM_PADS];
+byte padXtalk[NUM_PADS];
+byte padXtalkGroup[NUM_PADS];
+
+// Forward decls - auto-tune (Fase O). Implementado mais abaixo, perto do
+// resto do fluxo de encoders/telas, mas handleSerialCommand() (que fica
+// antes no arquivo) tambem precisa poder disparar/cancelar/aplicar.
+void startAutoTune(byte pad);
+void cancelAutoTune();
+bool applyAutoTuneResult(); // false = ainda nao terminou de calibrar (ver AT_DONE)
+
+// Forward decls - encoders virtuais via serial (Fase Q, encoders fisicos
+// ainda nao conectados). Mesmo motivo das de auto-tune acima: essas seis
+// funcoes sao o handler real de cada encoder fisico (chamadas por
+// handleEncoders(), implementado mais abaixo perto das telas), e
+// handleSerialCommand() precisa poder chama-las tambem pro comando
+// "enc_input" - ver docs/04-protocolo-serial.md.
+void onEnc1Rotate(int delta);
+void onEnc1Click();
+void onEnc1Hold();
+void onEnc2Rotate(int delta);
+void onEnc2Click();
+void onEnc2Hold();
 
 // Configuracao global (GLOBAL) - persistida como um bloco pequeno em EEPROM.
 byte midiChannel = DEFAULT_MIDI_CHANNEL;
 byte midiOutput = OUTPUT_USB_BLE;
-byte brightness = 80; // %
 
 // true se ha mudancas em RAM ainda nao gravadas via GLOBAL > SALVAR (o
 // design pede persistencia so explicita pelos encoders - ver
@@ -306,12 +508,6 @@ void rebuildPadName(byte i)
     }
 }
 
-#define TFT_BLK_PWM_CHANNEL 0
-
-void applyBrightness()
-{
-    ledcWrite(TFT_BLK_PWM_CHANNEL, map(brightness, 0, 100, 0, 255));
-}
 
 // ---------------------------------------------------------------------------
 // Sistema de campos por pad (Fase J) - equivalente ao PAD_TYPE_META do app
@@ -326,10 +522,14 @@ void applyBrightness()
 enum FieldId
 {
     FIELD_SENSOR,
+    FIELD_ENABLED,
+    FIELD_AUTOTUNE,
     FIELD_SENSITIVITY,
     FIELD_THRESHOLD,
     FIELD_SCAN,
     FIELD_MASK,
+    FIELD_RETRIGGER,
+    FIELD_GAIN,
     FIELD_RIM_SENS,
     FIELD_RIM_THRESH,
     FIELD_CURVE,
@@ -337,6 +537,8 @@ enum FieldId
     FIELD_NOTE_RIM,
     FIELD_NOTE_CUP,
     FIELD_PEDAL_LINK,
+    FIELD_XTALK,
+    FIELD_XTALK_GROUP,
 };
 
 struct FieldDef
@@ -348,16 +550,19 @@ struct FieldDef
     bool accelerates; // true pros campos 1-127 (design/SPEC.md: acelera >8 detents/s)
 };
 
-#define MAX_FIELDS_PER_PAD 12
+#define MAX_FIELDS_PER_PAD 17
 
 byte getFieldsForType(byte padType, FieldDef *out)
 {
     byte n = 0;
     out[n++] = {FIELD_SENSOR, "SENSOR", 0, PAD_TYPE_COUNT - 1, false};
+    out[n++] = {FIELD_ENABLED, "ATIVO", 0, 1, false};
     out[n++] = {FIELD_SENSITIVITY, "SENSIB", 1, 100, true};
     out[n++] = {FIELD_THRESHOLD, "THRESH", 1, 100, true};
     out[n++] = {FIELD_SCAN, "SCAN", 1, 100, true};
     out[n++] = {FIELD_MASK, "MASK", 1, 100, true};
+    out[n++] = {FIELD_RETRIGGER, "RETRIG", 0, 100, true};
+    out[n++] = {FIELD_GAIN, "GAIN", 10, 200, true};
 
     if (padType == PAD_DUAL)
     {
@@ -372,6 +577,11 @@ byte getFieldsForType(byte padType, FieldDef *out)
     {
         out[n++] = {FIELD_RIM_SENS, "EDGETHR", 1, 100, true};
         out[n++] = {FIELD_RIM_THRESH, "CUPTHR", 1, 100, true};
+    }
+    else if (padType == PAD_SNARE_3ZONE)
+    {
+        out[n++] = {FIELD_RIM_SENS, "EDGETHR", 1, 100, true};
+        out[n++] = {FIELD_RIM_THRESH, "RIMTHR", 1, 100, true};
     }
     else if (padTypeIsHihatPedal(padType))
     {
@@ -398,11 +608,26 @@ byte getFieldsForType(byte padType, FieldDef *out)
         out[n++] = {FIELD_NOTE_RIM, "N.EDGE", 0, 127, true};
         out[n++] = {FIELD_NOTE_CUP, "N.CUP", 0, 127, true};
     }
+    else if (padType == PAD_SNARE_3ZONE)
+    {
+        out[n++] = {FIELD_NOTE_RIM, "N.EDGE", 0, 127, true};
+        out[n++] = {FIELD_NOTE_CUP, "N.RIM", 0, 127, true};
+    }
 
     if (padTypeIsHihatCymbal(padType))
     {
         out[n++] = {FIELD_PEDAL_LINK, "PEDAL", -1, NUM_PADS - 1, false};
     }
+
+    // Universal, no fim da lista - supressao de crosstalk entre pads do
+    // mesmo grupo fisico (Fase P, ver docs/01-decisoes-arquiteturais.md).
+    out[n++] = {FIELD_XTALK, "XTALK", 0, 100, true};
+    out[n++] = {FIELD_XTALK_GROUP, "XGRUPO", 0, 4, false};
+
+    // Universal, sempre o ultimo item - "clicar" aqui (sem entrar em modo de
+    // edicao) dispara o assistente de auto-calibracao (Fase O). Ver
+    // docs/01-decisoes-arquiteturais.md.
+    out[n++] = {FIELD_AUTOTUNE, "CALIBRAR", 0, 0, false};
 
     return n;
 }
@@ -414,6 +639,8 @@ int getFieldValue(byte padIndex, FieldId id)
     {
     case FIELD_SENSOR:
         return padTypes[padIndex];
+    case FIELD_ENABLED:
+        return padEnabled[padIndex] ? 1 : 0;
     case FIELD_SENSITIVITY:
         return p.sensitivity;
     case FIELD_THRESHOLD:
@@ -422,6 +649,14 @@ int getFieldValue(byte padIndex, FieldId id)
         return p.scantime;
     case FIELD_MASK:
         return p.masktime;
+    case FIELD_RETRIGGER:
+        return p.retrigger;
+    case FIELD_GAIN:
+        return padGain[padIndex];
+    case FIELD_XTALK:
+        return padXtalk[padIndex];
+    case FIELD_XTALK_GROUP:
+        return padXtalkGroup[padIndex];
     case FIELD_RIM_SENS:
         return p.rimSensitivity;
     case FIELD_RIM_THRESH:
@@ -457,6 +692,9 @@ void setFieldValue(byte padIndex, FieldId id, int value)
         padTypes[padIndex] = (byte)value;
         recomputeChannelPrimary();
         break;
+    case FIELD_ENABLED:
+        padEnabled[padIndex] = (value != 0);
+        break;
     case FIELD_SENSITIVITY:
         p.sensitivity = value;
         break;
@@ -468,6 +706,18 @@ void setFieldValue(byte padIndex, FieldId id, int value)
         break;
     case FIELD_MASK:
         p.masktime = value;
+        break;
+    case FIELD_RETRIGGER:
+        p.retrigger = value;
+        break;
+    case FIELD_GAIN:
+        padGain[padIndex] = value;
+        break;
+    case FIELD_XTALK:
+        padXtalk[padIndex] = value;
+        break;
+    case FIELD_XTALK_GROUP:
+        padXtalkGroup[padIndex] = value;
         break;
     case FIELD_RIM_SENS:
         p.rimSensitivity = value;
@@ -511,6 +761,7 @@ enum ScreenPage
     PAGE_PAD_EDIT,
     PAGE_SIGNAL,
     PAGE_GLOBAL,
+    PAGE_AUTOTUNE, // Fase O - ver docs/01-decisoes-arquiteturais.md
 };
 
 ScreenPage currentPage = PAGE_BOOT;
@@ -523,15 +774,14 @@ byte editPadIndex = 0;  // pad em foco em PAD_EDIT/SIGNAL
 byte editItemIndex = 0; // item selecionado dentro de PAD_EDIT
 bool editingValue = false;
 
-byte globalSelection = 0; // 0..4 (MIDI CH, SAIDA, BRILHO, SALVAR, RESTAURAR)
+byte globalSelection = 0; // 0..3 (MIDI CH, SAIDA, SALVAR, RESTAURAR)
 bool globalEditing = false;
 
 #define GLOBAL_ROW_MIDI_CH 0
 #define GLOBAL_ROW_OUTPUT 1
-#define GLOBAL_ROW_BRIGHTNESS 2
-#define GLOBAL_ROW_SAVE 3
-#define GLOBAL_ROW_RESTORE 4
-#define GLOBAL_ROW_COUNT 5
+#define GLOBAL_ROW_SAVE 2
+#define GLOBAL_ROW_RESTORE 3
+#define GLOBAL_ROW_COUNT 4
 
 char toastLine1[16] = "";
 char toastLine2[24] = "";
@@ -586,7 +836,8 @@ void sendAck(const char *cmd, int pad, const char *field, long value)
     sendJsonLine(doc);
 }
 
-// zone: "bow" (padrao/unico zone), "rim", "edge", "cup", "pedal" ou "choke".
+// zone: "bow" (padrao/unico zone), "rim", "edge", "cup", "head" (centro da
+// pele, PAD_SNARE_3ZONE), "pedal" ou "choke".
 void sendHitEvent(byte padIndex, const char *zone, byte note, byte velocity)
 {
     JsonDocument doc;
@@ -606,7 +857,6 @@ void sendDeviceInfo()
     doc["muxes"] = NUM_MUX;
     doc["midi_channel"] = midiChannel;
     doc["midi_output"] = midiOutput;
-    doc["brightness"] = brightness;
     doc["ble_connected"] = bleMidiConnected;
     doc["firmware_phase"] = "J";
     sendJsonLine(doc);
@@ -658,6 +908,11 @@ void sendPadConfig(byte padIndex)
     doc["note_rim"] = pads[padIndex].noteRim;
     doc["note_cup"] = pads[padIndex].noteCup;
     doc["hihat_pedal_channel"] = hihatPedalChannel[padIndex] == PAD_NO_LINK ? -1 : hihatPedalChannel[padIndex];
+    doc["enabled"] = padEnabled[padIndex];
+    doc["retrigger"] = pads[padIndex].retrigger;
+    doc["gain"] = padGain[padIndex];
+    doc["xtalk"] = padXtalk[padIndex];
+    doc["xtalk_group"] = padXtalkGroup[padIndex];
     sendJsonLine(doc);
 }
 
@@ -673,6 +928,36 @@ void persistHihatLink(byte i)
     EEPROM_ESP.commit();
 }
 
+void persistPadEnabled(byte i)
+{
+    EEPROM_ESP.write(EEPROM_ENABLED_ADDR + i, padEnabled[i] ? 1 : 0);
+    EEPROM_ESP.commit();
+}
+
+void persistPadRetrigger(byte i)
+{
+    EEPROM_ESP.write(EEPROM_RETRIGGER_ADDR + i, pads[i].retrigger);
+    EEPROM_ESP.commit();
+}
+
+void persistPadGain(byte i)
+{
+    EEPROM_ESP.write(EEPROM_GAIN_ADDR + i, padGain[i]);
+    EEPROM_ESP.commit();
+}
+
+void persistPadXtalk(byte i)
+{
+    EEPROM_ESP.write(EEPROM_XTALK_ADDR + i, padXtalk[i]);
+    EEPROM_ESP.commit();
+}
+
+void persistPadXtalkGroup(byte i)
+{
+    EEPROM_ESP.write(EEPROM_XTALK_GROUP_ADDR + i, padXtalkGroup[i]);
+    EEPROM_ESP.commit();
+}
+
 void saveAllToEeprom()
 {
     for (byte i = 0; i < NUM_PADS; i++)
@@ -681,10 +966,14 @@ void saveAllToEeprom()
         EEPROM_ESP.writeBytes(padLabelEepromAddr(i), padLabels[i], PAD_LABEL_MAX_LEN);
         EEPROM_ESP.write(EEPROM_TYPES_ADDR + i, padTypes[i]);
         EEPROM_ESP.write(EEPROM_HIHAT_LINK_ADDR + i, hihatPedalChannel[i]);
+        EEPROM_ESP.write(EEPROM_ENABLED_ADDR + i, padEnabled[i] ? 1 : 0);
+        EEPROM_ESP.write(EEPROM_RETRIGGER_ADDR + i, pads[i].retrigger);
+        EEPROM_ESP.write(EEPROM_GAIN_ADDR + i, padGain[i]);
+        EEPROM_ESP.write(EEPROM_XTALK_ADDR + i, padXtalk[i]);
+        EEPROM_ESP.write(EEPROM_XTALK_GROUP_ADDR + i, padXtalkGroup[i]);
     }
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR, midiChannel);
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 1, midiOutput);
-    EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 2, brightness);
     EEPROM_ESP.commit();
     unsavedChanges = false;
 }
@@ -702,6 +991,19 @@ void loadAllFromEeprom()
             padTypes[i] = PAD_SINGLE;
         }
         hihatPedalChannel[i] = EEPROM_ESP.read(EEPROM_HIHAT_LINK_ADDR + i);
+        padEnabled[i] = EEPROM_ESP.read(EEPROM_ENABLED_ADDR + i) != 0;
+        pads[i].retrigger = EEPROM_ESP.read(EEPROM_RETRIGGER_ADDR + i);
+        padGain[i] = EEPROM_ESP.read(EEPROM_GAIN_ADDR + i);
+        if (padGain[i] < 10 || padGain[i] > 200)
+        {
+            padGain[i] = 100; // valor invalido (ex: EEPROM virgem) - neutro
+        }
+        padXtalk[i] = EEPROM_ESP.read(EEPROM_XTALK_ADDR + i);
+        padXtalkGroup[i] = EEPROM_ESP.read(EEPROM_XTALK_GROUP_ADDR + i);
+        if (padXtalkGroup[i] > 4)
+        {
+            padXtalkGroup[i] = 0;
+        }
         rebuildPadName(i);
     }
     recomputeChannelPrimary();
@@ -716,12 +1018,6 @@ void loadAllFromEeprom()
     {
         midiOutput = OUTPUT_USB_BLE;
     }
-    brightness = EEPROM_ESP.read(EEPROM_GLOBAL_ADDR + 2);
-    if (brightness < 10 || brightness > 100)
-    {
-        brightness = 80;
-    }
-    applyBrightness();
     unsavedChanges = false;
 }
 
@@ -816,6 +1112,21 @@ void handleSetPad(JsonDocument &doc)
         return;
     }
 
+    if (strcmp(field, "enabled") == 0)
+    {
+        long enabledValue = doc["value"] | -1;
+        if (enabledValue != 0 && enabledValue != 1)
+        {
+            sendError("set_pad", "value_out_of_range");
+            return;
+        }
+
+        padEnabled[pad] = (enabledValue == 1);
+        persistPadEnabled(pad);
+        sendPadConfig(pad);
+        return;
+    }
+
     long value = doc["value"] | -1;
 
     if (strcmp(field, "sensitivity") == 0)
@@ -874,6 +1185,38 @@ void handleSetPad(JsonDocument &doc)
         pads[pad].noteCloseEdge = value;
         pads[pad].noteCross = value;
     }
+    else if (strcmp(field, "retrigger") == 0)
+    {
+        if (value < 0 || value > 100) { sendError("set_pad", "value_out_of_range"); return; }
+        pads[pad].retrigger = value;
+        persistPadRetrigger(pad);
+        sendAck("set_pad", pad, field, value);
+        return;
+    }
+    else if (strcmp(field, "gain") == 0)
+    {
+        if (value < 10 || value > 200) { sendError("set_pad", "value_out_of_range"); return; }
+        padGain[pad] = value;
+        persistPadGain(pad);
+        sendAck("set_pad", pad, field, value);
+        return;
+    }
+    else if (strcmp(field, "xtalk") == 0)
+    {
+        if (value < 0 || value > 100) { sendError("set_pad", "value_out_of_range"); return; }
+        padXtalk[pad] = value;
+        persistPadXtalk(pad);
+        sendAck("set_pad", pad, field, value);
+        return;
+    }
+    else if (strcmp(field, "xtalk_group") == 0)
+    {
+        if (value < 0 || value > 4) { sendError("set_pad", "value_out_of_range"); return; }
+        padXtalkGroup[pad] = value;
+        persistPadXtalkGroup(pad);
+        sendAck("set_pad", pad, field, value);
+        return;
+    }
     else
     {
         sendError("set_pad", "unknown_field");
@@ -899,12 +1242,6 @@ void handleSetGlobal(JsonDocument &doc)
         if (value < 0 || value > OUTPUT_USB_BLE) { sendError("set_global", "value_out_of_range"); return; }
         midiOutput = value;
     }
-    else if (strcmp(field, "brightness") == 0)
-    {
-        if (value < 10 || value > 100) { sendError("set_global", "value_out_of_range"); return; }
-        brightness = value;
-        applyBrightness();
-    }
     else
     {
         sendError("set_global", "unknown_field");
@@ -913,7 +1250,6 @@ void handleSetGlobal(JsonDocument &doc)
 
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR, midiChannel);
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 1, midiOutput);
-    EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 2, brightness);
     EEPROM_ESP.commit();
 
     sendAck("set_global", -1, field, value);
@@ -982,6 +1318,68 @@ void handleSerialCommand(const String &line)
         }
         sendLog("Configuracao restaurada (restore_all).");
         sendDeviceInfo();
+    }
+    else if (strcmp(cmd, "start_autotune") == 0)
+    {
+        int pad = doc["pad"] | -1;
+        if (pad < 0 || pad >= NUM_PADS || !channelPrimary[pad])
+        {
+            sendError(cmd, "invalid_pad");
+            return;
+        }
+        if (!padEnabled[pad])
+        {
+            sendError(cmd, "channel_disabled");
+            return;
+        }
+        startAutoTune((byte)pad);
+    }
+    else if (strcmp(cmd, "cancel_autotune") == 0)
+    {
+        cancelAutoTune();
+    }
+    else if (strcmp(cmd, "apply_autotune") == 0)
+    {
+        if (!applyAutoTuneResult())
+        {
+            sendError(cmd, "not_ready");
+        }
+    }
+    else if (strcmp(cmd, "enc_input") == 0)
+    {
+        // Encoder virtual (app desktop) - mesma semantica dos fisicos (ver
+        // design/SPEC.md secao 1). Sem resposta dedicada: o resultado ja'
+        // aparece na tela fisica do modulo, que e' a fonte da verdade de
+        // navegacao (o app nao espelha currentPage/editItemIndex/etc).
+        int enc = doc["enc"] | 0;
+        const char *action = doc["action"] | "";
+        if (enc != 1 && enc != 2)
+        {
+            sendError(cmd, "invalid_enc");
+            return;
+        }
+        if (strcmp(action, "rotate") == 0)
+        {
+            int delta = doc["delta"] | 1;
+            if (delta == 0)
+            {
+                sendError(cmd, "invalid_delta");
+                return;
+            }
+            if (enc == 1) onEnc1Rotate(delta); else onEnc2Rotate(delta);
+        }
+        else if (strcmp(action, "click") == 0)
+        {
+            if (enc == 1) onEnc1Click(); else onEnc2Click();
+        }
+        else if (strcmp(action, "hold") == 0)
+        {
+            if (enc == 1) onEnc1Hold(); else onEnc2Hold();
+        }
+        else
+        {
+            sendError(cmd, "invalid_action");
+        }
     }
     else
     {
@@ -1078,6 +1476,26 @@ void handlePadResult(byte i)
         break;
     }
 
+    case PAD_DUAL:
+    {
+        // Bug encontrado 2026-08-22: faltava esse case desde a Fase G -
+        // um pad PAD_DUAL nunca enviava hit/nota nenhuma (nem head nem
+        // rim), apesar do protocolo (docs/04-protocolo-serial.md) e o
+        // modo demo do app desktop (mockDevice.ts) ja preverem as zonas
+        // "head"/"rim" pra esse tipo. Ver docs/01-decisoes-arquiteturais.md.
+        if (pad.hit)
+        {
+            sendHitEvent(i, "head", pad.note, pad.velocity);
+            fireNote(pad.note, pad.velocity);
+        }
+        if (pad.hitRim)
+        {
+            sendHitEvent(i, "rim", pad.noteRim, pad.velocity);
+            fireNote(pad.noteRim, pad.velocity);
+        }
+        break;
+    }
+
     case PAD_HIHAT_SINGLE:
     {
         if (!pad.hit)
@@ -1120,6 +1538,31 @@ void handlePadResult(byte i)
         if (pad.choke)
         {
             sendHitEvent(i, "choke", pad.note, 0);
+        }
+        break;
+    }
+
+    case PAD_SNARE_3ZONE:
+    {
+        // Mesma sensing do prato 3 zonas (cymbal3zoneMUX/Sensing na lib
+        // vendorizada), so' com zonas renomeadas pro contexto de caixa:
+        // hit=centro da pele, hitRim=borda da pele (vibracao leve no
+        // sensor do aro), hitCup=aro de verdade (vibracao forte no
+        // sensor do aro). Ver define de PAD_SNARE_3ZONE mais acima.
+        if (pad.hit)
+        {
+            sendHitEvent(i, "head", pad.note, pad.velocity);
+            fireNote(pad.note, pad.velocity);
+        }
+        if (pad.hitRim)
+        {
+            sendHitEvent(i, "edge", pad.noteEdge, pad.velocity);
+            fireNote(pad.noteEdge, pad.velocity);
+        }
+        if (pad.hitCup)
+        {
+            sendHitEvent(i, "rim", pad.noteCup, pad.velocity);
+            fireNote(pad.noteCup, pad.velocity);
         }
         break;
     }
@@ -1192,12 +1635,113 @@ void dispatchSensing(byte i)
     case PAD_CYMBAL_3ZONE:
         pads[i].cymbal3zoneMUX();
         break;
+    case PAD_SNARE_3ZONE:
+        pads[i].cymbal3zoneMUX(); // mesma sensing do prato 3 zonas - ver define de PAD_SNARE_3ZONE
+        break;
     case PAD_HIHAT_PEDAL:
         pads[i].hihatControlMUX();
         break;
     case PAD_HIHAT_OPTICAL:
         pads[i].TCRT5000MUX();
         break;
+    }
+}
+
+// Resolucao do ADC do ESP32-S3 (12 bits) - mesmo valor usado internamente
+// pela lib pra normalizar rawValue[] (ver comentario de applyPadGain()).
+#define ADC_RAW_MAX 4095
+
+// Gain (Fase P, ver docs/01-decisoes-arquiteturais.md) - multiplicador de
+// calibracao por pad (padGain[], 10-200 = 0.10x-2.00x, 100 = neutro).
+// Aplicado direto no rawValue[] ANTES do dispatchSensing() usar esse valor
+// - nao precisa de nenhuma mudanca na lib vendorizada. So escala o DESVIO
+// em relacao ao topo de escala (onde o sensor fica em repouso - a lib
+// assume rawValue perto de ADC_RAW_MAX quando nada esta sendo tocado,
+// ver o "1023 - raw/4" em hellodrum.cpp), nao o valor absoluto - isso
+// preserva a leitura de repouso (~0 apos a transformacao da lib)
+// independente do gain escolhido.
+void applyPadGain()
+{
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (!channelPrimary[i] || !padEnabled[i] || padGain[i] == 100)
+        {
+            continue;
+        }
+
+        float g = padGain[i] / 100.0f;
+        rawValue[i] = ADC_RAW_MAX - (int)(g * (ADC_RAW_MAX - rawValue[i]));
+        rawValue[i] = constrain(rawValue[i], 0, ADC_RAW_MAX);
+
+        if (padTypeUsesSecondChannel(padTypes[i]))
+        {
+            rawValue[i + 1] = ADC_RAW_MAX - (int)(g * (ADC_RAW_MAX - rawValue[i + 1]));
+            rawValue[i + 1] = constrain(rawValue[i + 1], 0, ADC_RAW_MAX);
+        }
+    }
+}
+
+// Crosstalk (Fase P, ver docs/01-decisoes-arquiteturais.md) - roda depois
+// do dispatchSensing() (que ja decidiu hit/velocity via a lib) e antes do
+// handlePadResult() (que decide o que sai por MIDI/protocolo). Um hit e'
+// descartado se outro pad do MESMO grupo (padXtalkGroup[], 0 = nenhum)
+// bateu bem mais forte no mesmo ciclo de loop() - modela vibracao mecanica
+// entre pads montados juntos (ex: mesmo rack) e/ou crosstalk eletrico
+// entre canais que o usuario souber que interferem entre si (inclusive os
+// dois CD4067 que compartilham o barramento S0-S3 - ver
+// docs/02-hardware.md). padXtalk[] (0-100) controla o quao agressiva e' a
+// supressao: 0 desliga; valores altos toleram so' uma diferenca pequena
+// antes de suprimir.
+void suppressCrosstalk()
+{
+    byte padPeak[NUM_PADS] = {0};
+
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (!channelPrimary[i] || !padEnabled[i])
+        {
+            continue;
+        }
+        HelloDrum &p = pads[i];
+        byte v = 0;
+        if (p.hit && p.velocity > v) v = p.velocity;
+        if (p.hitRim && p.velocityRim > v) v = p.velocityRim;
+        if (p.hitCup && p.velocityCup > v) v = p.velocityCup;
+        padPeak[i] = v;
+    }
+
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (!channelPrimary[i] || !padEnabled[i] || padXtalkGroup[i] == 0 || padXtalk[i] == 0 || padPeak[i] == 0)
+        {
+            continue;
+        }
+
+        byte otherMax = 0;
+        for (byte j = 0; j < NUM_PADS; j++)
+        {
+            if (j == i || !channelPrimary[j] || !padEnabled[j] || padXtalkGroup[j] != padXtalkGroup[i])
+            {
+                continue;
+            }
+            if (padPeak[j] > otherMax)
+            {
+                otherMax = padPeak[j];
+            }
+        }
+        if (otherMax == 0)
+        {
+            continue; // nenhum outro pad do grupo bateu nesse ciclo
+        }
+
+        int margin = (100 - padXtalk[i]) * 127 / 100;
+        if (otherMax > padPeak[i] && (otherMax - padPeak[i]) > margin)
+        {
+            HelloDrum &p = pads[i];
+            p.hit = false;
+            p.hitRim = false;
+            p.hitCup = false;
+        }
     }
 }
 
@@ -1222,14 +1766,324 @@ unsigned long sw2PressedAtMs = 0;
 
 unsigned long enc2LastStepMs = 0;
 
+// ---------------------------------------------------------------------------
+// Auto-tune (Fase O) - assistente de auto-calibracao inspirado no recurso
+// "Auto Tune" do microDRUM/nanoDRUM (github.com/massimobernava/md-firmware,
+// c_pin.ino/l_loop.ino) - ver docs/01-decisoes-arquiteturais.md pro racional
+// completo e as simplificacoes assumidas em relacao ao original.
+//
+// So calibra o sensor principal do pad (pin_1/piezoValue) - pads de 2 canais
+// (aro/borda/cup) continuam precisando de ajuste manual pro 2o sensor.
+// ---------------------------------------------------------------------------
+enum AutoTuneState : byte
+{
+    AT_IDLE,
+    AT_NOISE,     // fase 1: mede o ruido de fundo (usuario nao toca no pad)
+    AT_WAITING,   // esperando a proxima pancada
+    AT_RISING,    // pancada em andamento, procurando o pico
+    AT_DECAYING,  // pico encontrado, esperando o sinal cair pra metade (mask_time)
+    AT_COOLDOWN,  // intervalo entre uma pancada e a proxima
+    AT_DONE,      // resultado calculado, esperando confirmacao
+    AT_ABORTED,   // cancelado (timeout ou canal desligado) - ver atAbortedReason
+};
+
+enum AutoTuneAbortReason : byte
+{
+    AT_ABORT_TIMEOUT,
+    AT_ABORT_DISABLED,
+};
+
+#define AUTOTUNE_NOISE_MS 2000
+#define AUTOTUNE_HIT_TARGET 8
+#define AUTOTUNE_RISE_SETTLE_MS 8
+#define AUTOTUNE_DECAY_TIMEOUT_MS 500
+#define AUTOTUNE_COOLDOWN_MS 30
+#define AUTOTUNE_WAIT_TIMEOUT_MS 15000
+
+AutoTuneState atState = AT_IDLE;
+byte atPad = 0;
+unsigned long atPhaseStartMs = 0;
+unsigned long atLastCountdownMs = 0; // so' pra redesenhar a contagem regressiva do AT_NOISE 1x/segundo
+int atNoiseFloor = 0;
+byte atHitCount = 0;
+int atHitPeak = 0;
+unsigned long atHitStartMs = 0;
+unsigned long atPeakAtMs = 0;
+long atSumScanMs = 0;
+long atSumMaskMs = 0;
+long atSumPeak = 0;
+byte atResultSensitivity = 0;
+byte atResultThreshold = 0;
+byte atResultScan = 0;
+byte atResultMask = 0;
+AutoTuneAbortReason atAbortedReason = AT_ABORT_TIMEOUT;
+
+// Espelha o estado do assistente pro app desktop (Fase O) - emitido a cada
+// mudanca de estado relevante, nao so' em resposta a comando (pra dar
+// progresso em tempo real: contagem regressiva do ruido, golpes capturados
+// etc). Ver docs/04-protocolo-serial.md.
+void sendAutoTuneStatus()
+{
+    JsonDocument doc;
+    doc["type"] = "autotune_status";
+    doc["pad"] = atPad;
+
+    switch (atState)
+    {
+    case AT_IDLE:
+        doc["state"] = "idle";
+        break;
+    case AT_NOISE:
+        doc["state"] = "noise";
+        break;
+    case AT_WAITING:
+    case AT_RISING:
+    case AT_DECAYING:
+    case AT_COOLDOWN:
+        doc["state"] = "collecting";
+        break;
+    case AT_DONE:
+        doc["state"] = "done";
+        break;
+    case AT_ABORTED:
+        doc["state"] = "aborted";
+        doc["reason"] = atAbortedReason == AT_ABORT_DISABLED ? "channel_disabled" : "timeout";
+        break;
+    }
+
+    doc["hit_count"] = atHitCount;
+    doc["hit_target"] = AUTOTUNE_HIT_TARGET;
+
+    if (atState == AT_DONE)
+    {
+        doc["sensitivity"] = atResultSensitivity;
+        doc["threshold"] = atResultThreshold;
+        doc["scan_time"] = atResultScan;
+        doc["mask_time"] = atResultMask;
+    }
+
+    sendJsonLine(doc);
+}
+
+void startAutoTune(byte pad)
+{
+    atPad = pad;
+    atState = AT_NOISE;
+    atPhaseStartMs = millis();
+    atNoiseFloor = 0;
+    atHitCount = 0;
+    atSumScanMs = 0;
+    atSumMaskMs = 0;
+    atSumPeak = 0;
+    atLastCountdownMs = atPhaseStartMs;
+    currentPage = PAGE_AUTOTUNE;
+    forceScreenRedraw = true;
+    sendAutoTuneStatus();
+}
+
+// So calcula os resultados (RAM) - nao aplica ainda, ver applyAutoTuneResult().
+void finishAutoTune()
+{
+    float avgPeak = (float)atSumPeak / atHitCount;
+    float avgScanMs = (float)atSumScanMs / atHitCount;
+    float avgMaskMs = (float)atSumMaskMs / atHitCount;
+
+    // sensitivity/threshold sao lidos pela lib como Valor*10 (raw ADC,
+    // 0-1023ish pos-transformacao ESP32) - ver dualPiezoSensing() etc em
+    // hellodrum.cpp. +15% de margem no pico medio pra deixar espaco pra
+    // acentos mais fortes que os batidos durante a calibracao.
+    int sensRaw = (int)(avgPeak * 1.15f);
+    int threshRaw = atNoiseFloor;
+    if (threshRaw >= sensRaw)
+    {
+        threshRaw = sensRaw / 2; // salvaguarda - nao deveria acontecer na pratica
+    }
+
+    atResultSensitivity = (byte)constrain(sensRaw / 10, 1, 100);
+    atResultThreshold = (byte)constrain(threshRaw / 10, 1, 100);
+    atResultScan = (byte)constrain((int)(avgScanMs * 1.2f), 1, 100);   // +20% de margem
+    atResultMask = (byte)constrain((int)(avgMaskMs * 1.3f), 1, 100);   // +30% de margem (evita retrigger falso)
+
+    atState = AT_DONE;
+    forceScreenRedraw = true;
+    sendAutoTuneStatus();
+}
+
+// Chamado a cada loop() so' enquanto PAGE_AUTOTUNE esta' visivel. Le'
+// pads[atPad].piezoValue, que o dispatchSensing() normal ja atualiza todo
+// loop() (independente do tipo do pad) - nao precisa de nenhuma leitura de
+// sensor extra, so observa o que ja esta' sendo lido.
+void autoTuneTick()
+{
+    if (atState == AT_IDLE || atState == AT_DONE || atState == AT_ABORTED)
+    {
+        return;
+    }
+
+    // pad.piezoValue e' privado na lib - lemos o mesmo rawValue[] que o
+    // dispatchSensing() normal ja atualiza e aplicamos a mesma transformacao
+    // que a lib faz internamente pra ESP32 (ver dualPiezoSensing() etc em
+    // hellodrum.cpp). pin_1 == atPad nesse projeto (ver captureSignalSample()).
+    int v = 1023 - rawValue[atPad] / 4;
+    unsigned long now = millis();
+
+    if (atState == AT_NOISE)
+    {
+        if (v > atNoiseFloor)
+        {
+            atNoiseFloor = v;
+        }
+        if (now - atLastCountdownMs >= 1000)
+        {
+            atLastCountdownMs = now;
+            forceScreenRedraw = true; // redesenha a contagem regressiva
+        }
+        if (now - atPhaseStartMs >= AUTOTUNE_NOISE_MS)
+        {
+            atNoiseFloor = (int)(atNoiseFloor * 1.3f) + 5; // margem de seguranca sobre o ruido observado
+            atState = AT_WAITING;
+            atPhaseStartMs = now;
+            forceScreenRedraw = true;
+            sendAutoTuneStatus();
+        }
+        return;
+    }
+
+    if (atState == AT_WAITING)
+    {
+        if (v > atNoiseFloor)
+        {
+            atHitStartMs = now;
+            atHitPeak = v;
+            atPeakAtMs = now;
+            atState = AT_RISING;
+        }
+        else if (now - atPhaseStartMs > AUTOTUNE_WAIT_TIMEOUT_MS)
+        {
+            atState = AT_ABORTED;
+            atAbortedReason = AT_ABORT_TIMEOUT;
+            forceScreenRedraw = true;
+            sendAutoTuneStatus();
+        }
+        return;
+    }
+
+    if (atState == AT_RISING)
+    {
+        if (v > atHitPeak)
+        {
+            atHitPeak = v;
+            atPeakAtMs = now;
+        }
+        // "Assentou" no pico: nenhum valor maior chegou nos ultimos
+        // AUTOTUNE_RISE_SETTLE_MS - o sinal comecou a cair.
+        if ((now - atPeakAtMs) >= AUTOTUNE_RISE_SETTLE_MS)
+        {
+            atState = AT_DECAYING;
+        }
+        return;
+    }
+
+    if (atState == AT_DECAYING)
+    {
+        if (v <= atHitPeak / 2)
+        {
+            unsigned long scanMs = atPeakAtMs - atHitStartMs;
+            unsigned long maskMs = now - atPeakAtMs;
+            atSumScanMs += scanMs;
+            atSumMaskMs += maskMs;
+            atSumPeak += atHitPeak;
+            atHitCount++;
+            forceScreenRedraw = true;
+
+            if (atHitCount >= AUTOTUNE_HIT_TARGET)
+            {
+                finishAutoTune(); // ja envia sendAutoTuneStatus() internamente
+            }
+            else
+            {
+                atState = AT_COOLDOWN;
+                atPhaseStartMs = now;
+                sendAutoTuneStatus(); // atualiza o contador de golpes pro app
+            }
+        }
+        else if ((now - atPeakAtMs) > AUTOTUNE_DECAY_TIMEOUT_MS)
+        {
+            // Nunca decaiu de verdade (provavelmente ruido/instabilidade) -
+            // descarta essa tentativa, sem contar como pancada.
+            atState = AT_WAITING;
+            atPhaseStartMs = now;
+        }
+        return;
+    }
+
+    if (atState == AT_COOLDOWN)
+    {
+        if (v < atNoiseFloor)
+        {
+            if (now - atPhaseStartMs > AUTOTUNE_COOLDOWN_MS)
+            {
+                atState = AT_WAITING;
+                atPhaseStartMs = now;
+            }
+        }
+        else
+        {
+            atPhaseStartMs = now; // ainda em decaimento/ruido alto - reinicia o cooldown
+        }
+        return;
+    }
+}
+
+// Grava o resultado calculado nos campos do pad (so' em RAM - mesma
+// convencao de "persistencia explicita via GLOBAL > SALVAR" usada pelo
+// resto da edicao via encoders). Retorna false se chamado fora de hora
+// (nenhum resultado pronto ainda) - o chamador (encoder ou serial) decide
+// o que fazer nesse caso.
+bool applyAutoTuneResult()
+{
+    if (atState != AT_DONE)
+    {
+        return false;
+    }
+
+    byte pad = atPad;
+    pads[pad].sensitivity = atResultSensitivity;
+    pads[pad].threshold1 = atResultThreshold;
+    pads[pad].scantime = atResultScan;
+    pads[pad].masktime = atResultMask;
+    unsavedChanges = true;
+
+    atState = AT_IDLE;
+    currentPage = PAGE_PAD_EDIT;
+    forceScreenRedraw = true;
+    sendAutoTuneStatus();
+    sendPadConfig(pad); // reflete sensitivity/threshold/scan/mask novos pro app
+    return true;
+}
+
+void cancelAutoTune()
+{
+    atState = AT_IDLE;
+    currentPage = PAGE_PAD_EDIT;
+    forceScreenRedraw = true;
+    sendAutoTuneStatus();
+}
+
 void goToLive()
 {
+    atState = AT_IDLE; // seguranca - nao deixa o assistente rodando fora da tela dele
     currentPage = PAGE_LIVE;
     forceScreenRedraw = true;
 }
 
 void onEnc1Rotate(int delta)
 {
+    if (currentPage == PAGE_AUTOTUNE)
+    {
+        return; // sem navegacao durante o assistente - so' ENC2 (aplicar/cancelar) ou hold (cancelar)
+    }
+
     if (currentPage == PAGE_PAD_EDIT || currentPage == PAGE_SIGNAL)
     {
         editPadIndex = (editPadIndex + delta + NUM_PADS) % NUM_PADS;
@@ -1249,6 +2103,11 @@ void onEnc1Rotate(int delta)
 
 void onEnc1Click()
 {
+    if (currentPage == PAGE_AUTOTUNE)
+    {
+        return;
+    }
+
     if (currentPage == PAGE_PAD_EDIT)
     {
         currentPage = PAGE_SIGNAL;
@@ -1332,12 +2191,6 @@ void onEnc2Rotate(int delta)
                 int v = ((int)midiOutput + step + 3) % 3;
                 midiOutput = v;
             }
-            else if (globalSelection == GLOBAL_ROW_BRIGHTNESS)
-            {
-                int v = constrain((int)brightness + step * 10, 10, 100);
-                brightness = v;
-                applyBrightness();
-            }
             unsavedChanges = true;
         }
         forceScreenRedraw = true;
@@ -1365,8 +2218,31 @@ void onEnc2Click()
     }
     else if (currentPage == PAGE_PAD_EDIT)
     {
-        editingValue = !editingValue;
-        forceScreenRedraw = true;
+        FieldDef fields[MAX_FIELDS_PER_PAD];
+        byte n = getFieldsForType(padTypes[editPadIndex], fields);
+        if (editItemIndex < n && fields[editItemIndex].id == FIELD_AUTOTUNE)
+        {
+            if (padEnabled[editPadIndex])
+            {
+                startAutoTune(editPadIndex);
+            }
+            else
+            {
+                // showToast() so' e' desenhado por renderGlobal() - aqui
+                // reusamos a tela do assistente direto no estado "abortado",
+                // com uma mensagem especifica pra esse motivo.
+                atPad = editPadIndex;
+                atState = AT_ABORTED;
+                atAbortedReason = AT_ABORT_DISABLED;
+                currentPage = PAGE_AUTOTUNE;
+                forceScreenRedraw = true;
+            }
+        }
+        else
+        {
+            editingValue = !editingValue;
+            forceScreenRedraw = true;
+        }
     }
     else if (currentPage == PAGE_GLOBAL)
     {
@@ -1385,6 +2261,20 @@ void onEnc2Click()
             globalEditing = !globalEditing;
         }
         forceScreenRedraw = true;
+    }
+    else if (currentPage == PAGE_AUTOTUNE)
+    {
+        if (atState == AT_DONE)
+        {
+            applyAutoTuneResult();
+            showToast("CALIBRADO", "VALORES APLICADOS");
+        }
+        else if (atState == AT_ABORTED)
+        {
+            cancelAutoTune();
+        }
+        // Durante NOISE/WAITING/RISING/DECAYING/COOLDOWN, clicar nao faz
+        // nada - so' ENC2 hold cancela no meio do assistente.
     }
 }
 
@@ -1406,6 +2296,10 @@ void onEnc2Hold()
     {
         currentPage = PAGE_PAD_EDIT;
         forceScreenRedraw = true;
+    }
+    else if (currentPage == PAGE_AUTOTUNE)
+    {
+        cancelAutoTune(); // cancela em qualquer estado, inclusive no meio da coleta de golpes
     }
     // PADS/GLOBAL/LIVE nao tem nivel abaixo - sem efeito (design/SPEC.md
     // so define essa transicao a partir de PAD_EDIT/SIGNAL).
@@ -1489,7 +2383,7 @@ void handleEncoders()
 
 void drawTitleBar(const char *left, const char *right, uint16_t rightColor)
 {
-    tft.fillRect(0, 0, 128, 12, COL_SURFACE);
+    tft.fillRect(0, 0, tft.width(), 12, COL_SURFACE);
     tft.setTextSize(1);
     tft.setTextColor(COL_ACCENT);
     tft.setCursor(4, 2);
@@ -1500,14 +2394,14 @@ void drawTitleBar(const char *left, const char *right, uint16_t rightColor)
         uint16_t w, h;
         tft.getTextBounds(right, 0, 0, &x1, &y1, &w, &h);
         tft.setTextColor(rightColor);
-        tft.setCursor(124 - (int)w, 2);
+        tft.setCursor(tft.width() - 4 - (int)w, 2);
         tft.print(right);
     }
 }
 
 void drawValueRow(int y, const char *label, const char *value, bool selected, bool editing)
 {
-    tft.fillRect(0, y, 128, 14, editing ? COL_BG : selected ? COL_SURFACE : COL_BG);
+    tft.fillRect(0, y, tft.width(), 14, editing ? COL_BG : selected ? COL_SURFACE : COL_BG);
     tft.setTextSize(1);
     tft.setTextColor(selected || editing ? COL_TXT : COL_TXT_DIM);
     tft.setCursor(4, y + 3);
@@ -1516,7 +2410,7 @@ void drawValueRow(int y, const char *label, const char *value, bool selected, bo
     int16_t x1, y1;
     uint16_t w, h;
     tft.getTextBounds(value, 0, 0, &x1, &y1, &w, &h);
-    int vx = 124 - (int)w;
+    int vx = tft.width() - 4 - (int)w;
     if (editing)
     {
         tft.fillRect(vx - 3, y + 1, (int)w + 5, 12, COL_EDIT);
@@ -1530,56 +2424,95 @@ void drawValueRow(int y, const char *label, const char *value, bool selected, bo
     tft.print(value);
 }
 
+// Largura da barra de progresso - compartilhada entre renderBoot() (desenha
+// o fundo) e renderBootProgress() (desenha o preenchimento) - ver
+// BOOT_BAR_X abaixo, centralizado dinamicamente pela largura real da tela
+// (2026-09-01: paisagem, 160px - antes era so' um x fixo pensado pros
+// 128px de retrato).
+#define BOOT_BAR_W 100
+#define BOOT_BAR_X ((tft.width() - BOOT_BAR_W) / 2)
+#define BOOT_BAR_Y 82
+
 void renderBootProgress(byte percent)
 {
-    tft.fillRect(24, 82, 80, 4, COL_SURFACE);
-    int fillW = map(percent, 0, 100, 0, 80);
-    tft.fillRect(24, 82, fillW, 4, COL_ACCENT);
+    tft.fillRect(BOOT_BAR_X, BOOT_BAR_Y, BOOT_BAR_W, 4, COL_SURFACE);
+    int fillW = map(percent, 0, 100, 0, BOOT_BAR_W);
+    tft.fillRect(BOOT_BAR_X, BOOT_BAR_Y, fillW, 4, COL_ACCENT);
+}
+
+// Centraliza uma linha de texto horizontalmente na largura real da tela -
+// usa getTextBounds() (em vez de um x fixo) pra continuar centralizado
+// mesmo se o texto mudar. tft.setTextSize()/setTextColor() precisam ser
+// chamados ANTES (getTextBounds usa o tamanho de fonte atual).
+void printCentered(const char *text, int y)
+{
+    int16_t x1, y1;
+    uint16_t w, h;
+    tft.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+    tft.setCursor((tft.width() - (int)w) / 2, y);
+    tft.print(text);
 }
 
 void renderBoot()
 {
     tft.fillScreen(COL_BG);
+
     tft.setTextColor(COL_ACCENT);
     tft.setTextSize(2);
-    tft.setCursor(4, 38);
-    tft.print("DRUMCORE");
+    printCentered("DRUMCORE", 34);
 
     tft.setTextSize(1);
     tft.setTextColor(COL_TXT_DIM);
-    tft.setCursor(24, 58);
-    tft.print("32 PAD TRIGGER");
+    printCentered("32 PAD TRIGGER", 58);
 
-    tft.fillRect(24, 82, 80, 4, COL_SURFACE);
+    tft.fillRect(BOOT_BAR_X, BOOT_BAR_Y, BOOT_BAR_W, 4, COL_SURFACE);
 
     tft.setTextColor(COL_LINE);
-    tft.setCursor(24, 110);
-    tft.print("v0.1  ESP32-S3");
+    printCentered("v0.1  ESP32-S3", 110);
 }
+
+// Grade 8x4 ocupando a largura/altura inteiras da tela em paisagem (2026-
+// 09-01 - antes do giro pra paisagem, cabia numa area 128x99 so', sobrando
+// uma faixa em branco embaixo; agora usa os 160x116 disponiveis abaixo da
+// barra de titulo). Pitch = passo entre celulas, celula em si e' 2-3px
+// menor que o pitch (a diferenca vira a folga entre pads, igual ao design
+// original).
+#define LIVE_GRID_PITCH_X 20
+#define LIVE_GRID_CELL_W 18
+#define LIVE_GRID_Y0 14
+#define LIVE_GRID_PITCH_Y 28
+#define LIVE_GRID_CELL_H 25
 
 void renderLivePad(byte i)
 {
     byte col = i % 8;
     byte row = i / 8;
-    int x = 1 + col * 16;
-    int y = 31 + row * 17;
+    int x = 1 + col * LIVE_GRID_PITCH_X;
+    int y = LIVE_GRID_Y0 + row * LIVE_GRID_PITCH_Y;
 
     unsigned long since = millis() - padHitAtMs[i];
     bool solid = padHitAtMs[i] != 0 && since < PAD_FLASH_MS;
     bool decay = padHitAtMs[i] != 0 && since >= PAD_FLASH_MS && since < PAD_DECAY_MS;
 
-    uint16_t bg = solid ? COL_HIT : COL_BG;
-    uint16_t border = solid ? COL_HIT : decay ? COL_HIT : COL_LINE;
-    uint16_t fg = solid ? COL_BG : decay ? COL_HIT : COL_TXT_DIM;
+    // Canal desligado (padEnabled[i] == false): nunca acende (nunca chega
+    // a ter hit), so' desenha "apagado" - sem borda visivel, numero bem
+    // fraco - pra distinguir de um canal ligado que so' esta' ocioso.
+    bool off = channelPrimary[i] && !padEnabled[i];
 
-    tft.fillRect(x, y, 14, 14, bg);
-    tft.drawRect(x, y, 14, 14, border);
+    uint16_t bg = solid ? COL_HIT : COL_BG;
+    uint16_t border = off ? COL_BG : solid ? COL_HIT : decay ? COL_HIT : COL_LINE;
+    uint16_t fg = off ? COL_LINE : solid ? COL_BG : decay ? COL_HIT : COL_TXT_DIM;
+
+    tft.fillRect(x, y, LIVE_GRID_CELL_W, LIVE_GRID_CELL_H, bg);
+    tft.drawRect(x, y, LIVE_GRID_CELL_W, LIVE_GRID_CELL_H, border);
 
     char buf[3];
     snprintf(buf, sizeof(buf), "%02d", i + 1);
     tft.setTextSize(1);
     tft.setTextColor(fg);
-    tft.setCursor(x + 1, y + 4);
+    // "01".."32" (2 chars, textSize 1) mede uns 11px de largura - centraliza
+    // na celula, que agora e' bem maior que o texto (LIVE_GRID_CELL_W/H).
+    tft.setCursor(x + (LIVE_GRID_CELL_W - 11) / 2, y + (LIVE_GRID_CELL_H - 8) / 2);
     tft.print(buf);
 }
 
@@ -1591,10 +2524,10 @@ void renderLive()
         drawTitleBar("LIVE", "", COL_TXT);
         tft.setTextSize(1);
         tft.setTextColor(TinyUSBDevice.mounted() ? COL_OK : COL_LINE);
-        tft.setCursor(100, 2);
+        tft.setCursor(tft.width() - 28, 2);
         tft.print("U");
         tft.setTextColor(bleMidiConnected ? COL_OK : COL_LINE);
-        tft.setCursor(118, 2);
+        tft.setCursor(tft.width() - 10, 2);
         tft.print("B");
         for (byte i = 0; i < NUM_PADS; i++)
         {
@@ -1630,26 +2563,42 @@ void renderPadsList()
     snprintf(right, sizeof(right), "%02d/32", padsListSelection + 1);
     drawTitleBar("PADS", right, COL_TXT_DIM);
 
+    // Largura da lista = tela inteira menos a faixa da scrollbar (3px) e um
+    // pequeno respiro (2px) antes dela - ver scrollbar no fim da funcao.
+    int rowW = tft.width() - 5;
+
     for (byte row = 0; row < 8; row++)
     {
         byte i = padsListTop + row;
         int y = 12 + row * 14;
         bool sel = (i == padsListSelection);
 
-        tft.fillRect(0, y, 125, 14, sel ? COL_ACCENT : COL_BG);
+        // Canal primario mas desligado (padEnabled[i] == false): tudo na
+        // linha em COL_LINE (mais apagado que COL_TXT_DIM), distinto de
+        // "canal ocupado" (2o canal de um pad de 2 zonas, mostra "--").
+        bool off = channelPrimary[i] && !padEnabled[i];
+
+        tft.fillRect(0, y, rowW, 14, sel ? COL_ACCENT : COL_BG);
         tft.setTextSize(1);
-        tft.setTextColor(sel ? COL_BG : COL_TXT);
+        tft.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT);
 
         char idxBuf[5];
         snprintf(idxBuf, sizeof(idxBuf), "P%02d", i + 1);
         tft.setCursor(4, y + 3);
         tft.print(idxBuf);
 
-        tft.setTextColor(sel ? COL_BG : COL_TXT_DIM);
-        tft.setCursor(34, y + 3);
-        if (channelPrimary[i])
+        tft.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT_DIM);
+        tft.setCursor(40, y + 3);
+        if (channelPrimary[i] && padLabels[i][0] != '\0')
         {
-            tft.print(padTypeShortName(padTypes[i]));
+            // Nome configurado pelo usuario (campo "label" do protocolo -
+            // ver docs/04-protocolo-serial.md), nao o "N - Label" completo
+            // de padNames[] (o indice ja aparece na coluna P01/P02/...).
+            // Truncado pra nao invadir a coluna de nota/OFF a direita.
+            char labelBuf[14];
+            strncpy(labelBuf, padLabels[i], sizeof(labelBuf) - 1);
+            labelBuf[sizeof(labelBuf) - 1] = '\0';
+            tft.print(labelBuf);
         }
         else
         {
@@ -1659,21 +2608,29 @@ void renderPadsList()
         if (channelPrimary[i])
         {
             char noteBuf[6];
-            snprintf(noteBuf, sizeof(noteBuf), "N%d", pads[i].note);
+            if (off)
+            {
+                snprintf(noteBuf, sizeof(noteBuf), "OFF");
+            }
+            else
+            {
+                snprintf(noteBuf, sizeof(noteBuf), "N%d", pads[i].note);
+            }
             int16_t x1, y1;
             uint16_t w, h;
-            tft.setTextColor(sel ? COL_BG : COL_TXT);
+            tft.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT);
             tft.getTextBounds(noteBuf, 0, 0, &x1, &y1, &w, &h);
-            tft.setCursor(121 - (int)w, y + 3);
+            tft.setCursor(rowW - 4 - (int)w, y + 3);
             tft.print(noteBuf);
         }
     }
 
-    // Scrollbar proporcional (3px, coluna x=125).
-    tft.fillRect(125, 12, 3, 116, COL_SURFACE);
+    // Scrollbar proporcional (3px, encostada na borda direita).
+    int barX = tft.width() - 3;
+    tft.fillRect(barX, 12, 3, 116, COL_SURFACE);
     int barH = 116 * 8 / NUM_PADS;
     int barY = 12 + (116 - barH) * padsListTop / (NUM_PADS - 8);
-    tft.fillRect(125, barY, 3, barH, COL_LINE);
+    tft.fillRect(barX, barY, 3, barH, COL_LINE);
 }
 
 void renderPadEdit()
@@ -1737,6 +2694,16 @@ void renderPadEdit()
             if (v < 0) strncpy(valueBuf, "NENHUM", sizeof(valueBuf) - 1);
             else snprintf(valueBuf, sizeof(valueBuf), "P%02d", v + 1);
         }
+        else if (fields[idx].id == FIELD_AUTOTUNE)
+        {
+            strncpy(valueBuf, "INICIAR>", sizeof(valueBuf) - 1);
+            valueBuf[sizeof(valueBuf) - 1] = '\0';
+        }
+        else if (fields[idx].id == FIELD_ENABLED)
+        {
+            strncpy(valueBuf, getFieldValue(editPadIndex, fields[idx].id) ? "SIM" : "NAO", sizeof(valueBuf) - 1);
+            valueBuf[sizeof(valueBuf) - 1] = '\0';
+        }
         else
         {
             snprintf(valueBuf, sizeof(valueBuf), "%d", getFieldValue(editPadIndex, fields[idx].id));
@@ -1745,13 +2712,13 @@ void renderPadEdit()
         drawValueRow(y, fields[idx].label, valueBuf, sel, editingThis);
     }
 
-    tft.fillRect(0, 116, 128, 12, COL_SURFACE);
+    tft.fillRect(0, 116, tft.width(), 12, COL_SURFACE);
     tft.setTextSize(1);
     tft.setTextColor(COL_TXT_DIM);
     tft.setCursor(4, 118);
     tft.print("ENC2 GIRA VALOR");
     tft.setTextColor(COL_EDIT);
-    tft.setCursor(96, 118);
+    tft.setCursor(tft.width() - 46, 118);
     tft.print("PUSH OK");
 }
 
@@ -1857,11 +2824,8 @@ void renderGlobal()
 
     drawValueRow(26, "SAIDA", midiOutputLabel(midiOutput), globalSelection == GLOBAL_ROW_OUTPUT, globalSelection == GLOBAL_ROW_OUTPUT && globalEditing);
 
-    snprintf(buf, sizeof(buf), "%d%%", brightness);
-    drawValueRow(40, "BRILHO", buf, globalSelection == GLOBAL_ROW_BRIGHTNESS, globalSelection == GLOBAL_ROW_BRIGHTNESS && globalEditing);
-
-    drawValueRow(54, "SALVAR", unsavedChanges ? "*" : ">", globalSelection == GLOBAL_ROW_SAVE, false);
-    drawValueRow(68, "RESTAURAR", ">", globalSelection == GLOBAL_ROW_RESTORE, false);
+    drawValueRow(40, "SALVAR", unsavedChanges ? "*" : ">", globalSelection == GLOBAL_ROW_SAVE, false);
+    drawValueRow(54, "RESTAURAR", ">", globalSelection == GLOBAL_ROW_RESTORE, false);
 
     if (showingToast)
     {
@@ -1879,6 +2843,124 @@ void renderGlobal()
         tft.setTextColor(COL_TXT_DIM);
         tft.setCursor(64 - (int)w / 2, 80);
         tft.print(toastLine2);
+    }
+}
+
+// Tela do assistente de auto-tune (Fase O) - ver comentario grande no bloco
+// de estados (perto de goToLive()) pro racional completo.
+void renderAutoTune()
+{
+    if (!forceScreenRedraw)
+    {
+        return;
+    }
+    forceScreenRedraw = false;
+
+    tft.fillScreen(COL_BG);
+    char left[8];
+    snprintf(left, sizeof(left), "PAD %02d", atPad + 1);
+    drawTitleBar(left, "CALIBRAR", COL_EDIT);
+
+    if (atState == AT_NOISE)
+    {
+        unsigned long remainMs = AUTOTUNE_NOISE_MS - (millis() - atPhaseStartMs);
+        tft.setTextSize(1);
+        tft.setTextColor(COL_TXT);
+        tft.setCursor(4, 30);
+        tft.print("OUCA O RUIDO");
+        tft.setTextColor(COL_TXT_DIM);
+        tft.setCursor(4, 46);
+        tft.print("nao toque no pad...");
+        tft.setTextColor(COL_ACCENT);
+        tft.setCursor(4, 64);
+        tft.print((remainMs / 1000) + 1);
+        tft.print("s");
+    }
+    else if (atState == AT_WAITING || atState == AT_RISING || atState == AT_DECAYING || atState == AT_COOLDOWN)
+    {
+        tft.setTextSize(1);
+        tft.setTextColor(COL_TXT);
+        tft.setCursor(4, 30);
+        tft.print("BATA NO PAD");
+        tft.setTextColor(COL_TXT_DIM);
+        tft.setCursor(4, 46);
+        tft.print("intensidade normal/forte");
+
+        tft.setTextColor(COL_ACCENT);
+        tft.setTextSize(2);
+        char countBuf[8];
+        snprintf(countBuf, sizeof(countBuf), "%d/%d", atHitCount, AUTOTUNE_HIT_TARGET);
+        tft.setCursor(4, 64);
+        tft.print(countBuf);
+
+        // Barrinha de progresso (golpes capturados).
+        int barW = 120 * atHitCount / AUTOTUNE_HIT_TARGET;
+        tft.drawRect(4, 90, 120, 8, COL_LINE);
+        if (barW > 0)
+        {
+            tft.fillRect(4, 90, barW, 8, COL_ACCENT);
+        }
+    }
+    else if (atState == AT_DONE)
+    {
+        tft.setTextSize(1);
+        tft.setTextColor(COL_OK);
+        tft.setCursor(4, 12);
+        tft.print("CALIBRADO!");
+
+        char buf[10];
+        snprintf(buf, sizeof(buf), "%d", atResultSensitivity);
+        drawValueRow(28, "SENSIB", buf, false, false);
+        snprintf(buf, sizeof(buf), "%d", atResultThreshold);
+        drawValueRow(42, "THRESH", buf, false, false);
+        snprintf(buf, sizeof(buf), "%d", atResultScan);
+        drawValueRow(56, "SCAN", buf, false, false);
+        snprintf(buf, sizeof(buf), "%d", atResultMask);
+        drawValueRow(70, "MASK", buf, false, false);
+    }
+    else if (atState == AT_ABORTED)
+    {
+        tft.setTextSize(1);
+        tft.setTextColor(0xFBC3);
+        tft.setCursor(4, 40);
+        if (atAbortedReason == AT_ABORT_DISABLED)
+        {
+            tft.print("CANAL DESLIGADO");
+            tft.setTextColor(COL_TXT_DIM);
+            tft.setCursor(4, 54);
+            tft.print("ative o canal pra calibrar");
+        }
+        else
+        {
+            tft.print("SEM RESPOSTA");
+            tft.setTextColor(COL_TXT_DIM);
+            tft.setCursor(4, 54);
+            tft.print("cancelado - sem pancadas");
+        }
+    }
+
+    tft.fillRect(0, 116, tft.width(), 12, COL_SURFACE);
+    tft.setTextSize(1);
+    if (atState == AT_DONE)
+    {
+        tft.setTextColor(COL_OK);
+        tft.setCursor(4, 118);
+        tft.print("PUSH APLICA");
+        tft.setTextColor(COL_TXT_DIM);
+        tft.setCursor(tft.width() - 52, 118);
+        tft.print("HOLD SAI");
+    }
+    else if (atState == AT_ABORTED)
+    {
+        tft.setTextColor(COL_TXT_DIM);
+        tft.setCursor(4, 118);
+        tft.print("PUSH/HOLD VOLTA");
+    }
+    else
+    {
+        tft.setTextColor(COL_TXT_DIM);
+        tft.setCursor(4, 118);
+        tft.print("HOLD CANCELA");
     }
 }
 
@@ -1908,30 +2990,101 @@ void renderScreen()
     case PAGE_GLOBAL:
         renderGlobal();
         break;
+    case PAGE_AUTOTUNE:
+        renderAutoTune();
+        break;
     }
 }
 
 void setup()
 {
+    Serial.begin(115200); // com ARDUINO_USB_CDC_ON_BOOT=0, "Serial" e' a UART
+                           // fisica (GPIO43/44), nao a USB nativa - ver
+                           // docs/01-decisoes-arquiteturais.md
+
+    // [MODIFICADO - projeto DrumCore, 2026-08-31] pads[] agora e' um array
+    // default (ver declaracao logo apos mux[] acima) - cada pad e'
+    // inicializado aqui, dentro do setup() (tarefa do loop, pilha ~8KB),
+    // em vez de numa lista de inicializadores no array global (rodava na
+    // tarefa principal, pilha de so 4KB - travava o boot com 27+ pads sem
+    // nenhum erro visivel).
+    //
+    // CAUSA RAIZ ENCONTRADA E CORRIGIDA (2026-09-01, Fase R - ver
+    // docs/01-decisoes-arquiteturais.md pro relato completo): nao era um
+    // bug de pilha nem de sequencia/tempo - "#ifdef PULLUP" em
+    // hellodrum.cpp ficava SEMPRE ativo no ESP32 (colisao de nome com o
+    // PULLUP=0x04 que o proprio core arduino-esp32 ja define), entao todo
+    // begin() chamava pinMode(pin1/pin2, INPUT_PULLUP) usando os indices
+    // de canal do MUX (0-31) como se fossem GPIOs de verdade - quando o
+    // indice caia num GPIO reservado internamente (flash/PSRAM), travava o
+    // sistema. Corrigido removendo esses blocos em
+    // firmware/lib/HelloDrum-arduino-Library/src/hellodrum.cpp. Restaurado
+    // o pareamento real pin_1=i/pin_2=i+1 - cada pad le' seu proprio canal
+    // do MUX (o ultimo usa so' pin_1, pin_2=32 nao existiria).
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (i < NUM_PADS - 1)
+        {
+            pads[i].begin(i, i + 1);
+        }
+        else
+        {
+            pads[i].begin(i);
+        }
+    }
+
     // TFT primeiro - precisamos dela pra mostrar a tela BOOT antes de mais
     // nada (design/SPEC.md SCR 0).
+    // Backlight sempre ligado, sem PWM/dimming (2026-09-01 - removido a
+    // pedido do Rodrigo: o duty PWM calculado variava certinho (25-255,
+    // confirmado por log), mas o brilho fisico do backlight nao mudava
+    // visivelmente nessa placa clone - nao valia a pena investigar mais a
+    // fundo agora. Ver docs/01-decisoes-arquiteturais.md).
     pinMode(TFT_BLK, OUTPUT);
-    ledcSetup(TFT_BLK_PWM_CHANNEL, 5000, 8);
-    ledcAttachPin(TFT_BLK, TFT_BLK_PWM_CHANNEL);
+    digitalWrite(TFT_BLK, HIGH);
 
     SPI.begin(TFT_SCLK, -1 /* MISO nao usado */, TFT_MOSI, TFT_CS);
-    tft.initR(INITR_144GREENTAB); // variante do driver para telas 1.44" 128x128 - validar no hardware real
-    tft.setRotation(0);
+    tft.initR(INITR_BLACKTAB); // 2026-08-31: confirmado em hardware real via ambiente
+                                // display_test (ver firmware/src/test_display.cpp) - com fiacao
+                                // boa (curto de solda ja corrigido), INITR_144GREENTAB (o "certo"
+                                // pra 1.44"/128x128 pelo catalogo Adafruit) deu tela em branco,
+                                // INITR_BLACKTAB funcionou (cores ciclando corretamente) - clone
+                                // generico nao segue a convencao de tab da Adafruit. Ver
+                                // docs/01-decisoes-arquiteturais.md
+    // Paisagem (2026-09-01, a pedido do Rodrigo - ver foto em anexo na
+    // conversa): o painel fisico e' 128x160 (sticker "1.8' 128X160
+    // RGB_TFT" - a doc antiga de 1.44"/128x128 estava desatualizada), e
+    // vinha rodando em retrato (rotacao 0) so' porque nunca foi ajustado.
+    // rotation 1 = 90 graus - se sair de cabeca pra baixo/espelhado,
+    // trocar pra rotation 3 (270 graus), e' so' isso que muda.
+    tft.setRotation(1);
     renderBoot();
 
     if (!TinyUSBDevice.isInitialized())
     {
+        // Nome do dispositivo USB (2026-09-01, a pedido do Rodrigo - "DRUMCORE"
+        // em tudo quanto e' lugar que o SO mostrar). Precisa ser chamado ANTES
+        // de begin() - depois disso os descritores ja' foram enviados pro
+        // host. Isso troca o nome do dispositivo USB em si (o que aparece em
+        // Gerenciador de Dispositivos/Configuracoes de Som do Windows); o
+        // nome da porta MIDI (usb_midi.setStringDescriptor(), mais abaixo)
+        // e' outro campo, mostrado dentro de apps de audio/MIDI.
+        TinyUSBDevice.setManufacturerDescriptor("DRUMCORE");
+        TinyUSBDevice.setProductDescriptor("DRUMCORE");
+        // Numero de serie USB (2026-09-01) - nunca foi definido antes. Sem
+        // ele, o Windows identifica o dispositivo so' pelo VID/PID (sempre
+        // os mesmos aqui, ver docs/01-decisoes-arquiteturais.md), e como a
+        // placa ja foi gravada com varias configuracoes de USB diferentes
+        // ao longo do projeto, o driver associado no Windows pode ter
+        // ficado em cache de uma config antiga (de antes do MIDI existir),
+        // sem re-enumerar do zero. Um serial fixo forca o Windows a tratar
+        // como dispositivo "novo".
+        TinyUSBDevice.setSerialDescriptor("DRUMCORE001");
         TinyUSBDevice.begin(0);
     }
-    Serial.begin(115200);
     renderBootProgress(20);
 
-    usb_midi.setStringDescriptor("DrumCore MIDI");
+    usb_midi.setStringDescriptor("DRUMCORE");
     MIDI.begin(MIDI_CHANNEL_OMNI);
     if (TinyUSBDevice.mounted())
     {
@@ -1939,6 +3092,15 @@ void setup()
         delay(10);
         TinyUSBDevice.attach();
     }
+
+    // Religa o hardware USB de verdade AGORA - depois do descritor Adafruit
+    // ja estar completo (MIDI incluido acima) - ver bringUpNativeUsbHardware()
+    // no topo do arquivo pro racional completo. Tentativa anterior
+    // (USB.begin() da classe ESPUSB) travava o boot por misturar duas
+    // pilhas TinyUSB incompativeis - essa versao usa so' as pecas de baixo
+    // nivel da propria Adafruit, consistente com o tud_task() que "ganha"
+    // no link.
+    bringUpNativeUsbHardware();
     renderBootProgress(40);
 
     BLEBleMidi.setHandleConnected(onBleMidiConnected);
@@ -1961,17 +3123,25 @@ void setup()
             padLabels[i][0] = '\0';
             padTypes[i] = PAD_SINGLE;
             hihatPedalChannel[i] = PAD_NO_LINK;
+            padEnabled[i] = true; // todo canal comeca habilitado por padrao
+            pads[i].retrigger = 0; // Fase P - 0 = desligado (comportamento original)
+            padGain[i] = 100;       // 1.00x, neutro
+            padXtalk[i] = 0;        // sem supressao de crosstalk
+            padXtalkGroup[i] = 0;   // sem grupo
             rebuildPadName(i);
             pads[i].initMemory();
             EEPROM_ESP.writeBytes(padLabelEepromAddr(i), padLabels[i], PAD_LABEL_MAX_LEN);
             EEPROM_ESP.write(EEPROM_TYPES_ADDR + i, padTypes[i]);
             EEPROM_ESP.write(EEPROM_HIHAT_LINK_ADDR + i, hihatPedalChannel[i]);
+            EEPROM_ESP.write(EEPROM_ENABLED_ADDR + i, 1);
+            EEPROM_ESP.write(EEPROM_RETRIGGER_ADDR + i, 0);
+            EEPROM_ESP.write(EEPROM_GAIN_ADDR + i, 100);
+            EEPROM_ESP.write(EEPROM_XTALK_ADDR + i, 0);
+            EEPROM_ESP.write(EEPROM_XTALK_GROUP_ADDR + i, 0);
         }
         recomputeChannelPrimary();
-        applyBrightness();
         EEPROM_ESP.write(EEPROM_GLOBAL_ADDR, midiChannel);
         EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 1, midiOutput);
-        EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 2, brightness);
         EEPROM_ESP.write(EEPROM_INIT_FLAG_ADDR, EEPROM_INIT_MAGIC);
         EEPROM_ESP.commit();
     }
@@ -1979,6 +3149,38 @@ void setup()
     {
         loadAllFromEeprom();
     }
+
+    // CONTORNO TEMPORARIO (ainda necessario em 2026-09-01, mesmo com o bug
+    // do pads[] corrigido - Fase R): sem os 2x CD4067/32 pads fisicos
+    // conectados de verdade ainda, cada canal ADC fica flutuando e capta
+    // ruido, o que disparia "hit" espalhados pelos 32 quadrados na tela
+    // LIVE o tempo todo. Desabilitando todos os canais aqui (so' em RAM,
+    // nao mexe na EEPROM) pra manter a interface legivel ate' o MUX/pads
+    // serem conectados de verdade - ai' sim remover este bloco (ou
+    // habilitar so' os canais com sensor conectado).
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        padEnabled[i] = false;
+    }
+
+    // TESTE TEMPORARIO (2026-09-01, a pedido do Rodrigo) - o MUX fisico
+    // ainda nao chegou. Habilita so' o pad 0 (canais 0 e 1, "Pad 1" na UI
+    // 1-based) como dual-zone (corpo+aro), lido direto de 2 pinos do
+    // ESP32-S3 em vez do MUX (ver leitura em loop(), logo apos o scan dos
+    // MUX - sobrescreve rawValue[0]/rawValue[1], que os MUX tambem
+    // escrevem, com lixo/flutuando, ja' que o MUX0 nao esta' conectado de
+    // verdade ainda). "Pad 2" (canal 1) aparece como "canal ocupado" na
+    // lista, igual qualquer outro dual-zone - e' esperado, nao e' um
+    // segundo pad de verdade. Remover esse bloco (e a leitura em loop())
+    // quando o MUX chegar e a fiacao real dos 32 canais for feita - ver
+    // docs/02-hardware.md pros pinos GPIO17/GPIO18 usados aqui (livres,
+    // ADC2, sem uso previsto ate' entao).
+    padTypes[0] = PAD_DUAL;
+    padEnabled[0] = true;
+    recomputeChannelPrimary();
+    rebuildPadName(0);
+    rebuildPadName(1);
+
     renderBootProgress(80);
 
     pinMode(ENC1_SW, INPUT_PULLUP);
@@ -1989,8 +3191,12 @@ void setup()
     attachInterrupt(digitalPinToInterrupt(ENC2_B), isrEnc2, CHANGE);
     renderBootProgress(100);
 
-    delay(300);
-    sendLog("DrumCore - Fase J: navegacao/tela redesenhada (32 canais, 4x CD4051, USB-MIDI + BLE-MIDI)");
+    // 2026-09-01, a pedido do Rodrigo - tela de boot ficava visivel por
+    // fracoes de segundo (todo o resto do setup() acima e' rapido o
+    // suficiente pra nao dar tempo de ler nada). Segura mais um pouco
+    // antes de ir pra LIVE.
+    delay(1200);
+    sendLog("DrumCore - Fase J/K: navegacao/tela redesenhada (32 canais, 2x CD4067, USB-MIDI + BLE-MIDI)");
     goToLive();
 }
 
@@ -2005,20 +3211,41 @@ void loop()
         mux[m].scan();
     }
 
+    // TESTE TEMPORARIO (2026-09-01) - ver defines TEST_DIRECT_HEAD_PIN/
+    // TEST_DIRECT_RIM_PIN acima. Sobrescreve de proposito o que
+    // mux[0].scan() acabou de escrever em rawValue[0]/[1] (lixo/flutuando,
+    // MUX0 nao conectado de verdade ainda) com a leitura real dos 2 pinos
+    // diretos. Remover quando o MUX chegar.
+    rawValue[0] = analogRead(TEST_DIRECT_HEAD_PIN);
+    rawValue[1] = analogRead(TEST_DIRECT_RIM_PIN);
+
+    applyPadGain(); // Fase P - antes do dispatch, pra ja ler o rawValue calibrado
+
     for (byte i = 0; i < NUM_PADS; i++)
     {
-        if (channelPrimary[i])
+        // padEnabled[i] == false: canal desligado de proposito (slot sem
+        // sensor conectado) - nem processa o rawValue dele, pra ruido/
+        // interferencia nesse canal nunca virar hit/nota. Ver
+        // docs/01-decisoes-arquiteturais.md (Fase N).
+        if (channelPrimary[i] && padEnabled[i])
         {
             dispatchSensing(i);
         }
     }
 
+    suppressCrosstalk(); // Fase P - depois do dispatch, antes de decidir o que enviar
+
     for (byte i = 0; i < NUM_PADS; i++)
     {
-        if (channelPrimary[i])
+        if (channelPrimary[i] && padEnabled[i])
         {
             handlePadResult(i);
         }
+    }
+
+    if (currentPage == PAGE_AUTOTUNE)
+    {
+        autoTuneTick();
     }
 
     handleEncoders();

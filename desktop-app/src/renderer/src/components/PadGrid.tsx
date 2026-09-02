@@ -12,11 +12,12 @@ export default function PadGrid({ pads, selectedPad, lastHit, onSelect }: Props)
     <div className="pad-list">
       {pads.map((pad, i) => {
         const consumed = pad && !pad.primary
+        const off = Boolean(pad?.primary && !pad.enabled)
 
         return (
           <button
             key={i}
-            className={`pad-row${i === selectedPad ? ' selected' : ''}${lastHit?.pad === i ? ' hit' : ''}${consumed ? ' consumed' : ''}`}
+            className={`pad-row${i === selectedPad ? ' selected' : ''}${lastHit?.pad === i ? ' hit' : ''}${consumed ? ' consumed' : ''}${off ? ' off' : ''}`}
             onClick={() => onSelect(i)}
             disabled={consumed}
           >
@@ -29,7 +30,7 @@ export default function PadGrid({ pads, selectedPad, lastHit, onSelect }: Props)
                 <span className={`pad-row-name${pad?.primary && pad.label ? '' : ' unnamed'}`}>
                   {pad?.primary && pad.label ? pad.label : 'Sem nome'}
                 </span>
-                <span className="pad-row-note">{pad?.primary ? `nota ${pad.note}` : '—'}</span>
+                <span className="pad-row-note">{off ? 'desligado' : pad?.primary ? `nota ${pad.note}` : '—'}</span>
               </>
             )}
           </button>

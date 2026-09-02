@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+
+  (lib (name "drumcore_jackboard") (type "KiCad") (uri "${KIPRJMOD}/drumcore_jackboard.pretty") (options "") (descr "")))

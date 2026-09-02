@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react'
-import { PadConfig, PadField, PadType, PAD_LABEL_MAX_LEN, PAD_TYPE_META, PAD_TYPES } from '../protocol'
+import {
+  AUTOTUNE_HIT_TARGET,
+  AutoTuneStatus,
+  PadConfig,
+  PadField,
+  PadType,
+  PAD_LABEL_MAX_LEN,
+  PAD_TYPE_META,
+  PAD_TYPES
+} from '../protocol'
 
 interface Props {
   pad?: PadConfig
@@ -8,9 +17,27 @@ interface Props {
   onRename: (label: string) => void
   onChangeType: (type: PadType) => void
   onChangeHihatLink: (channel: number) => void
+  onChangeEnabled: (enabled: boolean) => void
+  /** Status do assistente de auto-calibração pra ESTE pad - null se não estiver rodando aqui. */
+  autoTune: AutoTuneStatus | null
+  onStartAutoTune: () => void
+  onCancelAutoTune: () => void
+  onApplyAutoTune: () => void
 }
 
-export default function PadEditor({ pad, allPads, onChange, onRename, onChangeType, onChangeHihatLink }: Props) {
+export default function PadEditor({
+  pad,
+  allPads,
+  onChange,
+  onRename,
+  onChangeType,
+  onChangeHihatLink,
+  onChangeEnabled,
+  autoTune,
+  onStartAutoTune,
+  onCancelAutoTune,
+  onApplyAutoTune
+}: Props) {
   const [draftLabel, setDraftLabel] = useState(pad?.primary ? pad.label : '')
 
   // Ressincroniza o campo com o que veio do módulo sempre que trocar de pad
@@ -68,6 +95,21 @@ export default function PadEditor({ pad, allPads, onChange, onRename, onChangeTy
         />
       </div>
 
+      <label className="pad-enabled-toggle">
+        <input
+          type="checkbox"
+          checked={activePad.enabled}
+          onChange={(event) => onChangeEnabled(event.target.checked)}
+        />
+        Canal ativo
+      </label>
+      {!activePad.enabled && (
+        <p className="pad-hint">
+          Canal desligado — o módulo ignora esse slot por completo (nenhum hit, nenhuma nota). Use pra slots sem
+          sensor físico conectado, pra evitar ruído/interferência sendo lido como pancada.
+        </p>
+      )}
+
       <div className="field-row">
         <label htmlFor="pad-type-select">Tipo de sensor</label>
         <select
@@ -123,6 +165,113 @@ export default function PadEditor({ pad, allPads, onChange, onRename, onChangeTy
           <span className="field-value">{activePad[spec.field]}</span>
         </div>
       ))}
+
+      <AutoTunePanel
+        enabled={activePad.enabled}
+        status={autoTune}
+        onStart={onStartAutoTune}
+        onCancel={onCancelAutoTune}
+        onApply={onApplyAutoTune}
+      />
+    </div>
+  )
+}
+
+// Assistente de auto-calibração (Fase O) - bate no pad algumas vezes e o
+// firmware calcula sensibilidade/threshold/scan/mask sozinho, em vez de
+// ajustar cada slider por tentativa e erro. Ver docs/01-decisoes-
+// arquiteturais.md (inspirado no "Auto Tune" do microDRUM/nanoDRUM).
+function AutoTunePanel({
+  enabled,
+  status,
+  onStart,
+  onCancel,
+  onApply
+}: {
+  enabled: boolean
+  status: AutoTuneStatus | null
+  onStart: () => void
+  onCancel: () => void
+  onApply: () => void
+}) {
+  const running = status !== null && status.state !== 'idle'
+
+  if (!running) {
+    return (
+      <div className="autotune-panel">
+        <button className="autotune-start" onClick={onStart} disabled={!enabled}>
+          Calibrar automaticamente
+        </button>
+        <p className="pad-hint">
+          Bate no pad <strong>{AUTOTUNE_HIT_TARGET}x</strong> com intensidade normal/forte e o módulo calcula
+          sensibilidade, threshold, scan e mask sozinho.
+          {!enabled && ' Ative o canal pra poder calibrar.'}
+        </p>
+      </div>
+    )
+  }
+
+  if (status.state === 'noise') {
+    return (
+      <div className="autotune-panel active">
+        <p className="autotune-instruction">Medindo ruído de fundo — não toque no pad...</p>
+        <button className="autotune-cancel" onClick={onCancel}>
+          Cancelar
+        </button>
+      </div>
+    )
+  }
+
+  if (status.state === 'collecting') {
+    return (
+      <div className="autotune-panel active">
+        <p className="autotune-instruction">Bata no pad com intensidade normal/forte</p>
+        <div className="autotune-progress">
+          <div className="autotune-progress-bar" style={{ width: `${(100 * status.hit_count) / status.hit_target}%` }} />
+        </div>
+        <span className="field-value">
+          {status.hit_count}/{status.hit_target}
+        </span>
+        <button className="autotune-cancel" onClick={onCancel}>
+          Cancelar
+        </button>
+      </div>
+    )
+  }
+
+  if (status.state === 'done') {
+    return (
+      <div className="autotune-panel active done">
+        <p className="autotune-instruction">Calibrado! Novos valores:</p>
+        <ul className="autotune-result">
+          <li>Sensibilidade: {status.sensitivity}</li>
+          <li>Threshold: {status.threshold}</li>
+          <li>Scan time: {status.scan_time}</li>
+          <li>Mask time: {status.mask_time}</li>
+        </ul>
+        <div className="autotune-actions">
+          <button className="autotune-apply" onClick={onApply}>
+            Aplicar
+          </button>
+          <button className="autotune-cancel" onClick={onCancel}>
+            Descartar
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // aborted
+  return (
+    <div className="autotune-panel active aborted">
+      <p className="autotune-instruction">
+        {status.reason === 'channel_disabled'
+          ? 'Canal desligado — ative o canal pra poder calibrar.'
+          : 'Cancelado — nenhuma pancada detectada a tempo.'}
+      </p>
+      <button className="autotune-cancel" onClick={onCancel}>
+        OK
+      </button>
     </div>
   )
 }

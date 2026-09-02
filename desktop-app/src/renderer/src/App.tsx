@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MockDevice } from './mockDevice'
 import {
+  AutoTuneStatus,
   GlobalConfig,
   MidiOutput,
   MIDI_OUTPUT_LABELS,
@@ -14,11 +15,12 @@ import {
 import PadGrid from './components/PadGrid'
 import PadEditor from './components/PadEditor'
 import HardwareSimulator from './components/HardwareSimulator'
+import EncoderRemote from './components/EncoderRemote'
 import type { PortInfo } from './env'
 
 const PAD_COUNT = 32
 
-const DEFAULT_GLOBAL: GlobalConfig = { midi_channel: 10, midi_output: 2, brightness: 80 }
+const DEFAULT_GLOBAL: GlobalConfig = { midi_channel: 10, midi_output: 2 }
 
 type Tab = 'config' | 'global' | 'simulator'
 
@@ -34,6 +36,7 @@ export default function App() {
   const [log, setLog] = useState<string[]>([])
   const [bleConnected, setBleConnected] = useState(false)
   const [global, setGlobal] = useState<GlobalConfig>(DEFAULT_GLOBAL)
+  const [autoTune, setAutoTune] = useState<AutoTuneStatus | null>(null)
 
   const mockDeviceRef = useRef<MockDevice | null>(null)
 
@@ -50,8 +53,7 @@ export default function App() {
         setBleConnected(message.ble_connected)
         setGlobal({
           midi_channel: message.midi_channel,
-          midi_output: message.midi_output,
-          brightness: message.brightness
+          midi_output: message.midi_output
         })
         break
       case 'pad_config':
@@ -59,6 +61,9 @@ export default function App() {
         break
       case 'hit':
         setLastHit({ pad: message.pad, velocity: message.velocity })
+        break
+      case 'autotune_status':
+        setAutoTune(message)
         break
       case 'log':
         appendLog(message.message)
@@ -143,6 +148,7 @@ export default function App() {
     setLastHit(null)
     setBleConnected(false)
     setGlobal(DEFAULT_GLOBAL)
+    setAutoTune(null)
   }
 
   function updatePadField(pad: number, field: PadField, value: number): void {
@@ -159,6 +165,23 @@ export default function App() {
 
   function changeHihatLink(pad: number, channel: number): void {
     send({ cmd: 'set_pad', pad, field: 'hihat_pedal_channel', value: channel })
+  }
+
+  function setPadEnabled(pad: number, enabled: boolean): void {
+    send({ cmd: 'set_pad', pad, field: 'enabled', value: enabled ? 1 : 0 })
+  }
+
+  function startAutoTune(pad: number): void {
+    send({ cmd: 'start_autotune', pad })
+  }
+
+  function cancelAutoTune(): void {
+    send({ cmd: 'cancel_autotune' })
+  }
+
+  function applyAutoTune(): void {
+    send({ cmd: 'apply_autotune' })
+    setAutoTune(null)
   }
 
   function updateGlobalField(field: keyof GlobalConfig, value: number): void {
@@ -243,6 +266,8 @@ export default function App() {
         </button>
       </nav>
 
+      {connected && !demoMode && <EncoderRemote send={send} />}
+
       {tab === 'simulator' ? (
         <HardwareSimulator />
       ) : !connected ? (
@@ -281,20 +306,6 @@ export default function App() {
               </select>
             </div>
 
-            <div className="field-row">
-              <label htmlFor="global-brightness">Brilho da tela</label>
-              <input
-                id="global-brightness"
-                type="range"
-                min={10}
-                max={100}
-                step={10}
-                value={global.brightness}
-                onChange={(event) => updateGlobalField('brightness', Number(event.target.value))}
-              />
-              <span className="field-value">{global.brightness}%</span>
-            </div>
-
             <div className="global-actions">
               <button onClick={saveAll}>Salvar tudo na memória</button>
               <button onClick={restoreAll}>Restaurar da memória</button>
@@ -316,6 +327,11 @@ export default function App() {
             onRename={(label) => renamePad(selectedPad, label)}
             onChangeType={(type) => changePadType(selectedPad, type)}
             onChangeHihatLink={(channel) => changeHihatLink(selectedPad, channel)}
+            onChangeEnabled={(enabled) => setPadEnabled(selectedPad, enabled)}
+            autoTune={autoTune?.pad === selectedPad ? autoTune : null}
+            onStartAutoTune={() => startAutoTune(selectedPad)}
+            onCancelAutoTune={cancelAutoTune}
+            onApplyAutoTune={applyAutoTune}
           />
         </main>
       )}

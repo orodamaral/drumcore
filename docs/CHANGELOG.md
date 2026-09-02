@@ -2,6 +2,362 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-01 — Fase S (continuação): primeiro sensing real validado — fórmula do ESP32 estava invertida
+
+- **Marco**: primeira leitura de piezo real, velocity-sensitive,
+  confirmada de ponta a ponta neste projeto — testado com 2 piezos
+  ligados direto em `GPIO17`/`GPIO18` (sem o MUX, que ainda não chegou),
+  configurados como um pad dual-zone de teste (ver `TEST_DIRECT_HEAD_PIN`/
+  `TEST_DIRECT_RIM_PIN` em `firmware/src/main.cpp`).
+- **Bug encontrado**: `hellodrum.cpp` tinha, em 4 funções de sensing
+  baseadas em piezo (`singlePiezoSensing`, `dualPiezoSensing`,
+  `cymbal2zoneSensing`, `cymbal3zoneSensing`), uma fórmula só pra ESP32
+  (`piezoValue = 1023 - piezoValue / 4`) que **invertia** a leitura —
+  repouso virava "batida forte" e vice-versa. Confirmado contra os
+  circuitos de referência oficiais da lib (piezo + resistor de 100 kΩ em
+  paralelo, sem inversão nenhuma). Corrigido pra só normalizar 12→10 bits,
+  sem inverter (`piezoValue = piezoValue / 4`). `TCRT5000Sensing`/
+  `FSRSensing` (sensores ópticos/resistivos, tecnologia diferente) não
+  foram mexidos - ficam pendentes de investigação própria.
+- Depois da correção: cada batida gera um hit, zona certa ("head" em vez
+  de sempre "rim"), velocidade variando de forma plausível com a força da
+  batida. Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)
+  (Fase S) pro relato completo, incluindo os diagramas de referência
+  consultados.
+- Removido o `pinMode(..., INPUT_PULLUP)` usado no teste anterior (fio
+  solto, sem resistor) — com o resistor de 100 kΩ de verdade instalado,
+  pull-up interno não é necessário.
+
+## 2026-09-01 — Fase S: causa raiz do bug do array `pads[]` (Fase Q) encontrada e corrigida
+
+- **Marco**: leitura real por pad restaurada (`pads[i].begin(i, i+1)`,
+  cada pad no seu próprio canal do MUX) — desde a Fase Q, todos os 32
+  pads liam o mesmo canal (`begin(0,1)` constante) como contorno de um
+  bug não identificado.
+- **Causa raiz**: `hellodrum.cpp` (lib vendorizada) usa `#ifdef PULLUP`
+  pra decidir se chama `pinMode(pin, INPUT_PULLUP)` dentro de `begin()` —
+  uma flag que o autor original comentou por padrão
+  (`//#define PULLUP`). O core arduino-esp32 já define seu próprio
+  `PULLUP` (`0x04`, flag de modo do `pinMode()`) — `#ifdef` só olha se o
+  nome existe, não quem definiu, então essa flag ficava **sempre ativa**
+  no ESP32. `begin()` chamava `pinMode()` usando `pin1`/`pin2` como se
+  fossem GPIOs reais, mas nesse projeto (MUX 2x CD4067) esses valores são
+  índices de canal (0-31) — ao coincidir com um GPIO reservado
+  internamente (flash/PSRAM), corrompia o sistema. Explica o padrão "ok
+  até uns 26, quebra a partir de 27+" da Fase Q. Bug secundário
+  encontrado no mesmo lugar: as funções de sensing também tinham
+  `#ifdef PULLUP` invertendo a leitura do sensor — teria deixado a
+  detecção de toque errada com sensores reais conectados. Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase S)
+  pro relato completo.
+- Corrigido em `firmware/lib/HelloDrum-arduino-Library/src/hellodrum.cpp`
+  — removidos os `pinMode()` de dentro de `begin()`, `#undef PULLUP`
+  logo no topo do arquivo neutraliza o resto.
+- `padEnabled[i] = false` continua forçado em todos os canais (não é
+  mais sobre esse bug — é só porque os pads físicos ainda não estão
+  conectados, e os canais ADC flutuando captariam ruído).
+- BLE-MIDI confirmado anunciando certinho (visível num scanner BLE
+  genérico) — o Windows MIDI Services ainda não tem transporte BLE-MIDI
+  nativo; precisa de um app-ponte (ex. "BLE-MIDI Connect" na Microsoft
+  Store). Não é um bug do firmware.
+
+## 2026-09-01 — Fase R: USB-MIDI funcionando de verdade + tela em paisagem
+
+- **Marco**: USB-MIDI reconhecido de verdade por uma DAW ("DRUMCORE"
+  aparece em Active MIDI Inputs) — até então a porta nativa só enumerava
+  como uma serial genérica, mesmo com o firmware "correto" segundo a API
+  da Adafruit TinyUSB. Causa raiz: no ESP32,
+  `Adafruit_USBD_Device::begin()` não religa o periférico USB de verdade
+  (isso fica a cargo do core arduino-esp32, mas só acontece automaticamente
+  se `CDC_ON_BOOT`/`MSC_ON_BOOT`/`DFU_ON_BOOT` estiverem ligados — nenhum
+  estava). Corrigido religando o hardware manualmente em
+  `bringUpNativeUsbHardware()` (`firmware/src/main.cpp`), replicando a
+  sequência de baixo nível que a própria lib Adafruit deixa desligada de
+  propósito nesse chip. Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase R)
+  pro histórico completo da investigação (incluindo uma primeira tentativa
+  que travava o boot).
+- Nomes USB/BLE unificados como "DRUMCORE" (fabricante, produto, porta
+  MIDI, nome do dispositivo Bluetooth) + número de série USB fixo
+  (`setSerialDescriptor`), antes nunca definido.
+- BLE-MIDI ainda não confirmado funcionando do lado do host (não
+  encontrado num scanner BLE) — investigação pausada pra focar no
+  USB-MIDI primeiro.
+- **Tela girada pra paisagem** (era retrato desde a Fase J, mas o painel
+  físico real é 128x160, não 128x128 como a doc antiga assumia — sticker
+  confirma "1.8' 128x160 RGB_TFT"). `tft.setRotation(1)`; barras de
+  título/rodapé e a grade da tela LIVE redesenhadas pra usar a largura
+  cheia da tela; lista de PADS também alargada.
+- Removido o controle de brilho da tela (PWM no backlight não tinha
+  efeito visível na faixa útil dessa placa clone — não valia a pena
+  investigar mais fundo agora): backlight fica sempre ligado no máximo,
+  sem dimming. Removido de `main.cpp`, do protocolo serial
+  (`set_global`/`device_info`) e do app desktop.
+- Coluna de tipo na lista de PADS trocada pra mostrar o nome configurado
+  pelo pad (`label`), com `--` se vazio, em vez do tipo de sensor.
+- Campo "ATIVO" na tela PAD_EDIT mostra "SIM"/"NAO" em vez de `1`/`0`.
+- Novo comando de protocolo `enc_input` (`firmware/src/main.cpp` +
+  `docs/04-protocolo-serial.md`) — encoder virtual via serial, chama os
+  mesmos handlers dos encoders físicos. Novo componente
+  `EncoderRemote.tsx` no app desktop, visível quando conectado ao
+  hardware real — permite navegar a tela do módulo pelo app antes dos
+  encoders físicos estarem conectados.
+
+## 2026-08-31 — Fase Q: primeiro boot completo em hardware real (com contorno pendente)
+
+- **Marco**: primeiro boot completo do firmware principal até `goToLive()`
+  — tela renderizando, USB-MIDI e BLE-MIDI ativos, EEPROM funcionando,
+  protocolo NDJSON emitindo eventos. Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase Q)
+  pro histórico completo da investigação.
+- **Bug não resolvido**: o array `HelloDrum pads[32]` (inicializado com
+  pinos sequenciais `0,1,2,...,31`, a forma original desde a Fase A)
+  trava o boot com watchdog reset, sem causa raiz identificada apesar de
+  investigação extensiva (isolamento por tamanho de array, por valor
+  individual, por tempo, com/sem BLE — nada explicou o padrão observado).
+  **Contorno em produção**: todos os 32 pads chamam `begin(0, 1)`
+  (valores constantes) — desbloqueia o boot, mas todos os pads leem o
+  mesmo canal do MUX (sem leitura real de sensor por pad ainda).
+  **Pendente**: investigar a causa raiz e restaurar a leitura real
+  (`begin(i, i+1)`) antes de conectar os pads/MUX físicos de verdade.
+- Refatorado `HelloDrum` (biblioteca vendorizada) pra ter um construtor
+  padrão trivial + método `begin(pin1[, pin2])` explícito, permitindo um
+  array `pads[]` default (sem lista de inicializadores) inicializado
+  dentro do `setup()` em vez de como array global — corrige um problema
+  real e distinto (estouro de pilha da tarefa principal com arrays
+  agregados de 27+ elementos não-triviais), mesmo esse não sendo a causa
+  completa do bug acima.
+- Novo ambiente de teste/regressão `test_pads` no `platformio.ini`
+  (`firmware/src/test_pads.cpp`) — isola o array `pads[]` sem
+  MUX/TFT/USB-MIDI/BLE/EEPROM, útil pra retomar a investigação depois.
+- **Correção de um erro deste assistente**: `ARDUINO_USB_CDC_ON_BOOT=1`
+  fazia o `app_main()` do core chamar `Serial.begin()` (USBCDC) antes do
+  `setup()` do sketch, antes do `TinyUSBDevice.begin()` — travava
+  esperando uma pilha TinyUSB que ainda não existia. Corrigido pra `0`.
+
+## 2026-08-22 — Fase P: `Retrigger`, `Gain` e `Xtalk` (parâmetros do microDRUM)
+
+- **`Retrigger`** (0-100, `0` = desligado): dentro do `mask_time`, uma
+  pancada bem mais forte que a anterior pode "furar" o corte e disparar de
+  novo — limiar decrescente com o tempo, evita perder golpes em rufos/
+  rolls rápidos. **Única mudança de lógica de sensing já feita na lib
+  vendorizada** — modificadas as 4 funções que fazem detecção de hit
+  (`singlePiezoSensing`, `dualPiezoSensing`, `cymbal2zoneSensing`,
+  `cymbal3zoneSensing`; HH/HH2zone já chamam essas mesmas 4 por dentro),
+  porque a lógica de `mask_time` mora em variáveis privadas da lib.
+  Comportamento original preservado exatamente quando `retrigger == 0`
+  (default).
+- **`Gain`** (10-200 = 0.10x-2.00x, 100 = neutro): recalibra a amplitude
+  lida do sensor antes do threshold — sem tocar na lib, aplicado direto no
+  `rawValue[]` em `main.cpp` com uma fórmula que preserva o "repouso" do
+  sensor independente do multiplicador (`raw' = 4095 - gain*(4095-raw)`).
+- **`Xtalk`/`Xtalk_group`** (0-100 / 0-4, `0` = desligado/sem grupo):
+  suprime um hit se outro pad do mesmo grupo bateu bem mais forte no mesmo
+  instante — cobre tanto vibração mecânica entre pads montados juntos
+  quanto crosstalk elétrico entre canais (inclusive os 2 CD4067 que
+  compartilham o barramento S0-S3). Também resolvido sem tocar na lib,
+  rodando entre o `dispatchSensing()` e o `handlePadResult()`.
+- Universais pros 9 tipos de pad — `MAX_FIELDS_PER_PAD` subiu de 13 pra 17.
+  Persistem em EEPROM em blocos próprios (mesmo padrão do `enabled`, Fase
+  N) — `retrigger` fica dentro do objeto `HelloDrum`, mas não é persistido
+  pelo mecanismo próprio da lib.
+- Validado: `pio run` compila e linka com sucesso (lib vendorizada
+  modificada incluída); `npm run typecheck`/`npm run build` no app
+  desktop, ambos limpos. **Nada testado em hardware real.**
+
+## 2026-08-22 — Pesquisa: microDRUM/nanoDRUM (massimobernava/md-firmware)
+
+- Explorado o código-fonte do firmware do microDRUM/nanoDRUM em busca de
+  parâmetros de sensing que a nossa lib base (HelloDrum) não tem. Achados
+  de maior valor: assistente de auto-calibração ("Auto Tune"), `Retrigger`
+  (threshold decrescente durante o mask_time, evita perder golpes em
+  rolls), `Gain` (multiplicador de calibração por canal), supressão de
+  crosstalk entre multiplexadores/grupos de pads, choke de prato, e
+  detecção de "foot splash"/"foot close" no pedal de chimbal por
+  velocidade de fechamento. Implementado nessa mesma sessão: auto-tune
+  (Fase O, ver abaixo). Os demais ficam como candidatos pra fases futuras.
+
+## 2026-08-22 — Fase O: assistente de auto-calibração ("auto-tune")
+
+- **Novo recurso**: bate no pad 8x e o firmware calcula sensibilidade,
+  threshold, scan time e mask time sozinho — inspirado no "Auto Tune" do
+  microDRUM/nanoDRUM, com um algoritmo próprio mais simples (1 fase de
+  ruído de 2s + 8 golpes, em vez de ~50 golpes em 2 fases).
+- **Firmware**: nova tela `PAGE_AUTOTUNE` (acessada pelo item `CALIBRAR`,
+  sempre o último campo de qualquer pad em `PAD_EDIT`); só calibra o
+  sensor principal do pad (pin_1) — pads de 2 canais continuam com ajuste
+  manual pro 2º sensor. `MAX_FIELDS_PER_PAD` subiu de 12 pra 13.
+- **Protocolo serial**: `start_autotune`/`cancel_autotune`/`apply_autotune`
+  + evento `autotune_status` (progresso em tempo real, não só resposta a
+  comando) — dá pra disparar/acompanhar tanto pela tela física quanto pelo
+  app desktop.
+- **App desktop**: painel de calibração no `PadEditor` (botão, progresso,
+  aplicar/descartar); `mockDevice.ts` simula a sequência inteira com
+  temporizadores; `HardwareSimulator.tsx` replica a mesma tela/fluxo.
+- Validado: `pio run` compila e linka com sucesso; `npm run typecheck` e
+  `npm run build` no app desktop, ambos limpos. **Nada testado em
+  hardware real** — os fatores de margem usados no cálculo (+15%/+20%/
+  +30%) são estimativas, não calibrados contra um piezo real.
+
+## 2026-08-22 — Fase N: canal habilitado/desabilitado por pad (ruído em slot vazio)
+
+- **Novo campo `enabled` por pad** (protocolo + `padEnabled[]` no
+  firmware, persistido em EEPROM): canal desligado é completamente
+  ignorado (`dispatchSensing()`/`handlePadResult()` nunca rodam pra ele) —
+  resolve slots sem sensor físico conectado captando ruído/interferência e
+  gerando `hit`/nota MIDI fantasma. Não resolve ruído em canal que
+  **tem** sensor conectado (isso é hardware — resistor de sangramento).
+- **Tela/encoders**: novo campo `ATIVO` (universal, 2º campo de todo tipo
+  de pad em `PAD_EDIT`). Canal desligado aparece apagado na tela LIVE
+  (grid) e como "OFF" na tela PADS — visível, não escondido.
+- **App desktop**: checkbox "Canal ativo" no `PadEditor`, lista de pads
+  (`PadGrid`) mostra linha esmaecida com "desligado"; `HardwareSimulator`
+  replica a mesma UX (item ATIVO, grid e lista com o mesmo tratamento).
+- Documentação: `docs/04-protocolo-serial.md` (campo `enabled`),
+  `docs/01-decisoes-arquiteturais.md` (Fase N completa, incluindo o
+  esclarecimento de que isso não substitui resistor de sangramento em
+  sensores conectados).
+- Validado: `pio run` compila e linka com sucesso; `npm run typecheck` e
+  `npm run build` no app desktop, ambos limpos. **Nada testado em
+  hardware real.**
+
+## 2026-08-22 — Fase M: tipo de sensor "Caixa 3 zonas" + bugfix crítico do `PAD_DUAL`
+
+- **Novo tipo de sensor `PAD_SNARE_3ZONE` (8)**: caixa com 3 sons (centro
+  da pele, borda da pele, aro/rimshot) — reusa a mesma sensing do prato 3
+  zonas (`cymbal3zoneMUX()`), sem mudanças na lib vendorizada, só com
+  zonas renomeadas (`head`/`edge`/`rim`). Cabeamento idêntico ao tipo 1
+  (Aro/Dual): pele + aro, 2 piezos.
+- **Bug corrigido (crítico)**: `handlePadResult()` nunca teve um `case
+  PAD_DUAL:` desde a Fase G — qualquer pad configurado como tipo 1
+  (Aro/Dual, o tipo mais comum pra caixa) **nunca enviava nota MIDI
+  nenhuma** ao ser atingido, apesar da detecção de hit funcionar
+  normalmente. Corrigido usando as zonas `head`/`rim` já documentadas em
+  [04-protocolo-serial.md](04-protocolo-serial.md) e simuladas em
+  `mockDevice.ts`.
+- App desktop: `protocol.ts` (`PAD_TYPE_META[8]`), modo demo
+  (`mockDevice.ts`) e simulador de hardware (`HardwareSimulator.tsx`,
+  pad "Caixa" de exemplo agora usa o tipo 8) atualizados.
+- Documentação: `docs/05-tipos-de-sensor.md` (novo tipo 8 detalhado, nota
+  sobre o bugfix), `docs/04-protocolo-serial.md` (`pad_type` 0-7→0-8),
+  `docs/01-decisoes-arquiteturais.md` (Fase M completa).
+- Validado: `pio run` compila e linka com sucesso; `npm run typecheck` e
+  `npm run build` no app desktop, ambos limpos. **Nada testado em
+  hardware real** — threshold de borda/aro do tipo 8 nunca foi calibrado
+  numa caixa física.
+
+## 2026-08-21 — Fase L (refinamento): pinos fisicamente contíguos, não só "mesmo header"
+
+- **Firmware** (`firmware/src/main.cpp`): MUX (S0-S3, SIG0/SIG1) passa a
+  usar GPIO4,5,6,7,15,16 — a única sequência de 6 pinos fisicamente
+  contígua no header esquerdo (antes: SIG0/SIG1 em GPIO8/9, no mesmo
+  header mas distantes de S0-S3 na ordem física real da placa). TFT passa
+  a usar GPIO17,18,8,9,10,11 (continuação imediata da sequência do MUX).
+  Encoders sem mudança (já eram contíguos).
+- **Trade-off aceito**: GPIO15/16 (SIG0/SIG1) são ADC2, não ADC1 — a
+  restrição "só ADC1" das fases anteriores existia por precaução com o
+  conflito clássico ADC2×Wi-Fi, que não se aplica aqui porque o projeto
+  nunca inicializa Wi-Fi (só BLE-MIDI). Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (adendo na
+  entrada da Fase L).
+- Documentação (`docs/02-hardware.md`) e esquemático visual
+  (`docs/assets/esquematico-hellodrum.html`) atualizados com os novos
+  números de GPIO.
+- Validado: `pio run` compila e linka com sucesso. **Nada testado em
+  hardware real.**
+
+## 2026-08-21 — Fase L: pinout reorganizado por ergonomia de montagem
+
+- **Hardware**: pinout reatribuído a partir de uma foto real da placa
+  comprada (dev board ESP32-S3, headers de 22 pinos de cada lado) — cada
+  subsistema (2x CD4067, tela TFT, cada encoder) agora sai inteiro de um
+  único header físico, sem fios cruzando a placa. Header esquerdo (único
+  lado com `3V3`): MUX + tela. Header direito (só `GND`, suficiente pros
+  encoders que usam pull-up interno): os 2 encoders.
+- **Firmware** (`firmware/src/main.cpp`): `MUX0_Z`/`MUX1_Z` GPIO1/2→8/9;
+  `TFT_DC` GPIO9→10; `TFT_CS` GPIO10→16; `ENC1_A/B/SW` GPIO15/16/17→
+  42/41/40; `ENC2_A/B/SW` GPIO18/21/38→37/36/35.
+- **Achado incidental**: GPIO38 (usado até então pro SW do encoder 2)
+  aciona um LED embutido dessa placa específica — evitado. (Correção
+  2026-08-31: o rótulo real, conferido na serigrafia, é `BUILTIN LED`, não
+  `RGB_LED` — o LED RGB endereçável fica no GPIO48, já excluído por outro
+  motivo. Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).)
+
+## 2026-08-31 — Ajuste de contiguidade física dos encoders
+
+- **Firmware** (`firmware/src/main.cpp`): `ENC1_A/B/SW` GPIO42/41/40→
+  **1/2/42**; `ENC2_A/B/SW` GPIO37/36/35→**41/40/39**. Corrige um vão de 2
+  pinos (`GPIO39`, `GPIO38`) que sobrava entre os dois encoders na
+  atribuição da Fase L — agora os 6 sinais saem contíguos na ordem física
+  real do header direito (`GPIO1,2,42,41,40,39`), sem pular nenhum outro
+  pino. Como efeito colateral, deixa de usar GPIO35-37 (risco de PSRAM
+  octal) e não toca em GPIO43/44 (UART/USB-serial de debug). Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+- **Módulo confirmado como ESP32-S3-N16R8** (16MB flash + 8MB PSRAM octal,
+  lido na serigrafia por Rodrigo) — corrige uma afirmação anterior errada
+  deste assistente (que tinha confundido o perfil genérico de build com
+  detecção de hardware real). `firmware/platformio.ini` ajustado pra
+  refletir o módulo: `board_build.arduino.memory_type = qio_opi`,
+  `board_build.partitions = default_16MB.csv`, `board_upload.flash_size =
+  16MB`, `build_flags += -D BOARD_HAS_PSRAM`. `pio run` confirma
+  `[SUCCESS]` com `16MB Flash`.
+- **Tela TFT remapeada pra espelhar o próprio conector** (`GND VCC SCL
+  SDA RES DC CS BLK`): passa da sequência logo após o MUX
+  (`GPIO17,18,8,9,10,11`) para os 6 pinos da base do header esquerdo,
+  logo acima do `GND` (`GPIO9,10,11,12,13,14`) — `TFT_SCLK` GPIO9→**14**,
+  `TFT_MOSI` GPIO8→**13**, `TFT_RST` GPIO11→**12**, `TFT_DC` GPIO17→**11**,
+  `TFT_CS` GPIO18→**10**, `TFT_BLK` GPIO10→**9**. Como o `GND` do header
+  esquerdo fica na base (e o `3V3` no topo), subir a partir do `GND` casa
+  cada sinal com a ordem física do conector da tela, sem cruzar fios — só
+  o `VCC` precisa de um fio isolado até o `3V3` no topo. Deixa de formar
+  um feixe único com o MUX (sobram GPIO17/18/8 livres) — trade-off aceito
+  de propósito. Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
+- **Risco anotado, não confirmado**: GPIO35-37 (usados pelos encoders)
+  são internos em módulos ESP32-S3 com PSRAM octal — a placa expõe eles
+  como header normal, sugerindo que não é essa variante, mas vale
+  confirmar contra o código impresso no módulo antes de soldar. Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase L).
+- Documentação (`docs/02-hardware.md`, `01-decisoes-arquiteturais.md`) e
+  esquemático visual (`docs/assets/esquematico-hellodrum.html`)
+  atualizados pra mostrar de qual header cada fio sai.
+- Validado: `pio run` compila e linka com sucesso. **Nada testado em
+  hardware real.**
+
+## 2026-08-31 — Primeiro teste em hardware real: tela funcionando
+
+- **Marco**: primeira gravação e teste do firmware num ESP32-S3 físico
+  (porta `COM5`/CH343, ver notas de porta USB/UART em
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)).
+- Tela ficou em branco na primeira gravação (backlight ok, sem conteúdo).
+  Investigado com um ambiente de teste isolado
+  (`[env:display_test]`/`firmware/src/test_display.cpp`, novo, permanente
+  no repo) que descartou variante de driver errada e interferência do
+  resto do firmware como causas. **Causa raiz**: curto físico na solda de
+  um dos pinos da tela — corrigido por Rodrigo. Depois da correção, a
+  tela mostrou as cores do teste corretamente, e o firmware principal
+  (`tft.initR(INITR_144GREENTAB)`) foi regravado com sucesso. Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) pro
+  diagnóstico completo passo a passo.
+
+## 2026-08-21 — Fase K: multiplexação trocada pra 2x CD4067 (HW-178)
+
+- **Hardware**: substituídas as 4x CD4051 (8 canais cada) por 2x módulos
+  breakout HW-178 (chip CD4067, 16 canais cada) — mesmas 32 entradas, menos
+  placas pra montar. O usuário já comprou as 2 unidades.
+- **Firmware** (`firmware/src/main.cpp`): troca de `HelloDrumMUX_4051` por
+  `HelloDrumMUX_4067` (2 instâncias em vez de 4). Adicionado `MUX_S3`
+  (GPIO7, reaproveitando o antigo pino Z do 3º CD4051); os pinos `SIG` dos 2
+  MUX continuam nos GPIOs 1 e 2. Nenhuma mudança em `pads[]`, EEPROM,
+  protocolo serial ou telas — a indexação de pad (0-31) sempre foi
+  independente de quantos chips físicos formam o espaço de canais.
+- **Documentação**: `docs/02-hardware.md` (pinout/componentes),
+  `docs/03-biblioteca-hellodrum.md` (fórmula de índice do MUX),
+  `docs/01-decisoes-arquiteturais.md` (nova entrada "Fase K" com o racional
+  completo, incluindo a fiação do pino EN do HW-178) e o esquemático visual
+  (`docs/assets/esquematico-hellodrum.html`) atualizados.
+- Validado: `pio run` compila e linka com sucesso. **Nada testado em
+  hardware real.**
+
 ## 2026-08-21 — Fase J: rebranding + redesenho da UI do firmware
 
 - **Renomeação do projeto**: "HelloDrum" → "DrumCore" (nome de exibição

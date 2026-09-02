@@ -213,6 +213,15 @@ button:disabled {
   opacity: 0.55;
 }
 
+.pad-row.off {
+  opacity: 0.55;
+}
+
+.pad-row.off .pad-row-note {
+  color: var(--edit);
+  font-weight: 600;
+}
+
 .pad-row-number {
   flex: 0 0 22px;
   font-size: 12px;
@@ -319,6 +328,99 @@ button:disabled {
   font-size: 12px;
   color: var(--txt-dim);
   font-style: italic;
+}
+
+.pad-enabled-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--txt);
+}
+
+.autotune-panel {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.autotune-panel.active {
+  border-color: var(--edit);
+}
+
+.autotune-panel.done {
+  border-color: var(--ok);
+}
+
+.autotune-panel.aborted {
+  border-color: var(--hit);
+}
+
+.autotune-start {
+  border-color: var(--edit);
+  color: var(--edit);
+  font-weight: 600;
+}
+
+.autotune-start:not(:disabled):hover {
+  background: color-mix(in srgb, var(--edit) 15%, var(--surface));
+}
+
+.autotune-instruction {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--txt);
+}
+
+.autotune-progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.autotune-progress-bar {
+  height: 100%;
+  background: var(--edit);
+  transition: width 150ms;
+}
+
+.autotune-result {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--txt);
+  font-variant-numeric: tabular-nums;
+}
+
+.autotune-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.autotune-apply {
+  border-color: var(--ok);
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.autotune-apply:hover {
+  background: color-mix(in srgb, var(--ok) 15%, var(--surface));
+}
+
+.autotune-cancel {
+  border-color: var(--hit);
+  color: var(--hit);
+}
+
+.autotune-cancel:hover {
+  background: color-mix(in srgb, var(--hit) 15%, var(--surface));
 }
 
 .field-row label {
@@ -444,11 +546,61 @@ button:disabled {
   font-weight: 700;
 }
 
+.hw-sim-cell.off {
+  border-color: transparent;
+  color: var(--line);
+}
+
 .hw-sim-list {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.hw-sim-autotune {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 8px;
+}
+
+.hw-sim-autotune-title {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--txt);
+}
+
+.hw-sim-autotune-title.done {
+  color: var(--ok);
+}
+
+.hw-sim-autotune-sub {
+  margin: 0 0 10px;
+  font-size: 10px;
+  color: var(--txt-dim);
+}
+
+.hw-sim-autotune-count {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.hw-sim-autotune-bar {
+  height: 6px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.hw-sim-autotune-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 150ms;
 }
 
 .hw-sim-list-row {
@@ -486,6 +638,11 @@ button:disabled {
 
 .hw-sim-list-note {
   flex: 0 0 auto;
+}
+
+.hw-sim-list-note.off {
+  color: var(--edit);
+  font-weight: 600;
 }
 
 .hw-sim-value-box {
@@ -672,4 +829,34 @@ button:disabled {
 
 .hw-sim-reset {
   margin-top: 16px;
+}
+
+.encoder-remote {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 20px;
+  margin: 12px 20px 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.encoder-remote-title {
+  font-size: 12px;
+  color: var(--txt-dim);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.encoder-remote .hw-sim-controls {
+  margin-top: 12px;
+}
+
+.encoder-remote-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--txt-dim);
+  font-style: italic;
 }

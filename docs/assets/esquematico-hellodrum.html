@@ -1,5 +1,5 @@
 <title>Esquemático DrumCore</title>
-<meta name="description" content="Diagrama de ligação do ESP32-S3 com 4x CD4051, tela TFT ST7735 e 2 encoders rotativos para o módulo DrumCore." />
+<meta name="description" content="Diagrama de ligação do ESP32-S3 com 2x CD4067 (HW-178), tela TFT ST7735 e 2 encoders rotativos para o módulo DrumCore." />
 
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -262,15 +262,15 @@
     <p class="eyebrow">DrumCore · Módulo MIDI-USB</p>
     <h1>Esquemático de ligação — ESP32-S3</h1>
     <p class="sub">
-      ESP32-S3 ↔ 4x multiplexador CD4051 (32 canais de pad) ↔ tela TFT ST7735
-      (SPI) ↔ 2 encoders rotativos com chave. Pinout conforme
+      ESP32-S3 ↔ 2x multiplexador CD4067/HW-178 (32 canais de pad) ↔ tela TFT
+      ST7735 (SPI) ↔ 2 encoders rotativos com chave. Pinout conforme
       <code>firmware/src/main.cpp</code> e <code>docs/02-hardware.md</code>.
     </p>
     <div class="stamp"><span class="dot"></span>Proposto — ainda não validado em hardware real</div>
   </header>
 
   <div class="legend">
-    <div class="legend-item"><span class="swatch" style="background:var(--mux)"></span>Seleção/leitura dos CD4051 (S0–S2, Z)</div>
+    <div class="legend-item"><span class="swatch" style="background:var(--mux)"></span>Seleção/leitura dos CD4067/HW-178 (S0–S3, SIG)</div>
     <div class="legend-item"><span class="swatch" style="background:var(--spi)"></span>SPI — tela TFT ST7735</div>
     <div class="legend-item"><span class="swatch" style="background:var(--enc)"></span>Encoders rotativos (A/B/SW)</div>
     <div class="legend-item"><span class="swatch" style="background:var(--ink-faint)"></span>Alimentação (anotada em texto, não desenhada como fio)</div>
@@ -279,21 +279,22 @@
   <div class="schematic-frame">
     <figure>
       <div class="schematic-scroll">
-        <svg viewBox="0 0 1600 1000" role="img" aria-label="Esquemático mostrando o ESP32-S3 no centro, com barramento compartilhado S0/S1/S2 para 4 chips CD4051 à esquerda (cada um lendo 8 pads e usando um pino ADC próprio Z0–Z3), e conexões diretas de SPI para uma tela TFT ST7735 e de dois encoders rotativos à direita.">
+        <svg viewBox="0 0 1600 1000" role="img" aria-label="Esquemático mostrando o ESP32-S3 no centro. Do header físico esquerdo da placa (único lado com 3V3) saem os 2 módulos HW-178/CD4067 (barramento compartilhado S0-S3, cada um com seu próprio pino ADC SIG0/SIG1 e o pino EN ligado direto em GND) e a tela TFT ST7735 via SPI. Do header físico direito (só GND) saem os 2 encoders rotativos, que usam pull-up interno sem precisar de alimentação.">
           <defs>
             <marker id="dot" markerWidth="8" markerHeight="8" refX="4" refY="4">
               <circle cx="4" cy="4" r="3" fill="currentColor" />
             </marker>
           </defs>
 
-          <!-- ===================== MUX BUS RAILS (S0/S1/S2) ===================== -->
+          <!-- ===================== MUX BUS RAILS (S0/S1/S2/S3) ===================== -->
           <g stroke="#5fd3c4" stroke-width="2" fill="none">
             <line x1="70" y1="150" x2="740" y2="150" />
             <line x1="70" y1="190" x2="740" y2="190" />
             <line x1="70" y1="230" x2="740" y2="230" />
+            <line x1="70" y1="270" x2="740" y2="270" />
           </g>
           <g font-family="IBM Plex Mono, monospace" font-size="11" fill="#5fd3c4">
-            <text x="70" y="140">S0 / S1 / S2 — barramento compartilhado (3 fios, mesmo pino em todos os 4 CD4051)</text>
+            <text x="70" y="140">S0 / S1 / S2 / S3 — barramento compartilhado (4 fios, mesmo pino nos 2 HW-178)</text>
           </g>
 
           <!-- ===================== ESP32-S3 BOARD ===================== -->
@@ -306,7 +307,17 @@
           <text x="890" y="917" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#e9e4d8">USB-C</text>
           <text x="890" y="950" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#8b93a3">→ PC: USB-MIDI + Serial (NDJSON)</text>
 
-          <!-- Left pin rows: helper generated manually -->
+          <!-- ===================== HEADER SIDE LABELS ===================== -->
+          <g font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" letter-spacing="0.04em">
+            <text x="735" y="105" text-anchor="end" fill="#e9e4d8">HEADER ESQUERDO DA PLACA →</text>
+            <text x="1045" y="105" fill="#e9e4d8">← HEADER DIREITO DA PLACA</text>
+          </g>
+          <g font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">
+            <text x="735" y="120" text-anchor="end">(único lado com 3V3 — MUX + tela saem daqui)</text>
+            <text x="1045" y="120">(só GND — encoders usam pull-up interno)</text>
+          </g>
+
+          <!-- Left pin rows (header ESQUERDO): MUX (teal) + TFT (amber) -->
           <!-- S0 -->
           <g>
             <rect x="740" y="145" width="40" height="10" fill="#5fd3c4" />
@@ -322,306 +333,288 @@
             <rect x="740" y="225" width="40" height="10" fill="#5fd3c4" />
             <text x="735" y="234" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S2 · GPIO6</text>
           </g>
+          <!-- S3 -->
+          <g>
+            <rect x="740" y="265" width="40" height="10" fill="#5fd3c4" />
+            <text x="735" y="274" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S3 · GPIO7</text>
+          </g>
 
-          <!-- Z0-Z3 individual lines to MUX boxes, drawn after boxes below; pin stubs here -->
+          <!-- SIG0/SIG1 individual lines to MUX boxes, drawn after boxes below; pin stubs here -->
           <g>
             <rect x="740" y="305" width="40" height="10" fill="#5fd3c4" />
-            <text x="735" y="314" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">Z0 · GPIO1</text>
+            <text x="735" y="314" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">SIG0 · GPIO15</text>
           </g>
           <g>
             <rect x="740" y="345" width="40" height="10" fill="#5fd3c4" />
-            <text x="735" y="354" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">Z1 · GPIO2</text>
-          </g>
-          <g>
-            <rect x="740" y="385" width="40" height="10" fill="#5fd3c4" />
-            <text x="735" y="394" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">Z2 · GPIO7</text>
-          </g>
-          <g>
-            <rect x="740" y="425" width="40" height="10" fill="#5fd3c4" />
-            <text x="735" y="434" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">Z3 · GPIO8</text>
+            <text x="735" y="354" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">SIG1 · GPIO16</text>
           </g>
 
-          <!-- Right pin rows: TFT (amber) -->
+          <!-- TFT stubs, mesmo header (esquerdo) - GPIO9-14, base do header (perto do GND),
+               espelhando a ordem do conector da tela (GND VCC SCL SDA RES DC CS BLK) -->
           <g>
-            <rect x="1000" y="145" width="40" height="10" fill="#e3b34f" />
-            <text x="1045" y="154" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO9 · DC</text>
+            <rect x="740" y="425" width="40" height="10" fill="#e3b34f" />
+            <text x="735" y="434" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">DC · GPIO11</text>
           </g>
           <g>
-            <rect x="1000" y="185" width="40" height="10" fill="#e3b34f" />
-            <text x="1045" y="194" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO10 · CS</text>
+            <rect x="740" y="465" width="40" height="10" fill="#e3b34f" />
+            <text x="735" y="474" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">CS · GPIO10</text>
           </g>
           <g>
-            <rect x="1000" y="225" width="40" height="10" fill="#e3b34f" />
-            <text x="1045" y="234" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO11 · MOSI (SDA)</text>
+            <rect x="740" y="505" width="40" height="10" fill="#e3b34f" />
+            <text x="735" y="514" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">MOSI · GPIO13</text>
           </g>
           <g>
-            <rect x="1000" y="265" width="40" height="10" fill="#e3b34f" />
-            <text x="1045" y="274" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO12 · SCK (SCL)</text>
+            <rect x="740" y="545" width="40" height="10" fill="#e3b34f" />
+            <text x="735" y="554" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">SCK · GPIO14</text>
           </g>
           <g>
-            <rect x="1000" y="305" width="40" height="10" fill="#e3b34f" />
-            <text x="1045" y="314" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO13 · BLK</text>
+            <rect x="740" y="585" width="40" height="10" fill="#e3b34f" />
+            <text x="735" y="594" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">BLK · GPIO9</text>
           </g>
           <g>
-            <rect x="1000" y="345" width="40" height="10" fill="#e3b34f" />
-            <text x="1045" y="354" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO14 · RST</text>
-          </g>
-
-          <!-- Right pin rows: encoders (violet) -->
-          <g>
-            <rect x="1000" y="425" width="40" height="10" fill="#b09bf0" />
-            <text x="1045" y="434" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO15 · Enc1 A</text>
-          </g>
-          <g>
-            <rect x="1000" y="465" width="40" height="10" fill="#b09bf0" />
-            <text x="1045" y="474" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO16 · Enc1 B</text>
-          </g>
-          <g>
-            <rect x="1000" y="505" width="40" height="10" fill="#b09bf0" />
-            <text x="1045" y="514" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO17 · Enc1 SW</text>
-          </g>
-          <g>
-            <rect x="1000" y="585" width="40" height="10" fill="#b09bf0" />
-            <text x="1045" y="594" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO18 · Enc2 A</text>
-          </g>
-          <g>
-            <rect x="1000" y="625" width="40" height="10" fill="#b09bf0" />
-            <text x="1045" y="634" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO21 · Enc2 B</text>
-          </g>
-          <g>
-            <rect x="1000" y="665" width="40" height="10" fill="#b09bf0" />
-            <text x="1045" y="674" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO38 · Enc2 SW</text>
+            <rect x="740" y="625" width="40" height="10" fill="#e3b34f" />
+            <text x="735" y="634" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">RST · GPIO12</text>
           </g>
 
-          <!-- ===================== 4x CD4051 MUX BOXES ===================== -->
+          <!-- Right pin rows (header DIREITO): os 2 encoders (violet) -->
+          <g>
+            <rect x="1000" y="145" width="40" height="10" fill="#b09bf0" />
+            <text x="1045" y="154" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO1 · Enc1 A</text>
+          </g>
+          <g>
+            <rect x="1000" y="185" width="40" height="10" fill="#b09bf0" />
+            <text x="1045" y="194" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO2 · Enc1 B</text>
+          </g>
+          <g>
+            <rect x="1000" y="225" width="40" height="10" fill="#b09bf0" />
+            <text x="1045" y="234" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO42 · Enc1 SW</text>
+          </g>
+          <g>
+            <rect x="1000" y="335" width="40" height="10" fill="#b09bf0" />
+            <text x="1045" y="344" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO41 · Enc2 A</text>
+          </g>
+          <g>
+            <rect x="1000" y="375" width="40" height="10" fill="#b09bf0" />
+            <text x="1045" y="384" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO40 · Enc2 B</text>
+          </g>
+          <g>
+            <rect x="1000" y="415" width="40" height="10" fill="#b09bf0" />
+            <text x="1045" y="424" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">GPIO39 · Enc2 SW</text>
+          </g>
+
+          <!-- ===================== 2x HW-178 (CD4067) MUX BOXES (header ESQUERDO) ===================== -->
           <!-- MUX0 -->
           <g>
-            <rect x="40" y="560" width="150" height="190" rx="8" fill="#171c24" stroke="#5fd3c4" stroke-width="1.5" />
-            <text x="115" y="585" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">CD4051 #0</text>
-            <text x="115" y="602" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">pads 0–7</text>
-            <line x1="65" y1="560" x2="65" y2="150" stroke="#5fd3c4" stroke-width="2" />
-            <line x1="115" y1="560" x2="115" y2="190" stroke="#5fd3c4" stroke-width="2" />
-            <line x1="165" y1="560" x2="165" y2="230" stroke="#5fd3c4" stroke-width="2" />
-            <circle cx="65" cy="150" r="3.5" fill="#5fd3c4" /><circle cx="115" cy="190" r="3.5" fill="#5fd3c4" /><circle cx="165" cy="230" r="3.5" fill="#5fd3c4" />
-            <text x="65" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S0</text>
-            <text x="115" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S1</text>
-            <text x="165" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S2</text>
-            <path d="M175 560 V310 H740" stroke="#5fd3c4" stroke-width="2" fill="none" />
-            <circle cx="175" cy="310" r="3.5" fill="#5fd3c4" />
-            <text x="180" y="650" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">Z → GPIO1</text>
-            <text x="55" y="672" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VDD → 3V3 · VSS/INH → GND</text>
-            <text x="55" y="690" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">8x canais → conectores dos pads</text>
-            <line x1="55" y1="705" x2="175" y2="705" stroke="#5a6274" stroke-width="1.5" stroke-dasharray="3 3" />
-            <text x="115" y="730" text-anchor="middle" font-size="10.5" fill="#5a6274">(8 fios individuais, não desenhados)</text>
+            <rect x="60" y="700" width="270" height="210" rx="8" fill="#171c24" stroke="#5fd3c4" stroke-width="1.5" />
+            <text x="195" y="725" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">HW-178 #0 (CD4067)</text>
+            <text x="195" y="742" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">pads 0–15 (C0–C15)</text>
+            <line x1="90" y1="700" x2="90" y2="150" stroke="#5fd3c4" stroke-width="2" />
+            <line x1="140" y1="700" x2="140" y2="190" stroke="#5fd3c4" stroke-width="2" />
+            <line x1="190" y1="700" x2="190" y2="230" stroke="#5fd3c4" stroke-width="2" />
+            <line x1="240" y1="700" x2="240" y2="270" stroke="#5fd3c4" stroke-width="2" />
+            <circle cx="90" cy="150" r="3.5" fill="#5fd3c4" /><circle cx="140" cy="190" r="3.5" fill="#5fd3c4" /><circle cx="190" cy="230" r="3.5" fill="#5fd3c4" /><circle cx="240" cy="270" r="3.5" fill="#5fd3c4" />
+            <text x="90" y="780" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S0</text>
+            <text x="140" y="780" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S1</text>
+            <text x="190" y="780" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S2</text>
+            <text x="240" y="780" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S3</text>
+            <path d="M60 710 H20 V310 H740" stroke="#5fd3c4" stroke-width="2" fill="none" />
+            <circle cx="20" cy="310" r="3.5" fill="#5fd3c4" />
+            <text x="80" y="800" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">SIG → GPIO15</text>
+            <text x="80" y="822" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VCC → 3V3 · GND → GND</text>
+            <text x="80" y="840" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">EN → GND (sempre habilitado)</text>
+            <text x="80" y="858" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">16x canais (C0–C15) → conectores dos pads</text>
+            <line x1="80" y1="873" x2="300" y2="873" stroke="#5a6274" stroke-width="1.5" stroke-dasharray="3 3" />
+            <text x="195" y="894" text-anchor="middle" font-size="10.5" fill="#5a6274">(16 fios individuais, não desenhados)</text>
           </g>
 
           <!-- MUX1 -->
           <g>
-            <rect x="230" y="560" width="150" height="190" rx="8" fill="#171c24" stroke="#5fd3c4" stroke-width="1.5" />
-            <text x="305" y="585" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">CD4051 #1</text>
-            <text x="305" y="602" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">pads 8–15</text>
-            <line x1="255" y1="560" x2="255" y2="150" stroke="#5fd3c4" stroke-width="2" />
-            <line x1="305" y1="560" x2="305" y2="190" stroke="#5fd3c4" stroke-width="2" />
-            <line x1="355" y1="560" x2="355" y2="230" stroke="#5fd3c4" stroke-width="2" />
-            <circle cx="255" cy="150" r="3.5" fill="#5fd3c4" /><circle cx="305" cy="190" r="3.5" fill="#5fd3c4" /><circle cx="355" cy="230" r="3.5" fill="#5fd3c4" />
-            <text x="255" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S0</text>
-            <text x="305" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S1</text>
-            <text x="355" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S2</text>
-            <path d="M365 560 V350 H740" stroke="#5fd3c4" stroke-width="2" fill="none" />
-            <circle cx="365" cy="350" r="3.5" fill="#5fd3c4" />
-            <text x="245" y="650" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">Z → GPIO2</text>
-            <text x="245" y="672" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VDD → 3V3 · VSS/INH → GND</text>
-            <text x="245" y="690" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">8x canais → conectores dos pads</text>
-            <line x1="245" y1="705" x2="365" y2="705" stroke="#5a6274" stroke-width="1.5" stroke-dasharray="3 3" />
-            <text x="305" y="730" text-anchor="middle" font-size="10.5" fill="#5a6274">(8 fios individuais, não desenhados)</text>
+            <rect x="440" y="700" width="270" height="210" rx="8" fill="#171c24" stroke="#5fd3c4" stroke-width="1.5" />
+            <text x="575" y="725" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">HW-178 #1 (CD4067)</text>
+            <text x="575" y="742" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">pads 16–31 (C0–C15)</text>
+            <line x1="490" y1="700" x2="490" y2="150" stroke="#5fd3c4" stroke-width="2" />
+            <line x1="545" y1="700" x2="545" y2="190" stroke="#5fd3c4" stroke-width="2" />
+            <line x1="600" y1="700" x2="600" y2="230" stroke="#5fd3c4" stroke-width="2" />
+            <line x1="655" y1="700" x2="655" y2="270" stroke="#5fd3c4" stroke-width="2" />
+            <circle cx="490" cy="150" r="3.5" fill="#5fd3c4" /><circle cx="545" cy="190" r="3.5" fill="#5fd3c4" /><circle cx="600" cy="230" r="3.5" fill="#5fd3c4" /><circle cx="655" cy="270" r="3.5" fill="#5fd3c4" />
+            <text x="490" y="780" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S0</text>
+            <text x="545" y="780" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S1</text>
+            <text x="600" y="780" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S2</text>
+            <text x="655" y="780" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S3</text>
+            <path d="M680 700 V350 H740" stroke="#5fd3c4" stroke-width="2" fill="none" />
+            <circle cx="680" cy="350" r="3.5" fill="#5fd3c4" />
+            <text x="460" y="800" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">SIG → GPIO16</text>
+            <text x="460" y="822" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VCC → 3V3 · GND → GND</text>
+            <text x="460" y="840" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">EN → GND (sempre habilitado)</text>
+            <text x="460" y="858" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">16x canais (C0–C15) → conectores dos pads</text>
+            <line x1="460" y1="873" x2="680" y2="873" stroke="#5a6274" stroke-width="1.5" stroke-dasharray="3 3" />
+            <text x="575" y="894" text-anchor="middle" font-size="10.5" fill="#5a6274">(16 fios individuais, não desenhados)</text>
           </g>
 
-          <!-- MUX2 -->
+          <!-- ===================== TFT MODULE (header ESQUERDO, mesmo lado dos 2x CD4067) ===================== -->
           <g>
-            <rect x="420" y="560" width="150" height="190" rx="8" fill="#171c24" stroke="#5fd3c4" stroke-width="1.5" />
-            <text x="495" y="585" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">CD4051 #2</text>
-            <text x="495" y="602" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">pads 16–23</text>
-            <line x1="445" y1="560" x2="445" y2="150" stroke="#5fd3c4" stroke-width="2" />
-            <line x1="495" y1="560" x2="495" y2="190" stroke="#5fd3c4" stroke-width="2" />
-            <line x1="545" y1="560" x2="545" y2="230" stroke="#5fd3c4" stroke-width="2" />
-            <circle cx="445" cy="150" r="3.5" fill="#5fd3c4" /><circle cx="495" cy="190" r="3.5" fill="#5fd3c4" /><circle cx="545" cy="230" r="3.5" fill="#5fd3c4" />
-            <text x="445" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S0</text>
-            <text x="495" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S1</text>
-            <text x="545" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S2</text>
-            <path d="M555 560 V390 H740" stroke="#5fd3c4" stroke-width="2" fill="none" />
-            <circle cx="555" cy="390" r="3.5" fill="#5fd3c4" />
-            <text x="435" y="650" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">Z → GPIO7</text>
-            <text x="435" y="672" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VDD → 3V3 · VSS/INH → GND</text>
-            <text x="435" y="690" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">8x canais → conectores dos pads</text>
-            <line x1="435" y1="705" x2="555" y2="705" stroke="#5a6274" stroke-width="1.5" stroke-dasharray="3 3" />
-            <text x="495" y="730" text-anchor="middle" font-size="10.5" fill="#5a6274">(8 fios individuais, não desenhados)</text>
+            <rect x="250" y="390" width="220" height="280" rx="8" fill="#171c24" stroke="#e3b34f" stroke-width="1.5" />
+            <text x="360" y="415" text-anchor="middle" font-size="14" font-weight="600" fill="#e9e4d8">TFT ST7735</text>
+            <text x="360" y="432" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">1.44" 128×128 · SPI</text>
+
+            <line x1="470" y1="450" x2="740" y2="450" stroke="#e3b34f" stroke-width="2" />
+            <line x1="470" y1="490" x2="740" y2="490" stroke="#e3b34f" stroke-width="2" />
+            <line x1="470" y1="530" x2="740" y2="530" stroke="#e3b34f" stroke-width="2" />
+            <line x1="470" y1="570" x2="740" y2="570" stroke="#e3b34f" stroke-width="2" />
+            <line x1="470" y1="610" x2="740" y2="610" stroke="#e3b34f" stroke-width="2" />
+            <line x1="470" y1="650" x2="740" y2="650" stroke="#e3b34f" stroke-width="2" />
+
+            <text x="465" y="454" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">DC</text>
+            <text x="465" y="494" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">CS</text>
+            <text x="465" y="534" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">SDA (MOSI)</text>
+            <text x="465" y="574" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">SCL (SCK)</text>
+            <text x="465" y="614" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">BLK</text>
+            <text x="465" y="654" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">RES</text>
+
+            <rect x="290" y="450" width="140" height="90" fill="#0c0e12" stroke="#5a6274" />
+            <line x1="290" y1="450" x2="430" y2="540" stroke="#2a3240" />
+            <line x1="430" y1="450" x2="290" y2="540" stroke="#2a3240" />
+            <text x="360" y="499" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5a6274">128×128</text>
+
+            <text x="270" y="650" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VCC → 3V3</text>
           </g>
 
-          <!-- MUX3 -->
+          <!-- ===================== ENCODER 1 (header DIREITO) ===================== -->
           <g>
-            <rect x="610" y="560" width="150" height="190" rx="8" fill="#171c24" stroke="#5fd3c4" stroke-width="1.5" />
-            <text x="685" y="585" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">CD4051 #3</text>
-            <text x="685" y="602" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">pads 24–31</text>
-            <line x1="635" y1="560" x2="635" y2="150" stroke="#5fd3c4" stroke-width="2" />
-            <line x1="685" y1="560" x2="685" y2="190" stroke="#5fd3c4" stroke-width="2" />
-            <line x1="735" y1="560" x2="735" y2="230" stroke="#5fd3c4" stroke-width="2" />
-            <circle cx="635" cy="150" r="3.5" fill="#5fd3c4" /><circle cx="685" cy="190" r="3.5" fill="#5fd3c4" /><circle cx="735" cy="230" r="3.5" fill="#5fd3c4" />
-            <text x="635" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S0</text>
-            <text x="685" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S1</text>
-            <text x="735" y="630" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S2</text>
-            <path d="M745 560 V430 H740" stroke="#5fd3c4" stroke-width="2" fill="none" />
-            <circle cx="740" cy="430" r="3.5" fill="#5fd3c4" />
-            <text x="625" y="650" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">Z → GPIO8</text>
-            <text x="625" y="672" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VDD → 3V3 · VSS/INH → GND</text>
-            <text x="625" y="690" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">8x canais → conectores dos pads</text>
-            <line x1="625" y1="705" x2="745" y2="705" stroke="#5a6274" stroke-width="1.5" stroke-dasharray="3 3" />
-            <text x="685" y="730" text-anchor="middle" font-size="10.5" fill="#5a6274">(8 fios individuais, não desenhados)</text>
+            <rect x="1220" y="90" width="220" height="200" rx="8" fill="#171c24" stroke="#b09bf0" stroke-width="1.5" />
+            <text x="1330" y="115" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">Encoder 1 — pad / valor</text>
+
+            <line x1="1040" y1="150" x2="1220" y2="150" stroke="#b09bf0" stroke-width="2" />
+            <line x1="1040" y1="190" x2="1220" y2="190" stroke="#b09bf0" stroke-width="2" />
+            <line x1="1040" y1="230" x2="1220" y2="230" stroke="#b09bf0" stroke-width="2" />
+
+            <text x="1235" y="154" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">A</text>
+            <text x="1235" y="194" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">B</text>
+            <text x="1235" y="234" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">SW (chave/EDIT)</text>
+
+            <circle cx="1370" cy="260" r="22" fill="#0c0e12" stroke="#5a6274" stroke-width="1.5" />
+            <line x1="1370" y1="260" x2="1370" y2="242" stroke="#8b93a3" stroke-width="2" />
+
+            <text x="1235" y="278" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">GND comum · pull-up interno (sem VCC)</text>
           </g>
 
-          <!-- ===================== TFT MODULE ===================== -->
+          <!-- ===================== ENCODER 2 (header DIREITO) ===================== -->
           <g>
-            <rect x="1220" y="60" width="220" height="330" rx="8" fill="#171c24" stroke="#e3b34f" stroke-width="1.5" />
-            <text x="1330" y="90" text-anchor="middle" font-size="14" font-weight="600" fill="#e9e4d8">TFT ST7735</text>
-            <text x="1330" y="108" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">1.44" 128×128 · SPI</text>
+            <rect x="1220" y="310" width="220" height="220" rx="8" fill="#171c24" stroke="#b09bf0" stroke-width="1.5" />
+            <text x="1330" y="335" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">Encoder 2 — item</text>
 
-            <line x1="1040" y1="150" x2="1220" y2="150" stroke="#e3b34f" stroke-width="2" />
-            <line x1="1040" y1="190" x2="1220" y2="190" stroke="#e3b34f" stroke-width="2" />
-            <line x1="1040" y1="230" x2="1220" y2="230" stroke="#e3b34f" stroke-width="2" />
-            <line x1="1040" y1="270" x2="1220" y2="270" stroke="#e3b34f" stroke-width="2" />
-            <line x1="1040" y1="310" x2="1220" y2="310" stroke="#e3b34f" stroke-width="2" />
-            <line x1="1040" y1="350" x2="1220" y2="350" stroke="#e3b34f" stroke-width="2" />
+            <line x1="1040" y1="340" x2="1220" y2="340" stroke="#b09bf0" stroke-width="2" />
+            <line x1="1040" y1="380" x2="1220" y2="380" stroke="#b09bf0" stroke-width="2" />
+            <line x1="1040" y1="420" x2="1220" y2="420" stroke="#b09bf0" stroke-width="2" />
 
-            <text x="1235" y="154" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">DC</text>
-            <text x="1235" y="194" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">CS</text>
-            <text x="1235" y="234" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">SDA (MOSI)</text>
-            <text x="1235" y="274" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">SCL (SCK)</text>
-            <text x="1235" y="314" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">BLK</text>
-            <text x="1235" y="354" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">RES</text>
+            <text x="1235" y="344" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">A</text>
+            <text x="1235" y="384" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">B</text>
+            <text x="1235" y="424" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">SW (reservada)</text>
 
-            <rect x="1250" y="270" width="140" height="90" fill="#0c0e12" stroke="#5a6274" />
-            <line x1="1250" y1="270" x2="1390" y2="360" stroke="#2a3240" />
-            <line x1="1390" y1="270" x2="1250" y2="360" stroke="#2a3240" />
-            <text x="1320" y="326" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5a6274">128×128</text>
+            <circle cx="1370" cy="470" r="22" fill="#0c0e12" stroke="#5a6274" stroke-width="1.5" />
+            <line x1="1370" y1="470" x2="1370" y2="452" stroke="#8b93a3" stroke-width="2" />
 
-            <text x="1235" y="392" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VCC → 3V3 · GND → GND</text>
-          </g>
-
-          <!-- ===================== ENCODER 1 ===================== -->
-          <g>
-            <rect x="1220" y="410" width="220" height="150" rx="8" fill="#171c24" stroke="#b09bf0" stroke-width="1.5" />
-            <text x="1330" y="435" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">Encoder 1 — pad / valor</text>
-
-            <line x1="1040" y1="430" x2="1220" y2="430" stroke="#b09bf0" stroke-width="2" />
-            <line x1="1040" y1="470" x2="1220" y2="470" stroke="#b09bf0" stroke-width="2" />
-            <line x1="1040" y1="510" x2="1220" y2="510" stroke="#b09bf0" stroke-width="2" />
-
-            <text x="1235" y="434" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">A</text>
-            <text x="1235" y="474" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">B</text>
-            <text x="1235" y="514" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">SW (chave/EDIT)</text>
-
-            <circle cx="1370" cy="480" r="26" fill="#0c0e12" stroke="#5a6274" stroke-width="1.5" />
-            <line x1="1370" y1="480" x2="1370" y2="460" stroke="#8b93a3" stroke-width="2" />
-
-            <text x="1235" y="545" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">GND comum · pull-up interno (sem VCC)</text>
-          </g>
-
-          <!-- ===================== ENCODER 2 ===================== -->
-          <g>
-            <rect x="1220" y="580" width="220" height="150" rx="8" fill="#171c24" stroke="#b09bf0" stroke-width="1.5" />
-            <text x="1330" y="605" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">Encoder 2 — item</text>
-
-            <line x1="1040" y1="590" x2="1220" y2="590" stroke="#b09bf0" stroke-width="2" />
-            <line x1="1040" y1="630" x2="1220" y2="630" stroke="#b09bf0" stroke-width="2" />
-            <line x1="1040" y1="670" x2="1220" y2="670" stroke="#b09bf0" stroke-width="2" />
-
-            <text x="1235" y="594" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">A</text>
-            <text x="1235" y="634" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">B</text>
-            <text x="1235" y="674" font-family="IBM Plex Mono, monospace" font-size="11" fill="#e9e4d8">SW (reservada)</text>
-
-            <circle cx="1370" cy="640" r="26" fill="#0c0e12" stroke="#5a6274" stroke-width="1.5" />
-            <line x1="1370" y1="640" x2="1370" y2="620" stroke="#8b93a3" stroke-width="2" />
-
-            <text x="1235" y="715" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">GND comum · pull-up interno (sem VCC)</text>
+            <text x="1235" y="505" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">GND comum · pull-up interno (sem VCC)</text>
           </g>
         </svg>
       </div>
       <figcaption>
-        Barramento S0/S1/S2 compartilhado entre os 4 CD4051 (fios teal); cada
-        chip usa seu próprio pino ADC (Z0–Z3) — não pode ser compartilhado.
-        Tela TFT e os 2 encoders conectam direto, sem barramento. Pontos
-        pretos = junção elétrica real; cruzamentos sem ponto não estão
-        conectados.
+        Cada subsistema sai de um único header físico da placa (Fase L, por
+        ergonomia de montagem): os 2x HW-178/CD4067 e a tela TFT saem do
+        header ESQUERDO (único lado com <code>3V3</code>); os 2 encoders
+        saem do header DIREITO (usam só pull-up interno, sem VCC). Barramento
+        S0/S1/S2/S3 compartilhado entre os 2 módulos (fios teal); cada placa
+        usa seu próprio pino ADC (SIG0/SIG1) — não pode ser compartilhado. O
+        pino EN de cada placa vai direto em GND (não é controlado pelo
+        firmware). Pontos pretos = junção elétrica real; cruzamentos sem
+        ponto não estão conectados.
       </figcaption>
     </figure>
   </div>
 
   <section class="notes">
     <div class="note-card">
-      <h3>Pinos escolhidos evitando</h3>
+      <h3>Por que header esquerdo × header direito</h3>
+      <p>Na placa real, <code>3V3</code> só existe no header esquerdo — então o MUX e a tela (que precisam de VCC) saem por ali. Os encoders usam só <code>INPUT_PULLUP</code> interno (sem VCC externo), então cabem inteiros no header direito (só <code>GND</code>) sem custo elétrico. Ver <code>docs/01-decisoes-arquiteturais.md</code> (Fase L).</p>
+    </div>
+    <div class="note-card">
+      <h3>MUX: pinos contíguos ao 3V3</h3>
+      <p>O MUX segue a ordem física real da placa logo após o <code>3V3</code>, sem pular nenhum outro sinal (<code>4,5,6,7,15,16</code>) — a fiação sai como um feixe único. Por isso o SIG0/SIG1 do MUX usa GPIO15/16 (ADC2) em vez de continuar em ADC1: são os únicos pinos que mantêm a sequência contígua, e este projeto não usa Wi-Fi (só BLE), então o conflito clássico ADC2×Wi-Fi não se aplica.</p>
+    </div>
+    <div class="note-card">
+      <h3>Tela: espelhada com o próprio conector (2026-08-31)</h3>
+      <p>A tela usa <code>GPIO9,10,11,12,13,14</code>, na base do header esquerdo (logo acima do <code>GND</code>) — não continua a sequência do MUX. Como o conector da tela segue a ordem <code>GND VCC SCL SDA RES DC CS BLK</code>, e nessa placa o <code>GND</code> do header esquerdo é o último pino da base (o <code>3V3</code> fica no topo), subir a partir do <code>GND</code> casa cada sinal com a ordem física do conector: <code>SCL</code>(14) → <code>SDA</code>(13) → <code>RES</code>(12) → <code>DC</code>(11) → <code>CS</code>(10) → <code>BLK</code>(9). Só o <code>VCC</code> foge dessa sequência (fio isolado até o <code>3V3</code> no topo) — aceito de propósito. Sobram <code>GPIO17,18,8</code> livres entre o MUX e a tela.</p>
+    </div>
+    <div class="note-card">
+      <h3>Pinos evitados</h3>
       <ul>
         <li>Strapping pins (GPIO0, 3, 45, 46)</li>
         <li>Pinos do USB nativo (GPIO19/20 — usados pelo USB-MIDI)</li>
-        <li>Faixa de PSRAM octal em algumas variantes do S3 (GPIO35–37)</li>
+        <li>GPIO38 — aciona um LED embutido (<code>BUILTIN LED</code>) dessa placa específica</li>
+        <li>GPIO47/48 — internos de flash/PSRAM nessa placa; GPIO48 também é o LED RGB endereçável (<code>RGB LED</code>)</li>
       </ul>
     </div>
     <div class="note-card">
-      <h3>CD4051 — pinos além dos desenhados</h3>
-      <p><code>VDD</code> → 3V3, <code>VSS</code> e <code>INH</code> → GND (chip sempre habilitado). O datasheet do CD4051 tem 16 pinos; só desenhamos os funcionalmente relevantes pra este projeto.</p>
+      <h3>HW-178 (CD4067) — pino EN fixo em GND</h3>
+      <p>O breakout expõe um pino <code>EN</code> (enable, ativo em LOW) que a lib não controla — decisão de fiação, não de firmware: ligado direto em GND nas 2 placas, sempre habilitadas. Como cada MUX tem seu próprio pino <code>SIG</code>, não há necessidade de desabilitar um deles em nenhum momento.</p>
     </div>
     <div class="note-card">
       <h3>Encoders — sem resistor externo</h3>
-      <p>A/B/SW usam <code>INPUT_PULLUP</code> interno do ESP32-S3 (ver <code>firmware/src/main.cpp</code>) — não precisa de resistor de pull-up na placa.</p>
+      <p>A/B/SW usam <code>INPUT_PULLUP</code> interno do ESP32-S3 (ver <code>firmware/src/main.cpp</code>) — não precisa de resistor de pull-up na placa. É por isso que cabem no header que só tem <code>GND</code>.</p>
+    </div>
+    <div class="note-card">
+      <h3>Ajuste de contiguidade (2026-08-31)</h3>
+      <p>A atribuição original (42/41/40 e 37/36/35) deixava um vão de 2 pinos (<code>GPIO39</code>, <code>GPIO38</code>) entre os dois encoders na ordem física real do header direito. Reatribuído para <code>GPIO1,2,42,41,40,39</code> — contíguos e sem pular nenhum pino. Como bônus, deixa de usar GPIO35-37 (risco de PSRAM octal em módulos com essa variante) e não toca em GPIO43/44 (UART/USB-serial de debug).</p>
     </div>
     <div class="note-card">
       <h3>O que ainda não foi validado</h3>
-      <p>Todo esse pinout foi definido em papel (evitando conflitos conhecidos), sem nenhum teste em hardware real. Variante exata do driver da tela (<code>INITR_144GREENTAB</code>) e sentido de giro dos encoders também dependem de validação física.</p>
+      <p>Todo esse pinout foi definido em papel (evitando conflitos conhecidos e a partir de uma foto do pinout real), sem nenhum teste em hardware real. Variante exata do driver da tela (<code>INITR_144GREENTAB</code>) e sentido de giro dos encoders também dependem de validação física.</p>
     </div>
   </section>
 
   <h2 class="section-title">Referência de pinout</h2>
   <div class="tables">
     <div class="table-card">
-      <div class="head"><span class="swatch" style="background:#5fd3c4"></span>4x CD4051 (32 canais)</div>
+      <div class="head"><span class="swatch" style="background:#5fd3c4"></span>2x CD4067/HW-178 (32 canais) — header esquerdo</div>
       <table>
         <thead><tr><th>Sinal</th><th>GPIO</th></tr></thead>
         <tbody>
           <tr><td>S0 (compartilhado)</td><td class="gpio">4</td></tr>
           <tr><td>S1 (compartilhado)</td><td class="gpio">5</td></tr>
           <tr><td>S2 (compartilhado)</td><td class="gpio">6</td></tr>
-          <tr><td>Z — MUX 0 (pads 0–7)</td><td class="gpio">1</td></tr>
-          <tr><td>Z — MUX 1 (pads 8–15)</td><td class="gpio">2</td></tr>
-          <tr><td>Z — MUX 2 (pads 16–23)</td><td class="gpio">7</td></tr>
-          <tr><td>Z — MUX 3 (pads 24–31)</td><td class="gpio">8</td></tr>
+          <tr><td>S3 (compartilhado)</td><td class="gpio">7</td></tr>
+          <tr><td>SIG — MUX 0 (pads 0–15)</td><td class="gpio">15</td></tr>
+          <tr><td>SIG — MUX 1 (pads 16–31)</td><td class="gpio">16</td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="table-card">
-      <div class="head"><span class="swatch" style="background:#e3b34f"></span>Tela TFT ST7735</div>
+      <div class="head"><span class="swatch" style="background:#e3b34f"></span>Tela TFT ST7735 — header esquerdo</div>
       <table>
         <thead><tr><th>Sinal</th><th>GPIO</th></tr></thead>
         <tbody>
-          <tr><td>DC</td><td class="gpio">9</td></tr>
+          <tr><td>SCL (SCK)</td><td class="gpio">14</td></tr>
+          <tr><td>SDA (MOSI)</td><td class="gpio">13</td></tr>
+          <tr><td>RES</td><td class="gpio">12</td></tr>
+          <tr><td>DC</td><td class="gpio">11</td></tr>
           <tr><td>CS</td><td class="gpio">10</td></tr>
-          <tr><td>SDA (MOSI)</td><td class="gpio">11</td></tr>
-          <tr><td>SCL (SCK)</td><td class="gpio">12</td></tr>
-          <tr><td>BLK</td><td class="gpio">13</td></tr>
-          <tr><td>RES</td><td class="gpio">14</td></tr>
+          <tr><td>BLK</td><td class="gpio">9</td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="table-card">
-      <div class="head"><span class="swatch" style="background:#b09bf0"></span>Encoders rotativos</div>
+      <div class="head"><span class="swatch" style="background:#b09bf0"></span>Encoders rotativos — header direito</div>
       <table>
         <thead><tr><th>Sinal</th><th>GPIO</th></tr></thead>
         <tbody>
-          <tr><td>Enc1 A</td><td class="gpio">15</td></tr>
-          <tr><td>Enc1 B</td><td class="gpio">16</td></tr>
-          <tr><td>Enc1 SW</td><td class="gpio">17</td></tr>
-          <tr><td>Enc2 A</td><td class="gpio">18</td></tr>
-          <tr><td>Enc2 B</td><td class="gpio">21</td></tr>
-          <tr><td>Enc2 SW</td><td class="gpio">38</td></tr>
+          <tr><td>Enc1 A</td><td class="gpio">1</td></tr>
+          <tr><td>Enc1 B</td><td class="gpio">2</td></tr>
+          <tr><td>Enc1 SW</td><td class="gpio">42</td></tr>
+          <tr><td>Enc2 A</td><td class="gpio">41</td></tr>
+          <tr><td>Enc2 B</td><td class="gpio">40</td></tr>
+          <tr><td>Enc2 SW</td><td class="gpio">39</td></tr>
         </tbody>
       </table>
     </div>

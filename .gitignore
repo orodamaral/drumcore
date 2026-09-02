@@ -15,3 +15,12 @@ desktop-app/build/
 .DS_Store
 Thumbs.db
 *.log
+
+# KiCad - historico automatico de algum plugin/editor (nao e' historico
+# de projeto de verdade, e por algum motivo vem com seu proprio .git
+# aninhado dentro) - ver docs/01-decisoes-arquiteturais.md se isso virar
+# relevante de novo.
+**/.history/
+
+# Nunca versionar arquivos de torrent/distribuicao de software.
+*.torrent

@@ -40,6 +40,10 @@ Cada linha enviada pelo app é um objeto com um campo `cmd`.
 | `set_global` | `field`, `value` | Altera uma configuração global (ver tabela abaixo), aplica imediatamente e persiste em EEPROM. Resposta: `ack` + `device_info`. |
 | `save_all` | — | Grava toda a configuração atual (32 pads + globais) na EEPROM. Resposta: `log` + `device_info`. Esse comando existe principalmente pro caminho dos encoders/tela (Fase J — ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)), onde a edição só fica em RAM até `GLOBAL > SALVAR`; pelo protocolo serial ele é redundante na prática, já que `set_pad`/`set_global` já persistem a cada mudança. |
 | `restore_all` | — | Descarta qualquer mudança em RAM e recarrega os 32 pads + globais da EEPROM. Resposta: `pad_config` × 32 + `log` + `device_info`. |
+| `start_autotune` | `pad` (0-31) | Inicia o assistente de auto-calibração (Fase O) pra esse pad — ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md). `error` (`invalid_pad`) se o pad não existir/não for `primary`, ou (`channel_disabled`) se o canal estiver desligado (`enabled: false`, Fase N). Resposta: uma série de `autotune_status` conforme o assistente avança (não é só uma resposta única — ver abaixo). |
+| `cancel_autotune` | — | Cancela o assistente em qualquer fase (mesmo no meio da coleta de golpes). Resposta: `autotune_status` com `"state": "idle"`. |
+| `apply_autotune` | — | Aplica o resultado calculado (`sensitivity`/`threshold`/`scan_time`/`mask_time`) no pad e persiste em EEPROM. Só funciona depois de um `autotune_status` com `"state": "done"` — `error` (`not_ready`) caso contrário. Resposta: `autotune_status` (`idle`) + `pad_config` com os novos valores. |
+| `enc_input` | `enc` (1 ou 2), `action` (`rotate`\|`click`\|`hold`), `delta` (só em `rotate`, padrão `1`) | Encoder virtual — Fase Q, criado pra navegar/testar a tela do módulo pelo app desktop antes dos encoders físicos estarem conectados. Chama exatamente o mesmo handler do encoder físico correspondente (`onEnc1Rotate`/`onEnc2Click`/etc, ver `firmware/src/main.cpp`), então tem efeito idêntico ao giro/clique/hold real. Sem resposta dedicada — o resultado aparece na tela física do módulo, que é a única fonte da verdade de navegação (o app não espelha `currentPage`/item selecionado/etc). `error` (`invalid_enc`, `invalid_action` ou `invalid_delta`) em caso de parâmetro inválido. |
 
 `field` aceito em `set_global`:
 
@@ -47,7 +51,6 @@ Cada linha enviada pelo app é um objeto com um campo `cmd`.
 |---|---|---|
 | `midi_channel` | número | `1-16` |
 | `midi_output` | número | `0` USB, `1` BLE, `2` USB+BLE — sem MIDI DIN, o hardware não tem esse circuito (ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)) |
-| `brightness` | número | `10-100` (%, controla o brilho da tela via PWM) |
 
 `field` aceito em `set_pad` (nomes do protocolo, não os nomes internos da
 lib — ver [05-tipos-de-sensor.md](05-tipos-de-sensor.md) pro que cada campo
@@ -60,19 +63,44 @@ significa em cada tipo de pad):
 | `scan_time` | número | `0-100` | `ack` |
 | `mask_time` | número | `0-100` | `ack` |
 | `curve_type` | número | `0-4` | `ack` |
+| `retrigger` | número | `0-100` (Fase P) | `ack` |
+| `gain` | número | `10-200` (0.10x-2.00x, 100 = neutro) (Fase P) | `ack` |
+| `xtalk` | número | `0-100` (Fase P) | `ack` |
+| `xtalk_group` | número | `0-4` (`0` = nenhum grupo) (Fase P) | `ack` |
 | `rim_sensitivity` | número | `0-100` | `ack` |
 | `rim_threshold` | número | `0-100` | `ack` |
 | `note` | número | `0-127` | `ack` |
 | `note_rim` | número | `0-127` | `ack` |
 | `note_cup` | número | `0-127` | `ack` |
 | `label` | string | até 19 caracteres | `pad_config` |
-| `pad_type` | número | `0-7` (ver tabela em [05-tipos-de-sensor.md](05-tipos-de-sensor.md)) | `pad_config` do próprio pad **e** do pad seguinte (pode ter mudado de status) |
+| `pad_type` | número | `0-8` (ver tabela em [05-tipos-de-sensor.md](05-tipos-de-sensor.md)) | `pad_config` do próprio pad **e** do pad seguinte (pode ter mudado de status) |
 | `hihat_pedal_channel` | número | índice de outro pad (`6`/`7`), ou `-1` pra remover o link | `pad_config` |
+| `enabled` | número | `0` ou `1` | `pad_config` |
 
 Todos os campos exigem que o pad seja `primary` (`error` com
-`channel_consumed` caso contrário). `pad_type`/`hihat_pedal_channel` e
-`label` respondem com o `pad_config` inteiro (mais direto o app já receber o
-estado recalculado) em vez de `ack`.
+`channel_consumed` caso contrário). `pad_type`/`hihat_pedal_channel`/
+`enabled` e `label` respondem com o `pad_config` inteiro (mais direto o app
+já receber o estado recalculado) em vez de `ack`.
+
+`retrigger`/`gain`/`xtalk`/`xtalk_group` (Fase P, ver
+[01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md), inspirados no
+microDRUM/nanoDRUM): `retrigger` afrouxa o `mask_time` pra pancadas bem mais
+fortes que a anterior (rufos/rolls rápidos); `gain` recalibra a amplitude
+lida do sensor antes do threshold (útil pra piezos com saída muito
+forte/fraca); `xtalk`/`xtalk_group` suprimem um hit se outro pad do mesmo
+grupo bateu bem mais forte no mesmo instante (vibração mecânica entre pads
+montados juntos, ou crosstalk elétrico entre canais — inclusive os dois
+CD4067 que compartilham o barramento S0-S3, ver
+[02-hardware.md](02-hardware.md)). Nenhum dos 4 tem efeito quando no valor
+neutro (`0` pros 3 primeiros, `100` pro `gain`).
+
+`enabled` (Fase N, ver
+[01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)): `false`
+desliga o canal por completo — o firmware não roda sensing nem emite `hit`
+pra ele, mesmo que o pino ADC correspondente esteja fisicamente flutuando
+(sem sensor conectado) e captando ruído. Não afeta `primary`/
+`consumed_by`, que continuam decididos só por `pad_type` — um canal
+desabilitado ainda "existe" no espaço de 32 canais, só não é sensoreado.
 
 ## Eventos/respostas (módulo → app)
 
@@ -81,10 +109,11 @@ Cada linha enviada pelo módulo é um objeto com um campo `type`.
 | `type` | Campos | Quando é enviado |
 |---|---|---|
 | `pong` | — | Resposta a `ping`. |
-| `device_info` | `pads`, `muxes`, `midi_channel`, `midi_output`, `brightness`, `ble_connected`, `firmware_phase` | Resposta a `get_device_info`, `set_global`, `save_all` e `restore_all`. `ble_connected` indica se há um dispositivo pareado via BLE-MIDI naquele momento (ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)). `midi_output` controla se o MIDI sai por USB, BLE ou os dois — antes (Fase H) saía sempre pelos dois simultaneamente; agora é configurável via `set_global`. |
-| `pad_config` | Ver abaixo | Resposta a `get_pad`/`get_all_pads`, e a `set_pad` bem-sucedido em `label`/`pad_type`/`hihat_pedal_channel`. |
+| `device_info` | `pads`, `muxes`, `midi_channel`, `midi_output`, `ble_connected`, `firmware_phase` | Resposta a `get_device_info`, `set_global`, `save_all` e `restore_all`. `ble_connected` indica se há um dispositivo pareado via BLE-MIDI naquele momento (ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)). `midi_output` controla se o MIDI sai por USB, BLE ou os dois — antes (Fase H) saía sempre pelos dois simultaneamente; agora é configurável via `set_global`. |
+| `pad_config` | Ver abaixo | Resposta a `get_pad`/`get_all_pads`, e a `set_pad` bem-sucedido em `label`/`pad_type`/`hihat_pedal_channel`/`enabled`, e a `apply_autotune`. |
 | `hit` | `pad`, `zone`, `note`, `velocity` | Sempre que um pad é atingido (telemetria em tempo real). `zone` varia por tipo: `"bow"`, `"head"`, `"rim"`, `"edge"`, `"cup"`, `"open"`, `"closed"`, `"pedal"` ou `"choke"` — ver [05-tipos-de-sensor.md](05-tipos-de-sensor.md). |
 | `ack` | `cmd`, `pad`, `field`, `value` | Confirmação de um `set_pad` com campo numérico simples. |
+| `autotune_status` | `pad`, `state`, `hit_count`, `hit_target`, e (`state == "done"`) `sensitivity`/`threshold`/`scan_time`/`mask_time`, ou (`state == "aborted"`) `reason` | Progresso do assistente de auto-calibração (Fase O) — emitido a cada mudança de fase relevante, não só em resposta a comando (dá pra acompanhar em tempo real: contagem regressiva do ruído, golpes capturados, etc). `state`: `"idle"` (parado/cancelado/aplicado), `"noise"` (medindo ruído de fundo), `"collecting"` (esperando/processando golpes), `"done"` (resultado calculado, esperando `apply_autotune`/`cancel_autotune`), `"aborted"` (timeout de 15s sem pancada, ou canal desligado — ver `reason`: `"timeout"` ou `"channel_disabled"`). |
 | `error` | `cmd`, `message` | Comando inválido, campo desconhecido, valor fora da faixa, canal consumido, JSON malformado, etc. |
 | `log` | `message` | Mensagens informativas de boot/diagnóstico (antes eram `Serial.println` livres), e também pareamento/desconexão do BLE-MIDI. |
 
@@ -110,12 +139,17 @@ Cada linha enviada pelo módulo é um objeto com um campo `type`.
   "scan_time": 10,
   "mask_time": 30,
   "curve_type": 0,
+  "retrigger": 0,
+  "gain": 100,
+  "xtalk": 0,
+  "xtalk_group": 0,
   "rim_sensitivity": 20,
   "rim_threshold": 3,
   "note": 39,
   "note_rim": 39,
   "note_cup": 40,
-  "hihat_pedal_channel": -1
+  "hihat_pedal_channel": -1,
+  "enabled": true
 }
 ```
 
@@ -152,6 +186,15 @@ Respostas (2 linhas — o próprio pad e o seguinte, que passa a `primary:false`
 Linkar o chimbal (pad 10, tipo 2 ou 4) ao pedal (pad 12, tipo 6 ou 7):
 ```json
 {"cmd":"set_pad","pad":10,"field":"hihat_pedal_channel","value":12}
+```
+
+Girar o ENC2 um passo pra frente (ex: navegar a lista de pads):
+```json
+{"cmd":"enc_input","enc":2,"action":"rotate","delta":1}
+```
+Clicar o ENC1 (ex: entrar em SIGNAL a partir de PAD_EDIT):
+```json
+{"cmd":"enc_input","enc":1,"action":"click"}
 ```
 
 Evento de hit num prato 3 zonas (zona "cup"):
