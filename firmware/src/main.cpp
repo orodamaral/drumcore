@@ -346,7 +346,8 @@ const char *padTypeShortName(byte type)
 // 1 byte/pad (retrigger, Fase P - persistido separado da lib de proposito,
 // ver docs/01-decisoes-arquiteturais.md) + 1 byte/pad (gain, Fase P) +
 // 1 byte/pad (xtalk, Fase P) + 1 byte/pad (xtalk_group, Fase P) +
-// 2 bytes de config global (midi_channel, midi_output).
+// 1 byte/pad (hihat_invert, Fase X) + 2 bytes de config global
+// (midi_channel, midi_output).
 // ---------------------------------------------------------------------------
 #define EEPROM_BYTES_PER_PAD 10
 #define EEPROM_INIT_FLAG_ADDR (NUM_PADS * EEPROM_BYTES_PER_PAD)
@@ -358,7 +359,8 @@ const char *padTypeShortName(byte type)
 #define EEPROM_GAIN_ADDR (EEPROM_RETRIGGER_ADDR + NUM_PADS)
 #define EEPROM_XTALK_ADDR (EEPROM_GAIN_ADDR + NUM_PADS)
 #define EEPROM_XTALK_GROUP_ADDR (EEPROM_XTALK_ADDR + NUM_PADS)
-#define EEPROM_GLOBAL_ADDR (EEPROM_XTALK_GROUP_ADDR + NUM_PADS)
+#define EEPROM_HIHAT_INVERT_ADDR (EEPROM_XTALK_GROUP_ADDR + NUM_PADS)
+#define EEPROM_GLOBAL_ADDR (EEPROM_HIHAT_INVERT_ADDR + NUM_PADS)
 #define EEPROM_SIZE (EEPROM_GLOBAL_ADDR + 2)
 #define EEPROM_INIT_MAGIC 0xA5
 
@@ -409,6 +411,19 @@ volatile bool bleMidiConnected = false;
 // Tela TFT (driver ST7735S, variante 1.44" 128x128 - ver Modelo Tela.jpeg).
 Adafruit_ST7735 tft(TFT_CS, TFT_DC, TFT_RST);
 
+// Framebuffer off-screen (Fase U) - as telas de navegacao/edicao desenhavam
+// direto na tft (fillScreen(COL_BG) + redesenho completo a cada mudanca de
+// selecao/valor, nao so' ao trocar de pagina), e o usuario via um flash
+// preto visivel a cada toque no encoder. Agora essas telas desenham nesse
+// canvas em RAM (mesma API do Adafruit_GFX - "canvas." no lugar de "tft."
+// dentro das funcoes render*()) e so' no final renderScreen() manda o frame
+// pronto pra tela fisica de uma vez (drawRGBBitmap - uma unica rajada SPI),
+// entao o usuario nunca ve um quadro parcial/apagado. 160x128 = 40KB de RAM
+// (confortavel - o firmware usa uns 20% dos 320KB do ESP32-S3 antes disso).
+// A tela BOOT (renderBoot/renderBootProgress) continua desenhando direto na
+// tft - roda so uma vez no boot, nao faz parte do flicker reportado.
+GFXcanvas16 canvas(160, 128);
+
 RotaryEncoder enc1(ENC1_A, ENC1_B, RotaryEncoder::LatchMode::FOUR3);
 RotaryEncoder enc2(ENC2_A, ENC2_B, RotaryEncoder::LatchMode::FOUR3);
 
@@ -450,6 +465,14 @@ bool padEnabled[NUM_PADS];
 byte padGain[NUM_PADS];
 byte padXtalk[NUM_PADS];
 byte padXtalkGroup[NUM_PADS];
+
+// padHihatInvert[i]: so' relevante pra padTypeIsHihatPedal() (controlador
+// de pedal FSR/VH-10/VH-11 ou optico TCRT5000) - alguns sensores mandam o
+// sinal de posicao invertido (ex: fisicamente pedal fechado = raw baixo,
+// quando o resto do codigo espera raw alto). Aplicado direto no CC final
+// (fireControlChange) em vez de no rawValue[] - ver comentario em
+// handlePadResult(). Fase X - ver docs/01-decisoes-arquiteturais.md.
+bool padHihatInvert[NUM_PADS];
 
 // Forward decls - auto-tune (Fase O). Implementado mais abaixo, perto do
 // resto do fluxo de encoders/telas, mas handleSerialCommand() (que fica
@@ -539,6 +562,7 @@ enum FieldId
     FIELD_PEDAL_LINK,
     FIELD_XTALK,
     FIELD_XTALK_GROUP,
+    FIELD_HIHAT_INVERT,
 };
 
 struct FieldDef
@@ -586,6 +610,7 @@ byte getFieldsForType(byte padType, FieldDef *out)
     else if (padTypeIsHihatPedal(padType))
     {
         out[n++] = {FIELD_RIM_SENS, "PEDSENS", 1, 100, true};
+        out[n++] = {FIELD_HIHAT_INVERT, "INVERT", 0, 1, false};
     }
 
     out[n++] = {FIELD_CURVE, "CURVA", 0, 4, false};
@@ -671,6 +696,8 @@ int getFieldValue(byte padIndex, FieldId id)
         return p.noteCup;
     case FIELD_PEDAL_LINK:
         return hihatPedalChannel[padIndex] == PAD_NO_LINK ? -1 : hihatPedalChannel[padIndex];
+    case FIELD_HIHAT_INVERT:
+        return padHihatInvert[padIndex] ? 1 : 0;
     }
     return 0;
 }
@@ -745,6 +772,9 @@ void setFieldValue(byte padIndex, FieldId id, int value)
         break;
     case FIELD_PEDAL_LINK:
         hihatPedalChannel[padIndex] = value < 0 ? PAD_NO_LINK : (byte)value;
+        break;
+    case FIELD_HIHAT_INVERT:
+        padHihatInvert[padIndex] = (value != 0);
         break;
     }
     unsavedChanges = true;
@@ -913,6 +943,7 @@ void sendPadConfig(byte padIndex)
     doc["gain"] = padGain[padIndex];
     doc["xtalk"] = padXtalk[padIndex];
     doc["xtalk_group"] = padXtalkGroup[padIndex];
+    doc["hihat_invert"] = padHihatInvert[padIndex];
     sendJsonLine(doc);
 }
 
@@ -958,6 +989,12 @@ void persistPadXtalkGroup(byte i)
     EEPROM_ESP.commit();
 }
 
+void persistPadHihatInvert(byte i)
+{
+    EEPROM_ESP.write(EEPROM_HIHAT_INVERT_ADDR + i, padHihatInvert[i] ? 1 : 0);
+    EEPROM_ESP.commit();
+}
+
 void saveAllToEeprom()
 {
     for (byte i = 0; i < NUM_PADS; i++)
@@ -971,6 +1008,7 @@ void saveAllToEeprom()
         EEPROM_ESP.write(EEPROM_GAIN_ADDR + i, padGain[i]);
         EEPROM_ESP.write(EEPROM_XTALK_ADDR + i, padXtalk[i]);
         EEPROM_ESP.write(EEPROM_XTALK_GROUP_ADDR + i, padXtalkGroup[i]);
+        EEPROM_ESP.write(EEPROM_HIHAT_INVERT_ADDR + i, padHihatInvert[i] ? 1 : 0);
     }
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR, midiChannel);
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 1, midiOutput);
@@ -1004,6 +1042,7 @@ void loadAllFromEeprom()
         {
             padXtalkGroup[i] = 0;
         }
+        padHihatInvert[i] = EEPROM_ESP.read(EEPROM_HIHAT_INVERT_ADDR + i) != 0;
         rebuildPadName(i);
     }
     recomputeChannelPrimary();
@@ -1123,6 +1162,21 @@ void handleSetPad(JsonDocument &doc)
 
         padEnabled[pad] = (enabledValue == 1);
         persistPadEnabled(pad);
+        sendPadConfig(pad);
+        return;
+    }
+
+    if (strcmp(field, "hihat_invert") == 0)
+    {
+        long invertValue = doc["value"] | -1;
+        if (invertValue != 0 && invertValue != 1)
+        {
+            sendError("set_pad", "value_out_of_range");
+            return;
+        }
+
+        padHihatInvert[pad] = (invertValue == 1);
+        persistPadHihatInvert(pad);
         sendPadConfig(pad);
         return;
     }
@@ -1600,11 +1654,17 @@ void handlePadResult(byte i)
             fireNote(pad.note, pad.velocity);
         }
 
+        // [Fase X] "Inverter" (padHihatInvert) flipa o CC final (127-CC),
+        // nao o rawValue[] - assim tem efeito imediato ao ligar/desligar,
+        // sem precisar recalibrar (threshold/sensitivity continuam
+        // calibrados pro sensor "como ele e'"). Ver docs/01-decisoes-
+        // arquiteturais.md.
+        byte cc = padHihatInvert[i] ? (byte)(127 - pad.pedalCC) : pad.pedalCC;
         static byte lastPedalCC[NUM_PADS] = {0};
-        if (pad.pedalCC != lastPedalCC[i])
+        if (cc != lastPedalCC[i])
         {
-            lastPedalCC[i] = pad.pedalCC;
-            fireControlChange(HIHAT_PEDAL_CC, pad.pedalCC);
+            lastPedalCC[i] = cc;
+            fireControlChange(HIHAT_PEDAL_CC, cc);
         }
         break;
     }
@@ -1654,12 +1714,20 @@ void dispatchSensing(byte i)
 // Gain (Fase P, ver docs/01-decisoes-arquiteturais.md) - multiplicador de
 // calibracao por pad (padGain[], 10-200 = 0.10x-2.00x, 100 = neutro).
 // Aplicado direto no rawValue[] ANTES do dispatchSensing() usar esse valor
-// - nao precisa de nenhuma mudanca na lib vendorizada. So escala o DESVIO
-// em relacao ao topo de escala (onde o sensor fica em repouso - a lib
-// assume rawValue perto de ADC_RAW_MAX quando nada esta sendo tocado,
-// ver o "1023 - raw/4" em hellodrum.cpp), nao o valor absoluto - isso
-// preserva a leitura de repouso (~0 apos a transformacao da lib)
-// independente do gain escolhido.
+// - nao precisa de nenhuma mudanca na lib vendorizada. Escala o valor bruto
+// a partir do repouso (rawValue perto de 0 quando nada esta sendo tocado -
+// circuito real confirmado na Fase S, piezo + resistor de 100k em
+// paralelo, ver docs/01-decisoes-arquiteturais.md), preservando esse
+// repouso ~0 independente do gain escolhido.
+//
+// [MODIFICADO - projeto DrumCore, 2026-09-02] a formula original escalava
+// o desvio em relacao ao TOPO da escala (ADC_RAW_MAX - rawValue[i]),
+// assumindo repouso perto de ADC_RAW_MAX - a mesma suposicao invertida
+// encontrada e corrigida em hellodrum.cpp e em autoTuneTick() na Fase S,
+// so' que essa copia ficou pra tras. Com gain=100 (neutro, o padrao) a
+// formula antiga virava um no-op (por isso nunca deu sintoma visivel
+// ainda) - mas assim que alguem calibrar o gain de um pad pra != 100, ia
+// escalar na direcao errada.
 void applyPadGain()
 {
     for (byte i = 0; i < NUM_PADS; i++)
@@ -1670,12 +1738,12 @@ void applyPadGain()
         }
 
         float g = padGain[i] / 100.0f;
-        rawValue[i] = ADC_RAW_MAX - (int)(g * (ADC_RAW_MAX - rawValue[i]));
+        rawValue[i] = (int)(g * rawValue[i]);
         rawValue[i] = constrain(rawValue[i], 0, ADC_RAW_MAX);
 
         if (padTypeUsesSecondChannel(padTypes[i]))
         {
-            rawValue[i + 1] = ADC_RAW_MAX - (int)(g * (ADC_RAW_MAX - rawValue[i + 1]));
+            rawValue[i + 1] = (int)(g * rawValue[i + 1]);
             rawValue[i + 1] = constrain(rawValue[i + 1], 0, ADC_RAW_MAX);
         }
     }
@@ -1783,6 +1851,8 @@ enum AutoTuneState : byte
     AT_RISING,    // pancada em andamento, procurando o pico
     AT_DECAYING,  // pico encontrado, esperando o sinal cair pra metade (mask_time)
     AT_COOLDOWN,  // intervalo entre uma pancada e a proxima
+    AT_HH_OPEN,   // [Fase X] controlador de pedal (HHC) - captura a posicao "solto"
+    AT_HH_CLOSED, // [Fase X] controlador de pedal (HHC) - captura a posicao "pressionado"
     AT_DONE,      // resultado calculado, esperando confirmacao
     AT_ABORTED,   // cancelado (timeout ou canal desligado) - ver atAbortedReason
 };
@@ -1793,30 +1863,216 @@ enum AutoTuneAbortReason : byte
     AT_ABORT_DISABLED,
 };
 
+// [MODIFICADO - projeto DrumCore, 2026-09-02] 3 niveis de intensidade
+// (fraco/medio/forte), 8 batidas cada (24 no total, era so' 8 de
+// intensidade unica) - a pedido do Rodrigo, pra deixar a calibracao mais
+// precisa: o nivel FRACO calibra o piso (threshold, garante que toques
+// leves disparem), o FORTE calibra o teto (sensitivity, velocity 127 de
+// verdade numa pancada forte de verdade), o MEDIO serve de conferencia
+// (nao alimenta a formula final, so' e' guardado/enviado pro app). Ver
+// finishAutoTune() e docs/01-decisoes-arquiteturais.md.
+enum AutoTuneTier : byte
+{
+    AT_TIER_WEAK,
+    AT_TIER_MEDIUM,
+    AT_TIER_STRONG,
+};
+#define AUTOTUNE_TIER_COUNT 3
+
+// [Fase U/V] Pads de 2 canais fazem 1 ou 2 rodadas EXTRAS de calibracao
+// (mais 3 niveis x 8 golpes cada) depois da passada normal no canal
+// principal (que vira a zona "PRIMARY") - quantas rodadas extras e o que
+// cada uma mede dependem de COMO a lib classifica a zona, que varia por
+// "formato" de pad (AutoTuneShape):
+//
+// - AT_SHAPE_DUAL (so' PAD_DUAL, pele+aro): dualPiezoSensing() nao decide
+//   pele-vs-aro olhando cada piezo isolado - compara os picos dos DOIS
+//   canais do MESMO golpe (os dois sempre disparam juntos, um "vaza" pro
+//   outro): `(velocity - velocityRim < rimSensitivity) && (velocityRim >
+//   rimThreshold)`. 1 rodada extra (zona SECONDARY = aro), medindo o pico
+//   do aro E o vazamento cruzado com a pele em cada golpe.
+// - AT_SHAPE_TRI (PAD_CYMBAL_3ZONE/PAD_SNARE_3ZONE): cymbal3zoneSensing()
+//   usa so' 2 canais fisicos tambem, mas a 3a zona (cup/aro-forte) vem de
+//   uma FAIXA de threshold mais alta no MESMO canal secundario (edge e
+//   cup nao sao diferenca entre 2 canais, sao 2 niveis no canal do
+//   aro/borda) - ver `cupThreshold`/`edgeThreshold` em cymbal3zoneSensing().
+//   2 rodadas extras (SECONDARY = edge/borda, TERTIARY = cup/aro-forte),
+//   cada uma so' medindo o pico do canal secundario nessa faixa (sem
+//   diferenca entre canais - o vazamento da PRIMARY so' entra pra achar o
+//   piso do threshold de edge, igual no DUAL).
+//
+// Sem golpes reais nas zonas extras pra medir isso, os campos
+// rimSensitivity/rimThreshold (reaproveitados com significado diferente
+// por formato - ver getFieldsForType()) so' davam pra ajustar na mao. Ver
+// docs/01-decisoes-arquiteturais.md.
+enum AutoTuneShape : byte
+{
+    AT_SHAPE_SINGLE, // 1 canal - so' a rodada PRIMARY (comportamento de sempre)
+    AT_SHAPE_DUAL,   // PAD_DUAL - 1 rodada extra, classificacao por DIFERENCA entre 2 canais
+    AT_SHAPE_TRI,    // PAD_CYMBAL_3ZONE/PAD_SNARE_3ZONE - 2 rodadas extras, 3a zona por FAIXA de threshold no canal secundario
+};
+
+enum AutoTuneZone : byte
+{
+    AT_ZONE_PRIMARY,
+    AT_ZONE_SECONDARY,
+    AT_ZONE_TERTIARY, // so' usada em AT_SHAPE_TRI
+};
+
 #define AUTOTUNE_NOISE_MS 2000
-#define AUTOTUNE_HIT_TARGET 8
+#define AUTOTUNE_HIT_TARGET 8 // por nivel - 24 batidas no total (AUTOTUNE_TIER_COUNT niveis)
 #define AUTOTUNE_RISE_SETTLE_MS 8
 #define AUTOTUNE_DECAY_TIMEOUT_MS 500
 #define AUTOTUNE_COOLDOWN_MS 30
 #define AUTOTUNE_WAIT_TIMEOUT_MS 15000
 
+// [Fase X] Controlador de pedal (HHC) - assistente completamente diferente
+// do baseado em pancada acima: nao ha' "golpe" nenhum, e' um sensor de
+// POSICAO continua. So' pede pro usuario segurar em 2 posicoes (solto,
+// depois pressionado) por AUTOTUNE_HH_HOLD_MS cada, e amostra so' o
+// ultimo AUTOTUNE_HH_SAMPLE_MS de cada uma (da tempo do usuario chegar na
+// posicao e o sinal assentar antes de comecar a contar).
+#define AUTOTUNE_HH_HOLD_MS 3000
+#define AUTOTUNE_HH_SAMPLE_MS 1000
+
 AutoTuneState atState = AT_IDLE;
+AutoTuneTier atTier = AT_TIER_WEAK;
 byte atPad = 0;
+byte atSavedGain = 100; // gain original do pad, salvo em startAutoTune() - ver comentario la
 unsigned long atPhaseStartMs = 0;
 unsigned long atLastCountdownMs = 0; // so' pra redesenhar a contagem regressiva do AT_NOISE 1x/segundo
 int atNoiseFloor = 0;
-byte atHitCount = 0;
+byte atHitCount = 0; // zera a cada nivel (0..AUTOTUNE_HIT_TARGET)
 int atHitPeak = 0;
 unsigned long atHitStartMs = 0;
 unsigned long atPeakAtMs = 0;
-long atSumScanMs = 0;
+long atSumScanMs = 0; // acumulado nos 3 niveis - timing nao varia muito por forca
 long atSumMaskMs = 0;
-long atSumPeak = 0;
+long atSumPeakByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0};
 byte atResultSensitivity = 0;
 byte atResultThreshold = 0;
 byte atResultScan = 0;
 byte atResultMask = 0;
 AutoTuneAbortReason atAbortedReason = AT_ABORT_TIMEOUT;
+
+// [Fase U/V] Estado das rodadas extras (canal secundario) - ver comentario
+// grande no enum AutoTuneShape acima pro racional completo.
+AutoTuneShape atShape = AT_SHAPE_SINGLE;
+AutoTuneZone atZone = AT_ZONE_PRIMARY;
+int atOtherPeak = 0;             // pico do canal PASSIVO (o que o usuario NAO esta' batendo agora) durante o golpe atual - so' usado em AT_SHAPE_DUAL
+int atCrossFloor = 0;            // pior vazamento visto no canal secundario durante golpes na zona PRIMARY (qualquer shape com 2 canais)
+long atMaxHeadRimDiff = -100000; // pior (primary - secondary) visto durante golpes reais na zona SECONDARY - so' usado em AT_SHAPE_DUAL. Sentinela bem negativa, sobrescrita no 1o golpe
+long atSumRimPeakByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0};  // picos da zona SECONDARY (aro em DUAL, edge/borda em TRI)
+long atSumCupByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0};      // picos da zona TERTIARY (cup/aro-forte) - so' usado em AT_SHAPE_TRI
+byte atResultRimSensitivity = 0; // vai no campo rimSensitivity do pad - "aro" em DUAL, "edge threshold" em TRI (ver getFieldsForType)
+byte atResultRimThreshold = 0;   // vai no campo rimThreshold do pad - "aro" em DUAL, "cup threshold" em TRI
+
+// [Fase X] Captura de range do controlador de pedal (HHC) - ver comentario
+// em AUTOTUNE_HH_HOLD_MS acima.
+long atHhSampleSum = 0;
+int atHhSampleCount = 0;
+int atHhOpenRaw = 0;   // media amostrada com o pedal solto/aberto
+int atHhClosedRaw = 0; // media amostrada com o pedal pressionado/fechado
+
+const char *autoTuneTierName(AutoTuneTier tier)
+{
+    switch (tier)
+    {
+    case AT_TIER_WEAK:
+        return "weak";
+    case AT_TIER_MEDIUM:
+        return "medium";
+    case AT_TIER_STRONG:
+        return "strong";
+    }
+    return "weak";
+}
+
+// Nomes da zona pro protocolo JSON - reaproveita exatamente o mesmo
+// vocabulario ja usado no evento "hit" (zone: "head"/"rim"/"bow"/"edge"/
+// "cup" - ver sendHitEvent() em dispatchHit() e docs/04-protocolo-serial.md)
+// em vez de nomes genericos tipo "secondary", pra ficar consistente com o
+// resto do protocolo.
+const char *autoTuneZoneName(byte padType, AutoTuneZone zone)
+{
+    if (padType == PAD_DUAL)
+    {
+        return zone == AT_ZONE_SECONDARY ? "rim" : "head";
+    }
+    if (padType == PAD_CYMBAL_3ZONE)
+    {
+        if (zone == AT_ZONE_SECONDARY) return "edge";
+        if (zone == AT_ZONE_TERTIARY) return "cup";
+        return "bow";
+    }
+    if (padType == PAD_SNARE_3ZONE)
+    {
+        if (zone == AT_ZONE_SECONDARY) return "edge";
+        if (zone == AT_ZONE_TERTIARY) return "rim";
+        return "head";
+    }
+    return "primary";
+}
+
+// Rotulo curto pra tela fisica (PAD_EDIT>CALIBRAR) - mesma zona, texto
+// PT-BR/curto pra caber na tela pequena.
+const char *autoTuneZoneTftLabel(byte padType, AutoTuneZone zone)
+{
+    if (padType == PAD_DUAL)
+    {
+        return zone == AT_ZONE_SECONDARY ? "ARO" : "PELE";
+    }
+    if (padType == PAD_CYMBAL_3ZONE)
+    {
+        if (zone == AT_ZONE_SECONDARY) return "EDGE";
+        if (zone == AT_ZONE_TERTIARY) return "CUP";
+        return "BOW";
+    }
+    if (padType == PAD_SNARE_3ZONE)
+    {
+        if (zone == AT_ZONE_SECONDARY) return "BORDA";
+        if (zone == AT_ZONE_TERTIARY) return "ARO";
+        return "PELE";
+    }
+    return "";
+}
+
+// Quantas rodadas EXTRAS (alem da PRIMARY) esse formato de pad precisa, e
+// qual a proxima zona - usado pelo avanco de rodada em autoTuneTick().
+bool autoTuneHasNextZone(AutoTuneShape shape, AutoTuneZone zone)
+{
+    if (shape == AT_SHAPE_SINGLE) return false;
+    if (shape == AT_SHAPE_DUAL) return zone == AT_ZONE_PRIMARY;
+    return zone == AT_ZONE_PRIMARY || zone == AT_ZONE_SECONDARY; // AT_SHAPE_TRI
+}
+
+AutoTuneZone autoTuneNextZone(AutoTuneZone zone)
+{
+    return zone == AT_ZONE_PRIMARY ? AT_ZONE_SECONDARY : AT_ZONE_TERTIARY;
+}
+
+// [Fase X] Mesma transformacao que FSRSensing()/TCRT5000Sensing() aplicam
+// no valor bruto ANTES de comparar com threshold/sensitivity (ver
+// hellodrum.cpp) - o assistente de captura de range do HHC precisa
+// reproduzir isso pra gravar threshold/sensitivity na MESMA escala que a
+// sensing de verdade vai usar depois. PAD_HIHAT_OPTICAL usa o raw de 12
+// bits direto (TCRT = 4096 - raw); PAD_HIHAT_PEDAL (FSR) normaliza pra 10
+// bits primeiro (fsr = 1023 - raw/4).
+int hihatInternalValue(byte padType, int raw12bit)
+{
+    if (padType == PAD_HIHAT_OPTICAL)
+    {
+        return 4096 - raw12bit;
+    }
+    return 1023 - raw12bit / 4; // PAD_HIHAT_PEDAL
+}
+
+// threshold/sensitivity sao campos 1-100 na UI, multiplicados por isso
+// pra virar raw internamente (ver TCRT5000Sensing()/FSRSensing()).
+int hihatFieldMultiplier(byte padType)
+{
+    return padType == PAD_HIHAT_OPTICAL ? 40 : 10;
+}
 
 // Espelha o estado do assistente pro app desktop (Fase O) - emitido a cada
 // mudanca de estado relevante, nao so' em resposta a comando (pra dar
@@ -1841,6 +2097,22 @@ void sendAutoTuneStatus()
     case AT_DECAYING:
     case AT_COOLDOWN:
         doc["state"] = "collecting";
+        doc["tier"] = autoTuneTierName(atTier);
+        doc["tier_index"] = atTier + 1;
+        doc["tier_count"] = AUTOTUNE_TIER_COUNT;
+        if (atShape != AT_SHAPE_SINGLE)
+        {
+            doc["zone"] = autoTuneZoneName(padTypes[atPad], atZone);
+        }
+        break;
+    case AT_HH_OPEN:
+    case AT_HH_CLOSED:
+        // [Fase X] Sensor de posicao continua - sem "golpes"/niveis, so'
+        // segura em 2 posicoes por um tempo (ver AUTOTUNE_HH_HOLD_MS).
+        doc["state"] = "collecting";
+        doc["phase"] = atState == AT_HH_OPEN ? "hh_open" : "hh_closed";
+        doc["hold_elapsed_ms"] = (long)(millis() - atPhaseStartMs);
+        doc["hold_target_ms"] = AUTOTUNE_HH_HOLD_MS;
         break;
     case AT_DONE:
         doc["state"] = "done";
@@ -1860,6 +2132,18 @@ void sendAutoTuneStatus()
         doc["threshold"] = atResultThreshold;
         doc["scan_time"] = atResultScan;
         doc["mask_time"] = atResultMask;
+        if (atShape != AT_SHAPE_SINGLE)
+        {
+            doc["rim_sensitivity"] = atResultRimSensitivity;
+            doc["rim_threshold"] = atResultRimThreshold;
+        }
+        if (padTypeIsHihatPedal(padTypes[atPad]))
+        {
+            // Avisa o app que sensitivity/threshold acima sao min/max de
+            // posicao (pedal aberto/fechado), nao pico de pancada - a tela
+            // de resultado deve rotular/explicar diferente.
+            doc["mode"] = "hihat_range";
+        }
     }
 
     sendJsonLine(doc);
@@ -1868,14 +2152,65 @@ void sendAutoTuneStatus()
 void startAutoTune(byte pad)
 {
     atPad = pad;
-    atState = AT_NOISE;
+    // [Fase X] Controlador de pedal (HHC) e' um sensor de POSICAO continua,
+    // nao um sensor de impacto - pula direto pra captura de range (sem
+    // AT_NOISE, sem niveis/zonas de pancada). Ver AUTOTUNE_HH_HOLD_MS.
+    atState = padTypeIsHihatPedal(padTypes[pad]) ? AT_HH_OPEN : AT_NOISE;
+    atTier = AT_TIER_WEAK;
+    atZone = AT_ZONE_PRIMARY;
+    // ver comentario no enum AutoTuneShape
+    if (padTypes[pad] == PAD_DUAL)
+    {
+        atShape = AT_SHAPE_DUAL;
+    }
+    else if (padTypes[pad] == PAD_CYMBAL_3ZONE || padTypes[pad] == PAD_SNARE_3ZONE)
+    {
+        atShape = AT_SHAPE_TRI;
+    }
+    else
+    {
+        atShape = AT_SHAPE_SINGLE;
+    }
     atPhaseStartMs = millis();
     atNoiseFloor = 0;
     atHitCount = 0;
     atSumScanMs = 0;
     atSumMaskMs = 0;
-    atSumPeak = 0;
+    atSumPeakByTier[0] = 0;
+    atSumPeakByTier[1] = 0;
+    atSumPeakByTier[2] = 0;
+    atSumRimPeakByTier[0] = 0;
+    atSumRimPeakByTier[1] = 0;
+    atSumRimPeakByTier[2] = 0;
+    atSumCupByTier[0] = 0;
+    atSumCupByTier[1] = 0;
+    atSumCupByTier[2] = 0;
+    atCrossFloor = 0;
+    atMaxHeadRimDiff = -100000;
+    atHhSampleSum = 0;
+    atHhSampleCount = 0;
+    atHhOpenRaw = 0;
+    atHhClosedRaw = 0;
     atLastCountdownMs = atPhaseStartMs;
+
+    // [Fase W] O pad entra na calibracao com o "gain" (Fase P) que ja
+    // tinha de uma calibracao anterior - se nao for 100 (neutro), ele
+    // escala rawValue[] (ver applyPadGain(), roda todo loop() ANTES de
+    // autoTuneTick() ler o mesmo rawValue[] global compartilhado com a
+    // lib - ver "int rawValue[]" em hellodrum.cpp) antes do assistente
+    // sequer ver o valor. Isso quebra especialmente o nivel FRACO: a
+    // margem de seguranca do piso de ruido (atNoiseFloor*1.3+5, calculada
+    // JA em cima do valor escalado) tem um "+5" fixo que nao escala junto
+    // - com gain baixo, um toque fraco de verdade pode nao conseguir
+    // superar esse piso. Forcamos o gain pra 100 (neutro) durante TODA a
+    // calibracao, pra o assistente sempre partir "do zero" (aplicado
+    // tambem na lib de verdade, ja que rawValue[] e' compartilhado -
+    // consistente com o resultado calculado, que assume gain neutro).
+    // Restaurado em cancelAutoTune()/goToLive() se o usuario nao aplicar;
+    // fica em 100 de proposito se aplicar (ver applyAutoTuneResult()).
+    atSavedGain = padGain[pad];
+    padGain[pad] = 100;
+
     currentPage = PAGE_AUTOTUNE;
     forceScreenRedraw = true;
     sendAutoTuneStatus();
@@ -1884,16 +2219,29 @@ void startAutoTune(byte pad)
 // So calcula os resultados (RAM) - nao aplica ainda, ver applyAutoTuneResult().
 void finishAutoTune()
 {
-    float avgPeak = (float)atSumPeak / atHitCount;
-    float avgScanMs = (float)atSumScanMs / atHitCount;
-    float avgMaskMs = (float)atSumMaskMs / atHitCount;
+    float avgWeak = (float)atSumPeakByTier[AT_TIER_WEAK] / AUTOTUNE_HIT_TARGET;
+    float avgStrong = (float)atSumPeakByTier[AT_TIER_STRONG] / AUTOTUNE_HIT_TARGET;
+    // atSumScanMs/atSumMaskMs acumulam em TODOS os golpes de TODAS as
+    // rodadas (PRIMARY e, se houver, SECONDARY/TERTIARY) - media sobre o
+    // total de golpes capturados, nao so' o ultimo nivel/rodada.
+    byte roundCount = atShape == AT_SHAPE_SINGLE ? 1 : atShape == AT_SHAPE_DUAL ? 2 : 3;
+    long totalHits = (long)AUTOTUNE_HIT_TARGET * AUTOTUNE_TIER_COUNT * roundCount;
+    float avgScanMs = (float)atSumScanMs / totalHits;
+    float avgMaskMs = (float)atSumMaskMs / totalHits;
 
     // sensitivity/threshold sao lidos pela lib como Valor*10 (raw ADC,
     // 0-1023ish pos-transformacao ESP32) - ver dualPiezoSensing() etc em
-    // hellodrum.cpp. +15% de margem no pico medio pra deixar espaco pra
-    // acentos mais fortes que os batidos durante a calibracao.
-    int sensRaw = (int)(avgPeak * 1.15f);
-    int threshRaw = atNoiseFloor;
+    // hellodrum.cpp.
+    //
+    // [3 niveis] threshold vem do nivel FRACO: fica 30% do caminho entre o
+    // piso de ruido e o pico medio das batidas fracas, garantindo margem dos
+    // dois lados (acima do ruido, abaixo da batida mais fraca de verdade).
+    // sensitivity (teto pra velocity=127) vem do nivel FORTE com +15% de
+    // folga pra acentos mais fortes que os batidos durante a calibracao. O
+    // nivel MEDIO nao entra na formula - serve so' de checagem de
+    // consistencia (o usuario realmente variou a forca da batida).
+    int threshRaw = atNoiseFloor + (int)((avgWeak - atNoiseFloor) * 0.3f);
+    int sensRaw = (int)(avgStrong * 1.15f);
     if (threshRaw >= sensRaw)
     {
         threshRaw = sensRaw / 2; // salvaguarda - nao deveria acontecer na pratica
@@ -1903,6 +2251,102 @@ void finishAutoTune()
     atResultThreshold = (byte)constrain(threshRaw / 10, 1, 100);
     atResultScan = (byte)constrain((int)(avgScanMs * 1.2f), 1, 100);   // +20% de margem
     atResultMask = (byte)constrain((int)(avgMaskMs * 1.3f), 1, 100);   // +30% de margem (evita retrigger falso)
+
+    if (atShape == AT_SHAPE_DUAL)
+    {
+        // rimThreshold: piso minimo pro aro ser sequer considerado - mesma
+        // logica de margem do threshold principal (30% do caminho entre um
+        // "piso" e a media fraca), so' que aqui o "piso" e' o pior
+        // vazamento visto no aro durante os golpes na PELE (atCrossFloor),
+        // nao o ruido de silencio.
+        float avgRimWeak = (float)atSumRimPeakByTier[AT_TIER_WEAK] / AUTOTUNE_HIT_TARGET;
+        int rimThreshRaw = atCrossFloor + (int)((avgRimWeak - atCrossFloor) * 0.3f);
+        if (rimThreshRaw < 1)
+        {
+            rimThreshRaw = 1;
+        }
+
+        // rimSensitivity: dualPiezoSensing() classifica como ARO quando
+        // (pele - aro) < rimSensitivity. Usamos o PIOR caso observado nos
+        // golpes reais de aro (maior diferenca pele-aro, tipicamente nas
+        // batidas mais fracas de aro, onde o vazamento da pele pesa mais)
+        // + uma folga fixa - garante que ate' um toque fraco no aro
+        // continue sendo classificado como aro.
+        int rimSensRaw = (int)atMaxHeadRimDiff + 15;
+        if (rimSensRaw < 10)
+        {
+            rimSensRaw = 10; // piso - nunca deixar quase 0 (classificaria quase tudo como pele)
+        }
+
+        atResultRimSensitivity = (byte)constrain(rimSensRaw / 10, 1, 100);
+        atResultRimThreshold = (byte)constrain(rimThreshRaw / 10, 1, 100);
+    }
+    else if (atShape == AT_SHAPE_TRI)
+    {
+        // cymbal3zoneSensing() (hellodrum.cpp) discrimina zona por 2 FAIXAS
+        // de threshold no MESMO canal secundario (nao diferenca entre 2
+        // canais como no DUAL): abaixo de edgeThreshold = so' vazamento da
+        // PRIMARY (bow/pele), entre edgeThreshold e cupThreshold = edge/
+        // borda, acima de cupThreshold = cup/aro-forte. edgeThreshold (vai
+        // no campo rimSensitivity) usa a mesma margem de 30% entre o pior
+        // vazamento na PRIMARY (atCrossFloor) e a media fraca da rodada
+        // SECONDARY (edge). cupThreshold (vai no campo rimThreshold) usa
+        // 30% do caminho entre a media FORTE da rodada SECONDARY (edge mais
+        // alto) e a media FRACA da rodada TERTIARY (cup mais fraco) -
+        // separando as 2 faixas com folga dos dois lados.
+        float avgEdgeWeak = (float)atSumRimPeakByTier[AT_TIER_WEAK] / AUTOTUNE_HIT_TARGET;
+        float avgEdgeStrong = (float)atSumRimPeakByTier[AT_TIER_STRONG] / AUTOTUNE_HIT_TARGET;
+        float avgCupWeak = (float)atSumCupByTier[AT_TIER_WEAK] / AUTOTUNE_HIT_TARGET;
+
+        int edgeThreshRaw = atCrossFloor + (int)((avgEdgeWeak - atCrossFloor) * 0.3f);
+        if (edgeThreshRaw < 1)
+        {
+            edgeThreshRaw = 1;
+        }
+
+        int cupThreshRaw = (int)(avgEdgeStrong + (avgCupWeak - avgEdgeStrong) * 0.3f);
+        if (cupThreshRaw <= edgeThreshRaw)
+        {
+            // salvaguarda - as faixas se sobrepuseram (fisicamente
+            // inesperado: edge forte >= cup fraco). Abre um vao minimo
+            // acima do edgeThreshold em vez de deixar cup inalcancavel.
+            cupThreshRaw = edgeThreshRaw + (int)((avgEdgeStrong - edgeThreshRaw) * 0.5f) + 10;
+        }
+
+        atResultRimSensitivity = (byte)constrain(edgeThreshRaw / 10, 1, 100);
+        atResultRimThreshold = (byte)constrain(cupThreshRaw / 10, 1, 100);
+    }
+
+    atState = AT_DONE;
+    forceScreenRedraw = true;
+    sendAutoTuneStatus();
+}
+
+// [Fase X] So' calcula os resultados (RAM) a partir de atHhOpenRaw/
+// atHhClosedRaw - nao aplica ainda, ver applyAutoTuneResult(). threshold
+// vira o menor dos dois raw (CC=0) e sensitivity o maior (CC=127) - SEMPRE
+// nessa ordem (min/max), garantindo uma faixa valida nao-degenerada
+// independente da polaridade fisica do sensor. A direcao "certa" (pedal
+// solto = CC baixo ou alto) fica por conta do campo separado
+// `hihat_invert`, aplicado no CC final (ver handlePadResult()) - nao
+// precisa entrar nessa conta.
+void finishHihatCalibration()
+{
+    int lo = min(atHhOpenRaw, atHhClosedRaw);
+    int hi = max(atHhOpenRaw, atHhClosedRaw);
+    if (hi == lo)
+    {
+        hi = lo + 1; // salvaguarda - pedal nao se moveu o suficiente entre as 2 posicoes
+    }
+
+    int mult = hihatFieldMultiplier(padTypes[atPad]);
+    atResultThreshold = (byte)constrain(lo / mult, 1, 100);
+    atResultSensitivity = (byte)constrain(hi / mult, 1, 100);
+    // scan/mask nao se aplicam a esse fluxo (sao usados pra detectar o
+    // "chick"/hit do pedal, nao a faixa continua) - mantem os valores
+    // atuais do pad (applyAutoTuneResult() os regrava sem mudar nada).
+    atResultScan = pads[atPad].scantime;
+    atResultMask = pads[atPad].masktime;
 
     atState = AT_DONE;
     forceScreenRedraw = true;
@@ -1920,11 +2364,80 @@ void autoTuneTick()
         return;
     }
 
+    // [Fase X] Controlador de pedal (HHC) - fluxo totalmente separado do
+    // resto (sensor de posicao continua, nao de impacto). So' 1 canal
+    // (padTypeIsHihatPedal() e' sempre channels:1 - ver PAD_TYPE_META).
+    if (atState == AT_HH_OPEN || atState == AT_HH_CLOSED)
+    {
+        unsigned long now = millis();
+        int internal = hihatInternalValue(padTypes[atPad], rawValue[atPad]);
+
+        if (now - atPhaseStartMs >= AUTOTUNE_HH_HOLD_MS - AUTOTUNE_HH_SAMPLE_MS)
+        {
+            atHhSampleSum += internal;
+            atHhSampleCount++;
+        }
+
+        if (now - atLastCountdownMs >= 250)
+        {
+            atLastCountdownMs = now;
+            forceScreenRedraw = true; // redesenha a barra de progresso
+        }
+
+        if (now - atPhaseStartMs >= AUTOTUNE_HH_HOLD_MS)
+        {
+            int avg = atHhSampleCount > 0 ? (int)(atHhSampleSum / atHhSampleCount) : internal;
+            if (atState == AT_HH_OPEN)
+            {
+                atHhOpenRaw = avg;
+                atState = AT_HH_CLOSED;
+                atPhaseStartMs = now;
+                atHhSampleSum = 0;
+                atHhSampleCount = 0;
+                forceScreenRedraw = true;
+                sendAutoTuneStatus();
+            }
+            else
+            {
+                atHhClosedRaw = avg;
+                finishHihatCalibration(); // ja envia sendAutoTuneStatus() internamente
+            }
+        }
+        return;
+    }
+
     // pad.piezoValue e' privado na lib - lemos o mesmo rawValue[] que o
     // dispatchSensing() normal ja atualiza e aplicamos a mesma transformacao
     // que a lib faz internamente pra ESP32 (ver dualPiezoSensing() etc em
     // hellodrum.cpp). pin_1 == atPad nesse projeto (ver captureSignalSample()).
-    int v = 1023 - rawValue[atPad] / 4;
+    //
+    // [MODIFICADO - projeto DrumCore, 2026-09-02] era "1023 - rawValue[atPad] / 4"
+    // (mesma inversao encontrada e corrigida em hellodrum.cpp na Fase S -
+    // ver docs/01-decisoes-arquiteturais.md) - essa copia aqui em main.cpp
+    // ficou pra tras na correcao. Com a formula invertida, o piso de ruido
+    // calculado em AT_NOISE (repouso vira o valor MAIS ALTO possivel) fica
+    // maior que qualquer "v" alcancavel numa pancada de verdade - o
+    // assistente nunca detecta golpe nenhum e sempre estoura o timeout de
+    // 15s (AT_WAITING -> AT_ABORTED). Era a causa do "auto-calibrar nao
+    // funciona".
+    // [Fase U/V] Fora da zona PRIMARY (so' pads com atShape != AT_SHAPE_SINGLE
+    // - ver enum AutoTuneShape), o canal ATIVO (que dirige a maquina de
+    // estado waiting/rising/decaying, igual sempre foi) passa a ser o canal
+    // secundario (atPad+1) em vez do principal - e' o que o usuario esta'
+    // batendo agora (SECONDARY e TERTIARY sempre leem o MESMO canal
+    // secundario - em AT_SHAPE_TRI, edge e cup sao 2 faixas do mesmo
+    // piezo, nao 2 piezos diferentes). O canal PASSIVO (o outro) so' e'
+    // lido quando atShape != AT_SHAPE_SINGLE - pra um pad de canal unico,
+    // atPad+1 e' o canal de um pad totalmente diferente, sem relacao
+    // nenhuma com este, entao nem chegamos a ler.
+    byte activeChannel = (atShape != AT_SHAPE_SINGLE && atZone != AT_ZONE_PRIMARY) ? (byte)(atPad + 1) : atPad;
+    int v = rawValue[activeChannel] / 4;
+    int vOther = 0;
+    if (atShape != AT_SHAPE_SINGLE)
+    {
+        byte otherChannel = (atZone == AT_ZONE_PRIMARY) ? (byte)(atPad + 1) : atPad;
+        vOther = rawValue[otherChannel] / 4;
+    }
     unsigned long now = millis();
 
     if (atState == AT_NOISE)
@@ -1955,6 +2468,7 @@ void autoTuneTick()
         {
             atHitStartMs = now;
             atHitPeak = v;
+            atOtherPeak = vOther;
             atPeakAtMs = now;
             atState = AT_RISING;
         }
@@ -1975,6 +2489,10 @@ void autoTuneTick()
             atHitPeak = v;
             atPeakAtMs = now;
         }
+        if (vOther > atOtherPeak)
+        {
+            atOtherPeak = vOther;
+        }
         // "Assentou" no pico: nenhum valor maior chegou nos ultimos
         // AUTOTUNE_RISE_SETTLE_MS - o sinal comecou a cair.
         if ((now - atPeakAtMs) >= AUTOTUNE_RISE_SETTLE_MS)
@@ -1986,25 +2504,82 @@ void autoTuneTick()
 
     if (atState == AT_DECAYING)
     {
+        // O canal passivo pode "atrasar" um pouco em relacao ao ativo (o
+        // vazamento entre os 2 piezos nao e' instantaneo) - continua
+        // observando o pico dele tambem enquanto o ativo decai.
+        if (vOther > atOtherPeak)
+        {
+            atOtherPeak = vOther;
+        }
         if (v <= atHitPeak / 2)
         {
             unsigned long scanMs = atPeakAtMs - atHitStartMs;
             unsigned long maskMs = now - atPeakAtMs;
             atSumScanMs += scanMs;
             atSumMaskMs += maskMs;
-            atSumPeak += atHitPeak;
+
+            if (atZone == AT_ZONE_TERTIARY)
+            {
+                // atHitPeak aqui e' o pico do canal secundario na faixa
+                // TERTIARY (cup/aro-forte, so' AT_SHAPE_TRI) - nao ha'
+                // diferenca entre canais pra calcular aqui, e' so' o nivel
+                // desse golpe na mesma faixa/canal da rodada SECONDARY.
+                atSumCupByTier[atTier] += atHitPeak;
+            }
+            else if (atZone == AT_ZONE_SECONDARY)
+            {
+                // atHitPeak aqui e' o pico do canal secundario (aro em
+                // AT_SHAPE_DUAL, edge/borda em AT_SHAPE_TRI); atOtherPeak e'
+                // o vazamento do canal principal nesse mesmo golpe - so'
+                // usado na formula em AT_SHAPE_DUAL (diferenca entre
+                // canais), mas nao custa nada acumular sempre.
+                atSumRimPeakByTier[atTier] += atHitPeak;
+                if (atShape == AT_SHAPE_DUAL)
+                {
+                    long diff = (long)atOtherPeak - (long)atHitPeak;
+                    if (diff > atMaxHeadRimDiff)
+                    {
+                        atMaxHeadRimDiff = diff;
+                    }
+                }
+            }
+            else // AT_ZONE_PRIMARY
+            {
+                atSumPeakByTier[atTier] += atHitPeak;
+                if (atShape != AT_SHAPE_SINGLE && atOtherPeak > atCrossFloor)
+                {
+                    atCrossFloor = atOtherPeak; // pior vazamento no canal secundario durante uma pancada na PRIMARY
+                }
+            }
             atHitCount++;
             forceScreenRedraw = true;
 
-            if (atHitCount >= AUTOTUNE_HIT_TARGET)
+            bool tierDone = atHitCount >= AUTOTUNE_HIT_TARGET;
+            bool lastTierOfZone = tierDone && atTier >= AT_TIER_STRONG;
+            bool zoneNeedsAdvance = lastTierOfZone && autoTuneHasNextZone(atShape, atZone);
+
+            if (lastTierOfZone && !zoneNeedsAdvance)
             {
                 finishAutoTune(); // ja envia sendAutoTuneStatus() internamente
             }
             else
             {
+                if (zoneNeedsAdvance)
+                {
+                    // rodada atual completa (24 golpes) - avanca pra proxima zona, do zero
+                    atZone = autoTuneNextZone(atZone);
+                    atTier = AT_TIER_WEAK;
+                    atHitCount = 0;
+                }
+                else if (tierDone)
+                {
+                    // nivel atual completo (8/8) - avanca fraco -> medio -> forte
+                    atTier = (AutoTuneTier)(atTier + 1);
+                    atHitCount = 0;
+                }
                 atState = AT_COOLDOWN;
                 atPhaseStartMs = now;
-                sendAutoTuneStatus(); // atualiza o contador de golpes pro app
+                sendAutoTuneStatus(); // atualiza o contador/nivel/zona pro app
             }
         }
         else if ((now - atPeakAtMs) > AUTOTUNE_DECAY_TIMEOUT_MS)
@@ -2019,6 +2594,11 @@ void autoTuneTick()
 
     if (atState == AT_COOLDOWN)
     {
+        // atNoiseFloor foi medido no canal da PELE (fase AT_NOISE, sempre
+        // roda antes da rodada PRIMARY) - na rodada SECONDARY isso vira uma
+        // aproximacao (o "v" aqui e' do ARO), mas so' serve pra decidir
+        // "acabou de assentar, pode esperar o proximo golpe" - nao entra em
+        // nenhuma formula de resultado, entao a aproximacao e' aceitavel.
         if (v < atNoiseFloor)
         {
             if (now - atPhaseStartMs > AUTOTUNE_COOLDOWN_MS)
@@ -2052,6 +2632,16 @@ bool applyAutoTuneResult()
     pads[pad].threshold1 = atResultThreshold;
     pads[pad].scantime = atResultScan;
     pads[pad].masktime = atResultMask;
+    if (atShape != AT_SHAPE_SINGLE)
+    {
+        pads[pad].rimSensitivity = atResultRimSensitivity;
+        pads[pad].rimThreshold = atResultRimThreshold;
+    }
+    // gain fica em 100 (neutro) de proposito - o resultado acima foi
+    // calculado assumindo gain neutro (ver startAutoTune()), entao os
+    // numeros so' fazem sentido nessa combinacao. Se o pad tinha um gain
+    // != 100 antes, essa calibracao o substitui.
+    padGain[pad] = 100;
     unsavedChanges = true;
 
     atState = AT_IDLE;
@@ -2062,8 +2652,23 @@ bool applyAutoTuneResult()
     return true;
 }
 
+// Desfaz o gain neutro forcado em startAutoTune() - so' quando a
+// calibracao estava mesmo ativa (idempotente, seguro de chamar sempre).
+// Todo caminho de saida do assistente que NAO seja um apply bem sucedido
+// (cancelar em qualquer fase, abortar por timeout/canal desligado -
+// ambos so' saem de fato via cancelAutoTune() - ou o "panico" ENC1 hold
+// -> LIVE a partir de qualquer tela) precisa passar por aqui.
+void restoreAutoTuneGainIfActive()
+{
+    if (atState != AT_IDLE)
+    {
+        padGain[atPad] = atSavedGain;
+    }
+}
+
 void cancelAutoTune()
 {
+    restoreAutoTuneGainIfActive();
     atState = AT_IDLE;
     currentPage = PAGE_PAD_EDIT;
     forceScreenRedraw = true;
@@ -2072,6 +2677,7 @@ void cancelAutoTune()
 
 void goToLive()
 {
+    restoreAutoTuneGainIfActive();
     atState = AT_IDLE; // seguranca - nao deixa o assistente rodando fora da tela dele
     currentPage = PAGE_LIVE;
     forceScreenRedraw = true;
@@ -2383,45 +2989,45 @@ void handleEncoders()
 
 void drawTitleBar(const char *left, const char *right, uint16_t rightColor)
 {
-    tft.fillRect(0, 0, tft.width(), 12, COL_SURFACE);
-    tft.setTextSize(1);
-    tft.setTextColor(COL_ACCENT);
-    tft.setCursor(4, 2);
-    tft.print(left);
+    canvas.fillRect(0, 0, canvas.width(), 12, COL_SURFACE);
+    canvas.setTextSize(1);
+    canvas.setTextColor(COL_ACCENT);
+    canvas.setCursor(4, 2);
+    canvas.print(left);
     if (right && right[0])
     {
         int16_t x1, y1;
         uint16_t w, h;
-        tft.getTextBounds(right, 0, 0, &x1, &y1, &w, &h);
-        tft.setTextColor(rightColor);
-        tft.setCursor(tft.width() - 4 - (int)w, 2);
-        tft.print(right);
+        canvas.getTextBounds(right, 0, 0, &x1, &y1, &w, &h);
+        canvas.setTextColor(rightColor);
+        canvas.setCursor(canvas.width() - 4 - (int)w, 2);
+        canvas.print(right);
     }
 }
 
 void drawValueRow(int y, const char *label, const char *value, bool selected, bool editing)
 {
-    tft.fillRect(0, y, tft.width(), 14, editing ? COL_BG : selected ? COL_SURFACE : COL_BG);
-    tft.setTextSize(1);
-    tft.setTextColor(selected || editing ? COL_TXT : COL_TXT_DIM);
-    tft.setCursor(4, y + 3);
-    tft.print(label);
+    canvas.fillRect(0, y, canvas.width(), 14, editing ? COL_BG : selected ? COL_SURFACE : COL_BG);
+    canvas.setTextSize(1);
+    canvas.setTextColor(selected || editing ? COL_TXT : COL_TXT_DIM);
+    canvas.setCursor(4, y + 3);
+    canvas.print(label);
 
     int16_t x1, y1;
     uint16_t w, h;
-    tft.getTextBounds(value, 0, 0, &x1, &y1, &w, &h);
-    int vx = tft.width() - 4 - (int)w;
+    canvas.getTextBounds(value, 0, 0, &x1, &y1, &w, &h);
+    int vx = canvas.width() - 4 - (int)w;
     if (editing)
     {
-        tft.fillRect(vx - 3, y + 1, (int)w + 5, 12, COL_EDIT);
-        tft.setTextColor(COL_BG);
+        canvas.fillRect(vx - 3, y + 1, (int)w + 5, 12, COL_EDIT);
+        canvas.setTextColor(COL_BG);
     }
     else
     {
-        tft.setTextColor(COL_TXT);
+        canvas.setTextColor(COL_TXT);
     }
-    tft.setCursor(vx, y + 3);
-    tft.print(value);
+    canvas.setCursor(vx, y + 3);
+    canvas.print(value);
 }
 
 // Largura da barra de progresso - compartilhada entre renderBoot() (desenha
@@ -2503,42 +3109,45 @@ void renderLivePad(byte i)
     uint16_t border = off ? COL_BG : solid ? COL_HIT : decay ? COL_HIT : COL_LINE;
     uint16_t fg = off ? COL_LINE : solid ? COL_BG : decay ? COL_HIT : COL_TXT_DIM;
 
-    tft.fillRect(x, y, LIVE_GRID_CELL_W, LIVE_GRID_CELL_H, bg);
-    tft.drawRect(x, y, LIVE_GRID_CELL_W, LIVE_GRID_CELL_H, border);
+    canvas.fillRect(x, y, LIVE_GRID_CELL_W, LIVE_GRID_CELL_H, bg);
+    canvas.drawRect(x, y, LIVE_GRID_CELL_W, LIVE_GRID_CELL_H, border);
 
     char buf[3];
     snprintf(buf, sizeof(buf), "%02d", i + 1);
-    tft.setTextSize(1);
-    tft.setTextColor(fg);
+    canvas.setTextSize(1);
+    canvas.setTextColor(fg);
     // "01".."32" (2 chars, textSize 1) mede uns 11px de largura - centraliza
     // na celula, que agora e' bem maior que o texto (LIVE_GRID_CELL_W/H).
-    tft.setCursor(x + (LIVE_GRID_CELL_W - 11) / 2, y + (LIVE_GRID_CELL_H - 8) / 2);
-    tft.print(buf);
+    canvas.setCursor(x + (LIVE_GRID_CELL_W - 11) / 2, y + (LIVE_GRID_CELL_H - 8) / 2);
+    canvas.print(buf);
 }
 
-void renderLive()
+// Retorna true se algo foi desenhado nesse frame (o canvas precisa ser
+// mandado pra tela fisica - ver renderScreen()), false se nada mudou.
+bool renderLive()
 {
     if (forceScreenRedraw)
     {
-        tft.fillScreen(COL_BG);
+        canvas.fillScreen(COL_BG);
         drawTitleBar("LIVE", "", COL_TXT);
-        tft.setTextSize(1);
-        tft.setTextColor(TinyUSBDevice.mounted() ? COL_OK : COL_LINE);
-        tft.setCursor(tft.width() - 28, 2);
-        tft.print("U");
-        tft.setTextColor(bleMidiConnected ? COL_OK : COL_LINE);
-        tft.setCursor(tft.width() - 10, 2);
-        tft.print("B");
+        canvas.setTextSize(1);
+        canvas.setTextColor(TinyUSBDevice.mounted() ? COL_OK : COL_LINE);
+        canvas.setCursor(canvas.width() - 28, 2);
+        canvas.print("U");
+        canvas.setTextColor(bleMidiConnected ? COL_OK : COL_LINE);
+        canvas.setCursor(canvas.width() - 10, 2);
+        canvas.print("B");
         for (byte i = 0; i < NUM_PADS; i++)
         {
             renderLivePad(i);
         }
         forceScreenRedraw = false;
-        return;
+        return true;
     }
 
     // Nunca redesenha a grade inteira - so' os pads cujo estado (solido /
     // decaindo / idle) pode ter mudado desde o ultimo frame.
+    bool any = false;
     unsigned long now = millis();
     for (byte i = 0; i < NUM_PADS; i++)
     {
@@ -2546,26 +3155,28 @@ void renderLive()
         if (padHitAtMs[i] != 0 && since <= PAD_DECAY_MS + 20)
         {
             renderLivePad(i);
+            any = true;
         }
     }
+    return any;
 }
 
-void renderPadsList()
+bool renderPadsList()
 {
     if (!forceScreenRedraw)
     {
-        return;
+        return false;
     }
     forceScreenRedraw = false;
 
-    tft.fillScreen(COL_BG);
+    canvas.fillScreen(COL_BG);
     char right[8];
     snprintf(right, sizeof(right), "%02d/32", padsListSelection + 1);
     drawTitleBar("PADS", right, COL_TXT_DIM);
 
     // Largura da lista = tela inteira menos a faixa da scrollbar (3px) e um
     // pequeno respiro (2px) antes dela - ver scrollbar no fim da funcao.
-    int rowW = tft.width() - 5;
+    int rowW = canvas.width() - 5;
 
     for (byte row = 0; row < 8; row++)
     {
@@ -2578,17 +3189,17 @@ void renderPadsList()
         // "canal ocupado" (2o canal de um pad de 2 zonas, mostra "--").
         bool off = channelPrimary[i] && !padEnabled[i];
 
-        tft.fillRect(0, y, rowW, 14, sel ? COL_ACCENT : COL_BG);
-        tft.setTextSize(1);
-        tft.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT);
+        canvas.fillRect(0, y, rowW, 14, sel ? COL_ACCENT : COL_BG);
+        canvas.setTextSize(1);
+        canvas.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT);
 
         char idxBuf[5];
         snprintf(idxBuf, sizeof(idxBuf), "P%02d", i + 1);
-        tft.setCursor(4, y + 3);
-        tft.print(idxBuf);
+        canvas.setCursor(4, y + 3);
+        canvas.print(idxBuf);
 
-        tft.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT_DIM);
-        tft.setCursor(40, y + 3);
+        canvas.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT_DIM);
+        canvas.setCursor(40, y + 3);
         if (channelPrimary[i] && padLabels[i][0] != '\0')
         {
             // Nome configurado pelo usuario (campo "label" do protocolo -
@@ -2598,11 +3209,11 @@ void renderPadsList()
             char labelBuf[14];
             strncpy(labelBuf, padLabels[i], sizeof(labelBuf) - 1);
             labelBuf[sizeof(labelBuf) - 1] = '\0';
-            tft.print(labelBuf);
+            canvas.print(labelBuf);
         }
         else
         {
-            tft.print("--");
+            canvas.print("--");
         }
 
         if (channelPrimary[i])
@@ -2618,43 +3229,44 @@ void renderPadsList()
             }
             int16_t x1, y1;
             uint16_t w, h;
-            tft.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT);
-            tft.getTextBounds(noteBuf, 0, 0, &x1, &y1, &w, &h);
-            tft.setCursor(rowW - 4 - (int)w, y + 3);
-            tft.print(noteBuf);
+            canvas.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT);
+            canvas.getTextBounds(noteBuf, 0, 0, &x1, &y1, &w, &h);
+            canvas.setCursor(rowW - 4 - (int)w, y + 3);
+            canvas.print(noteBuf);
         }
     }
 
     // Scrollbar proporcional (3px, encostada na borda direita).
-    int barX = tft.width() - 3;
-    tft.fillRect(barX, 12, 3, 116, COL_SURFACE);
+    int barX = canvas.width() - 3;
+    canvas.fillRect(barX, 12, 3, 116, COL_SURFACE);
     int barH = 116 * 8 / NUM_PADS;
     int barY = 12 + (116 - barH) * padsListTop / (NUM_PADS - 8);
-    tft.fillRect(barX, barY, 3, barH, COL_LINE);
+    canvas.fillRect(barX, barY, 3, barH, COL_LINE);
+    return true;
 }
 
-void renderPadEdit()
+bool renderPadEdit()
 {
     if (!forceScreenRedraw)
     {
-        return;
+        return false;
     }
     forceScreenRedraw = false;
 
-    tft.fillScreen(COL_BG);
+    canvas.fillScreen(COL_BG);
     char left[8];
     snprintf(left, sizeof(left), "PAD %02d", editPadIndex + 1);
     drawTitleBar(left, "EDIT", COL_TXT_DIM);
 
     if (!channelPrimary[editPadIndex])
     {
-        tft.setTextColor(0xFBC3);
-        tft.setTextSize(1);
-        tft.setCursor(4, 40);
-        tft.print("Canal ocupado");
-        tft.setCursor(4, 52);
-        tft.print("(2o canal do pad anterior)");
-        return;
+        canvas.setTextColor(0xFBC3);
+        canvas.setTextSize(1);
+        canvas.setCursor(4, 40);
+        canvas.print("Canal ocupado");
+        canvas.setCursor(4, 52);
+        canvas.print("(2o canal do pad anterior)");
+        return true;
     }
 
     FieldDef fields[MAX_FIELDS_PER_PAD];
@@ -2699,7 +3311,7 @@ void renderPadEdit()
             strncpy(valueBuf, "INICIAR>", sizeof(valueBuf) - 1);
             valueBuf[sizeof(valueBuf) - 1] = '\0';
         }
-        else if (fields[idx].id == FIELD_ENABLED)
+        else if (fields[idx].id == FIELD_ENABLED || fields[idx].id == FIELD_HIHAT_INVERT)
         {
             strncpy(valueBuf, getFieldValue(editPadIndex, fields[idx].id) ? "SIM" : "NAO", sizeof(valueBuf) - 1);
             valueBuf[sizeof(valueBuf) - 1] = '\0';
@@ -2712,14 +3324,15 @@ void renderPadEdit()
         drawValueRow(y, fields[idx].label, valueBuf, sel, editingThis);
     }
 
-    tft.fillRect(0, 116, tft.width(), 12, COL_SURFACE);
-    tft.setTextSize(1);
-    tft.setTextColor(COL_TXT_DIM);
-    tft.setCursor(4, 118);
-    tft.print("ENC2 GIRA VALOR");
-    tft.setTextColor(COL_EDIT);
-    tft.setCursor(tft.width() - 46, 118);
-    tft.print("PUSH OK");
+    canvas.fillRect(0, 116, canvas.width(), 12, COL_SURFACE);
+    canvas.setTextSize(1);
+    canvas.setTextColor(COL_TXT_DIM);
+    canvas.setCursor(4, 118);
+    canvas.print("ENC2 GIRA VALOR");
+    canvas.setTextColor(COL_EDIT);
+    canvas.setCursor(canvas.width() - 46, 118);
+    canvas.print("PUSH OK");
+    return true;
 }
 
 // Puxa uma amostra do canal em foco pra dentro do buffer do osciloscopio -
@@ -2737,22 +3350,22 @@ void captureSignalSample()
     }
 }
 
-void renderSignal()
+bool renderSignal()
 {
     if (!signalNeedsRedraw && !forceScreenRedraw)
     {
-        return;
+        return false;
     }
     signalNeedsRedraw = false;
     forceScreenRedraw = false;
 
-    tft.fillScreen(COL_BG);
+    canvas.fillScreen(COL_BG);
     char left[8];
     snprintf(left, sizeof(left), "PAD %02d", editPadIndex + 1);
     drawTitleBar(left, "SIGNAL", COL_TXT_DIM);
 
-    tft.drawLine(4, 18, 4, 91, COL_LINE);
-    tft.drawLine(4, 91, 124, 91, COL_LINE);
+    canvas.drawLine(4, 18, 4, 91, COL_LINE);
+    canvas.drawLine(4, 91, 124, 91, COL_LINE);
 
     int prevX = -1, prevY = -1;
     int maxV = 1023;
@@ -2763,34 +3376,35 @@ void renderSignal()
         int y = 91 - map(constrain(signalBuffer[idx], 0, maxV), 0, maxV, 0, 73);
         if (prevX >= 0)
         {
-            tft.drawLine(prevX, prevY, x, y, COL_OK);
+            canvas.drawLine(prevX, prevY, x, y, COL_OK);
         }
         prevX = x;
         prevY = y;
     }
 
-    tft.setTextSize(1);
-    tft.setTextColor(COL_TXT_DIM);
-    tft.setCursor(4, 96);
-    tft.print("VEL");
-    tft.setTextColor(COL_TXT);
-    tft.print(" ");
-    tft.print(pads[editPadIndex].velocity);
-    tft.setTextColor(COL_TXT_DIM);
-    tft.print("  PEAK ");
-    tft.setTextColor(COL_TXT);
-    tft.print(signalPeak);
+    canvas.setTextSize(1);
+    canvas.setTextColor(COL_TXT_DIM);
+    canvas.setCursor(4, 96);
+    canvas.print("VEL");
+    canvas.setTextColor(COL_TXT);
+    canvas.print(" ");
+    canvas.print(pads[editPadIndex].velocity);
+    canvas.setTextColor(COL_TXT_DIM);
+    canvas.print("  PEAK ");
+    canvas.setTextColor(COL_TXT);
+    canvas.print(signalPeak);
 
-    tft.setTextColor(COL_ACCENT);
-    tft.setCursor(4, 110);
-    tft.print("SCAN ");
-    tft.print(pads[editPadIndex].scantime);
-    tft.setTextColor(COL_LINE);
-    tft.print(" MASK ");
-    tft.print(pads[editPadIndex].masktime);
-    tft.setTextColor(COL_EDIT);
-    tft.print(" THR ");
-    tft.print(pads[editPadIndex].threshold1);
+    canvas.setTextColor(COL_ACCENT);
+    canvas.setCursor(4, 110);
+    canvas.print("SCAN ");
+    canvas.print(pads[editPadIndex].scantime);
+    canvas.setTextColor(COL_LINE);
+    canvas.print(" MASK ");
+    canvas.print(pads[editPadIndex].masktime);
+    canvas.setTextColor(COL_EDIT);
+    canvas.print(" THR ");
+    canvas.print(pads[editPadIndex].threshold1);
+    return true;
 }
 
 const char *midiOutputLabel(byte v)
@@ -2798,7 +3412,7 @@ const char *midiOutputLabel(byte v)
     return v == OUTPUT_USB ? "USB" : v == OUTPUT_BLE ? "BLE" : "USB+BLE";
 }
 
-void renderGlobal()
+bool renderGlobal()
 {
     unsigned long now = millis();
     bool showingToast = now < toastUntilMs;
@@ -2811,11 +3425,11 @@ void renderGlobal()
 
     if (!forceScreenRedraw)
     {
-        return;
+        return false;
     }
     forceScreenRedraw = false;
 
-    tft.fillScreen(COL_BG);
+    canvas.fillScreen(COL_BG);
     drawTitleBar("GLOBAL", "", COL_TXT);
 
     char buf[10];
@@ -2829,34 +3443,35 @@ void renderGlobal()
 
     if (showingToast)
     {
-        tft.fillRect(14, 56, 100, 34, COL_BG);
-        tft.drawRect(14, 56, 100, 34, COL_OK);
+        canvas.fillRect(14, 56, 100, 34, COL_BG);
+        canvas.drawRect(14, 56, 100, 34, COL_OK);
         int16_t x1, y1;
         uint16_t w, h;
-        tft.setTextSize(2);
-        tft.getTextBounds(toastLine1, 0, 0, &x1, &y1, &w, &h);
-        tft.setTextColor(COL_OK);
-        tft.setCursor(64 - (int)w / 2, 63);
-        tft.print(toastLine1);
-        tft.setTextSize(1);
-        tft.getTextBounds(toastLine2, 0, 0, &x1, &y1, &w, &h);
-        tft.setTextColor(COL_TXT_DIM);
-        tft.setCursor(64 - (int)w / 2, 80);
-        tft.print(toastLine2);
+        canvas.setTextSize(2);
+        canvas.getTextBounds(toastLine1, 0, 0, &x1, &y1, &w, &h);
+        canvas.setTextColor(COL_OK);
+        canvas.setCursor(64 - (int)w / 2, 63);
+        canvas.print(toastLine1);
+        canvas.setTextSize(1);
+        canvas.getTextBounds(toastLine2, 0, 0, &x1, &y1, &w, &h);
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(64 - (int)w / 2, 80);
+        canvas.print(toastLine2);
     }
+    return true;
 }
 
 // Tela do assistente de auto-tune (Fase O) - ver comentario grande no bloco
 // de estados (perto de goToLive()) pro racional completo.
-void renderAutoTune()
+bool renderAutoTune()
 {
     if (!forceScreenRedraw)
     {
-        return;
+        return false;
     }
     forceScreenRedraw = false;
 
-    tft.fillScreen(COL_BG);
+    canvas.fillScreen(COL_BG);
     char left[8];
     snprintf(left, sizeof(left), "PAD %02d", atPad + 1);
     drawTitleBar(left, "CALIBRAR", COL_EDIT);
@@ -2864,104 +3479,166 @@ void renderAutoTune()
     if (atState == AT_NOISE)
     {
         unsigned long remainMs = AUTOTUNE_NOISE_MS - (millis() - atPhaseStartMs);
-        tft.setTextSize(1);
-        tft.setTextColor(COL_TXT);
-        tft.setCursor(4, 30);
-        tft.print("OUCA O RUIDO");
-        tft.setTextColor(COL_TXT_DIM);
-        tft.setCursor(4, 46);
-        tft.print("nao toque no pad...");
-        tft.setTextColor(COL_ACCENT);
-        tft.setCursor(4, 64);
-        tft.print((remainMs / 1000) + 1);
-        tft.print("s");
+        canvas.setTextSize(1);
+        canvas.setTextColor(COL_TXT);
+        canvas.setCursor(4, 30);
+        canvas.print("OUCA O RUIDO");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 46);
+        canvas.print("nao toque no pad...");
+        canvas.setTextColor(COL_ACCENT);
+        canvas.setCursor(4, 64);
+        canvas.print((remainMs / 1000) + 1);
+        canvas.print("s");
     }
     else if (atState == AT_WAITING || atState == AT_RISING || atState == AT_DECAYING || atState == AT_COOLDOWN)
     {
-        tft.setTextSize(1);
-        tft.setTextColor(COL_TXT);
-        tft.setCursor(4, 30);
-        tft.print("BATA NO PAD");
-        tft.setTextColor(COL_TXT_DIM);
-        tft.setCursor(4, 46);
-        tft.print("intensidade normal/forte");
+        const char *tierLabel = atTier == AT_TIER_WEAK ? "FRACO" : (atTier == AT_TIER_MEDIUM ? "MEDIO" : "FORTE");
+        const char *tierHint = atTier == AT_TIER_WEAK ? "toque de leve" : (atTier == AT_TIER_MEDIUM ? "toque normal" : "toque com forca");
 
-        tft.setTextColor(COL_ACCENT);
-        tft.setTextSize(2);
+        canvas.setTextSize(1);
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 14);
+        char tierBuf[24];
+        if (atShape != AT_SHAPE_SINGLE)
+        {
+            snprintf(tierBuf, sizeof(tierBuf), "%s NIVEL %d/%d", autoTuneZoneTftLabel(padTypes[atPad], atZone), atTier + 1, AUTOTUNE_TIER_COUNT);
+        }
+        else
+        {
+            snprintf(tierBuf, sizeof(tierBuf), "NIVEL %d/%d", atTier + 1, AUTOTUNE_TIER_COUNT);
+        }
+        canvas.print(tierBuf);
+
+        canvas.setTextColor(COL_TXT);
+        canvas.setCursor(4, 30);
+        canvas.print("BATA ");
+        canvas.print(tierLabel);
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 46);
+        canvas.print(tierHint);
+
+        canvas.setTextColor(COL_ACCENT);
+        canvas.setTextSize(2);
         char countBuf[8];
         snprintf(countBuf, sizeof(countBuf), "%d/%d", atHitCount, AUTOTUNE_HIT_TARGET);
-        tft.setCursor(4, 64);
-        tft.print(countBuf);
+        canvas.setCursor(4, 64);
+        canvas.print(countBuf);
 
-        // Barrinha de progresso (golpes capturados).
+        // Barrinha de progresso (golpes capturados no nivel atual).
         int barW = 120 * atHitCount / AUTOTUNE_HIT_TARGET;
-        tft.drawRect(4, 90, 120, 8, COL_LINE);
+        canvas.drawRect(4, 90, 120, 8, COL_LINE);
         if (barW > 0)
         {
-            tft.fillRect(4, 90, barW, 8, COL_ACCENT);
+            canvas.fillRect(4, 90, barW, 8, COL_ACCENT);
+        }
+    }
+    else if (atState == AT_HH_OPEN || atState == AT_HH_CLOSED)
+    {
+        bool isOpenPhase = atState == AT_HH_OPEN;
+        unsigned long elapsedMs = millis() - atPhaseStartMs;
+        unsigned long remainMs = elapsedMs >= AUTOTUNE_HH_HOLD_MS ? 0 : AUTOTUNE_HH_HOLD_MS - elapsedMs;
+
+        canvas.setTextSize(1);
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 14);
+        canvas.print(isOpenPhase ? "POSICAO ABERTA" : "POSICAO FECHADA");
+
+        canvas.setTextColor(COL_TXT);
+        canvas.setCursor(4, 30);
+        canvas.print(isOpenPhase ? "SOLTE O PEDAL" : "PRESSIONE O PEDAL");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 46);
+        canvas.print(isOpenPhase ? "deixe totalmente aberto" : "ate' o fim, segure firme");
+
+        canvas.setTextColor(COL_ACCENT);
+        canvas.setTextSize(2);
+        canvas.setCursor(4, 64);
+        canvas.print((remainMs / 1000) + 1);
+        canvas.print("s");
+
+        // Barrinha de progresso (tempo decorrido nessa posicao).
+        int barW = (int)(120L * elapsedMs / AUTOTUNE_HH_HOLD_MS);
+        if (barW > 120) barW = 120;
+        canvas.drawRect(4, 90, 120, 8, COL_LINE);
+        if (barW > 0)
+        {
+            canvas.fillRect(4, 90, barW, 8, COL_ACCENT);
         }
     }
     else if (atState == AT_DONE)
     {
-        tft.setTextSize(1);
-        tft.setTextColor(COL_OK);
-        tft.setCursor(4, 12);
-        tft.print("CALIBRADO!");
+        canvas.setTextSize(1);
+        canvas.setTextColor(COL_OK);
+        canvas.setCursor(4, 12);
+        canvas.print("CALIBRADO!");
 
+        bool isHihat = padTypeIsHihatPedal(padTypes[atPad]);
         char buf[10];
         snprintf(buf, sizeof(buf), "%d", atResultSensitivity);
-        drawValueRow(28, "SENSIB", buf, false, false);
+        drawValueRow(28, isHihat ? "MAXIMO" : "SENSIB", buf, false, false);
         snprintf(buf, sizeof(buf), "%d", atResultThreshold);
-        drawValueRow(42, "THRESH", buf, false, false);
-        snprintf(buf, sizeof(buf), "%d", atResultScan);
-        drawValueRow(56, "SCAN", buf, false, false);
-        snprintf(buf, sizeof(buf), "%d", atResultMask);
-        drawValueRow(70, "MASK", buf, false, false);
+        drawValueRow(42, isHihat ? "MINIMO" : "THRESH", buf, false, false);
+        if (!isHihat)
+        {
+            snprintf(buf, sizeof(buf), "%d", atResultScan);
+            drawValueRow(56, "SCAN", buf, false, false);
+            snprintf(buf, sizeof(buf), "%d", atResultMask);
+            drawValueRow(70, "MASK", buf, false, false);
+        }
+        if (atShape != AT_SHAPE_SINGLE)
+        {
+            snprintf(buf, sizeof(buf), "%d", atResultRimSensitivity);
+            drawValueRow(84, "R.SENS", buf, false, false);
+            snprintf(buf, sizeof(buf), "%d", atResultRimThreshold);
+            drawValueRow(98, "R.THRE", buf, false, false);
+        }
     }
     else if (atState == AT_ABORTED)
     {
-        tft.setTextSize(1);
-        tft.setTextColor(0xFBC3);
-        tft.setCursor(4, 40);
+        canvas.setTextSize(1);
+        canvas.setTextColor(0xFBC3);
+        canvas.setCursor(4, 40);
         if (atAbortedReason == AT_ABORT_DISABLED)
         {
-            tft.print("CANAL DESLIGADO");
-            tft.setTextColor(COL_TXT_DIM);
-            tft.setCursor(4, 54);
-            tft.print("ative o canal pra calibrar");
+            canvas.print("CANAL DESLIGADO");
+            canvas.setTextColor(COL_TXT_DIM);
+            canvas.setCursor(4, 54);
+            canvas.print("ative o canal pra calibrar");
         }
         else
         {
-            tft.print("SEM RESPOSTA");
-            tft.setTextColor(COL_TXT_DIM);
-            tft.setCursor(4, 54);
-            tft.print("cancelado - sem pancadas");
+            canvas.print("SEM RESPOSTA");
+            canvas.setTextColor(COL_TXT_DIM);
+            canvas.setCursor(4, 54);
+            canvas.print("cancelado - sem pancadas");
         }
     }
 
-    tft.fillRect(0, 116, tft.width(), 12, COL_SURFACE);
-    tft.setTextSize(1);
+    canvas.fillRect(0, 116, canvas.width(), 12, COL_SURFACE);
+    canvas.setTextSize(1);
     if (atState == AT_DONE)
     {
-        tft.setTextColor(COL_OK);
-        tft.setCursor(4, 118);
-        tft.print("PUSH APLICA");
-        tft.setTextColor(COL_TXT_DIM);
-        tft.setCursor(tft.width() - 52, 118);
-        tft.print("HOLD SAI");
+        canvas.setTextColor(COL_OK);
+        canvas.setCursor(4, 118);
+        canvas.print("PUSH APLICA");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(canvas.width() - 52, 118);
+        canvas.print("HOLD SAI");
     }
     else if (atState == AT_ABORTED)
     {
-        tft.setTextColor(COL_TXT_DIM);
-        tft.setCursor(4, 118);
-        tft.print("PUSH/HOLD VOLTA");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 118);
+        canvas.print("PUSH/HOLD VOLTA");
     }
     else
     {
-        tft.setTextColor(COL_TXT_DIM);
-        tft.setCursor(4, 118);
-        tft.print("HOLD CANCELA");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 118);
+        canvas.print("HOLD CANCELA");
     }
+    return true;
 }
 
 void renderScreen()
@@ -2971,28 +3648,39 @@ void renderScreen()
         captureSignalSample();
     }
 
+    // Cada render*() desenha no canvas em RAM (nunca direto na tft - ver
+    // comentario na declaracao de "canvas" acima) e devolve se desenhou algo
+    // nesse frame. So' manda o frame pra tela fisica (uma unica rajada SPI)
+    // quando teve desenho de verdade - evita ficar re-enviando o mesmo
+    // quadro todo loop() a toa (ex: PAGE_LIVE com nenhum pad ativo).
+    bool dirty = false;
     switch (currentPage)
     {
     case PAGE_BOOT:
         break; // desenhado direto em setup(), nao faz parte do loop()
     case PAGE_LIVE:
-        renderLive();
+        dirty = renderLive();
         break;
     case PAGE_PADS:
-        renderPadsList();
+        dirty = renderPadsList();
         break;
     case PAGE_PAD_EDIT:
-        renderPadEdit();
+        dirty = renderPadEdit();
         break;
     case PAGE_SIGNAL:
-        renderSignal();
+        dirty = renderSignal();
         break;
     case PAGE_GLOBAL:
-        renderGlobal();
+        dirty = renderGlobal();
         break;
     case PAGE_AUTOTUNE:
-        renderAutoTune();
+        dirty = renderAutoTune();
         break;
+    }
+
+    if (dirty)
+    {
+        tft.drawRGBBitmap(0, 0, canvas.getBuffer(), canvas.width(), canvas.height());
     }
 }
 
@@ -3128,6 +3816,7 @@ void setup()
             padGain[i] = 100;       // 1.00x, neutro
             padXtalk[i] = 0;        // sem supressao de crosstalk
             padXtalkGroup[i] = 0;   // sem grupo
+            padHihatInvert[i] = false; // Fase X - nao invertido por padrao
             rebuildPadName(i);
             pads[i].initMemory();
             EEPROM_ESP.writeBytes(padLabelEepromAddr(i), padLabels[i], PAD_LABEL_MAX_LEN);
@@ -3138,6 +3827,7 @@ void setup()
             EEPROM_ESP.write(EEPROM_GAIN_ADDR + i, 100);
             EEPROM_ESP.write(EEPROM_XTALK_ADDR + i, 0);
             EEPROM_ESP.write(EEPROM_XTALK_GROUP_ADDR + i, 0);
+            EEPROM_ESP.write(EEPROM_HIHAT_INVERT_ADDR + i, 0);
         }
         recomputeChannelPrimary();
         EEPROM_ESP.write(EEPROM_GLOBAL_ADDR, midiChannel);

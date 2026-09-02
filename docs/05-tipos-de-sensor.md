@@ -114,6 +114,7 @@ encoders), não uma limitação que criamos:
 | `note` | `note` (+ alias `noteOpen`) | Nota principal: bow/head/centro, ou "aberto" nos tipos de chimbal, ou a nota do "pedal chick". |
 | `note_rim` | `noteRim` (+ alias `noteEdge`, `noteClose`, `noteOpenEdge`) | Aro (1): nota do rim. Prato 2/3 zonas (3/5), caixa 3 zonas (8): nota da borda. Chimbal (2/4): nota de "fechado" (cobre bow fechado **e** borda, em qualquer estado — ver limitação abaixo). |
 | `note_cup` | `noteCup` (+ alias `noteCloseEdge`, `noteCross`) | Prato 3 zonas (5): nota do cup. Caixa 3 zonas (8): nota do aro (rim). |
+| `hihat_invert` | `padHihatInvert[]` (fora da lib - array próprio em `main.cpp`, Fase X) | Pedal (6/7) só: inverte o CC final (`127 - pedalCC`) pra sensores que mandam a posição invertida. Não usado nos outros tipos. Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md). |
 
 **Limitação real da lib (não é bug nosso)**: como `note_rim` seta
 `noteRim`/`noteEdge`/`noteClose`/`noteOpenEdge` **todos pro mesmo valor** de
@@ -170,3 +171,6 @@ houver bancada:
   física de verdade.
 - Se `HH2zoneMUX()` se comporta exatamente como esperado num chimbal físico
   2 zonas real (a lib documenta isso mais pra prato do que pra chimbal).
+- O assistente de captura de range do pedal (Fase X, `AT_HH_OPEN`/
+  `AT_HH_CLOSED` em `main.cpp`) e o campo `hihat_invert` nunca foram
+  testados com um pedal FSR/óptico físico de verdade.

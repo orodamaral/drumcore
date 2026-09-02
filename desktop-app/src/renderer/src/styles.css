@@ -370,6 +370,14 @@ button:disabled {
   background: color-mix(in srgb, var(--edit) 15%, var(--surface));
 }
 
+.autotune-tier {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--txt-dim);
+}
+
 .autotune-instruction {
   margin: 0 0 10px;
   font-size: 13px;
@@ -563,6 +571,13 @@ button:disabled {
   display: flex;
   flex-direction: column;
   padding: 10px 8px;
+}
+
+.hw-sim-autotune-tier {
+  margin: 0;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--txt-dim);
 }
 
 .hw-sim-autotune-title {

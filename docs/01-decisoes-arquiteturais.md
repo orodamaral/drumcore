@@ -1864,3 +1864,338 @@ projeto. Também removido o `pinMode(..., INPUT_PULLUP)` que tinha sido
 adicionado antes (pro teste com fio solto, sem resistor) — com o
 resistor de 100 kΩ de verdade instalado, pull-up interno não é mais
 necessário (e formaria um divisor de tensão indesejado com o resistor).
+
+## 2026-09-02 — Fase T: auto-tune consertado (mesma inversão do ESP32) e evoluído pra 3 níveis de força
+
+**Auto-tune não funcionava**: com o primeiro pad real conectado
+(`GPIO17`/`GPIO18`, teste sem MUX — ver Fase S), o assistente de
+auto-calibração (Fase O) sempre estourava o timeout de 15 s sem detectar
+nenhuma pancada. Causa: `autoTuneTick()`, em `firmware/src/main.cpp`,
+tinha sua própria cópia manual da mesma fórmula de normalização do ESP32
+que fora corrigida em `hellodrum.cpp` na Fase S — ainda com a inversão
+(`1023 - rawValue[atPad] / 4`, em vez de só `rawValue[atPad] / 4`). Com a
+fórmula invertida, o piso de ruído calculado na fase `AT_NOISE` (repouso
+vira o valor mais alto possível) ficava maior que qualquer valor
+alcançável numa pancada de verdade — o assistente nunca via nada acima
+do "ruído". Corrigido pra usar a mesma fórmula (sem inversão) das
+funções de sensing.
+
+**Configuração corrompida (achado à parte)**: logo depois da correção
+acima, o pad 0 tinha `sensitivity:0, threshold:0, mask_time:0, gain:200`
+— resíduo de experimentação anterior, não um bug de firmware — causando
+disparo constante e erros `map(): Invalid input range, min == max`
+(`sensitivity == threshold == 0`). Diagnosticado com um `get_pad` via
+script Python/`pyserial` direto na porta serial, corrigido ao vivo com
+`set_pad` (sem reflash). Como proteção contra essa classe de config
+inválida no futuro, `HelloDrum::curve()` (`hellodrum.cpp`) ganhou uma
+salvaguarda: se `sensRaw <= threshold`, força `sensRaw = threshold + 1`
+antes de continuar.
+
+**Evolução pra 3 níveis de força**: depois de confirmado funcionando, a
+calibração com um bloco único de 8 batidas (intensidade "normal/forte"
+livre) foi trocada por 3 blocos de 8 — fraco, médio, forte (24 batidas no
+total) — pra melhorar a precisão do resultado. Novo estado
+`AutoTuneTier` (`AT_TIER_WEAK`/`AT_TIER_MEDIUM`/`AT_TIER_STRONG`) soma os
+picos de cada nível separadamente (`atSumPeakByTier[3]`, em vez de um
+único acumulador). `autoTuneTick()` avança de nível a cada 8 golpes
+completos (fraco → médio → forte), só chamando `finishAutoTune()` depois
+do nível forte.
+
+**Fórmula do resultado** (`finishAutoTune()`): o nível fraco calibra o
+`threshold` — 30% do caminho entre o piso de ruído (`atNoiseFloor`) e o
+pico médio das batidas fracas, garantindo margem dos dois lados (acima
+do ruído, abaixo da batida mais fraca de verdade). O nível forte calibra
+a `sensitivity` (teto pra velocity=127) — pico médio das batidas fortes
++15% de folga pra acentos. O nível médio **não entra na fórmula** — é só
+uma checagem de consistência implícita (o usuário realmente variou a
+força entre os 3 blocos); não há validação automática disso ainda.
+`scan_time`/`mask_time` continuam sendo a média sobre os 24 golpes (o
+timing de subida/decaimento do sinal não varia muito por força).
+
+**Protocolo/UI atualizados em conjunto**: `autotune_status` (evento
+`"collecting"`) ganhou os campos `tier`/`tier_index`/`tier_count` — ver
+[04-protocolo-serial.md](04-protocolo-serial.md). A tela física
+(`renderAutoTune()`) mostra "NIVEL X/3" + "BATA FRACO/MEDIO/FORTE". O app
+desktop (`PadEditor.tsx`, `mockDevice.ts` e o mockup de LCD em
+`HardwareSimulator.tsx`) foram atualizados em paralelo pra refletir os 3
+níveis, incluindo a simulação do modo demo (sem hardware).
+
+**Tradeoff consciente**: 24 batidas é bem mais cansativo/demorado que as
+8 originais — aceito pela precisão adicional (separar claramente o piso
+de "toque fraco real" do teto de "toque forte real", em vez de inferir
+os dois só do pico médio de um único bloco de intensidade livre).
+
+## 2026-09-02 — Fase U: auto-tune passa a calibrar também o aro (2ª zona) em pads `PAD_DUAL`
+
+**Motivação (ideia do Rodrigo)**: pads de 2 zonas (pele+aro) sempre
+disparam os dois piezos juntos — bater na pele "vaza" um pouco pro aro, e
+vice-versa. `dualPiezoSensing()` (`hellodrum.cpp`) decide a zona
+comparando os dois picos do MESMO golpe, não olhando cada piezo isolado:
+
+```cpp
+if ((velocity - velocityRim < RimSensitivity) && (velocityRim > RimThreshold))
+    // classifica como ARO
+else
+    // classifica como PELE
+```
+
+`rimThreshold` é o piso mínimo pro aro sequer ser considerado (rejeita
+vazamento pequeno); `rimSensitivity` é a diferença máxima pele-aro ainda
+aceita como aro de verdade. A Fase O/T nunca calibrava esses dois campos
+— só davam pra ajustar na mão, sem dado real de golpes de aro nem do
+vazamento cruzado.
+
+**Desenho**: pads com `pad_type == PAD_DUAL` (1) fazem uma **2ª passada
+inteira** (os mesmos 3 níveis × 8 golpes = 24 batidas) depois da passada
+normal (que vira a rodada `PRIMARY`, pele) — agora pedindo golpes no aro
+(rodada `SECONDARY`). Durante as DUAS rodadas, o canal "passivo" (o que o
+usuário não está batendo no momento) também é lido em paralelo — não dá
+pra calibrar isolado, já que o que importa é a diferença entre os dois.
+Novo `AutoTuneZone` (`AT_ZONE_PRIMARY`/`AT_ZONE_SECONDARY`) e variáveis:
+`atOtherPeak` (pico do canal passivo durante o golpe atual), `atCrossFloor`
+(pior vazamento visto no aro durante golpes na pele — rodada PRIMARY),
+`atMaxHeadRimDiff` (pior diferença pele-aro vista durante golpes reais no
+aro — rodada SECONDARY), `atSumRimPeakByTier[3]` (picos do aro por nível,
+rodada SECONDARY). `autoTuneTick()` só avança pra rodada SECONDARY depois
+do nível forte da PRIMARY (se `atCalibrateSecondZone`); só chama
+`finishAutoTune()` depois do nível forte da rodada que estiver ativa.
+
+**Fórmula do resultado do aro** (`finishAutoTune()`, só quando
+`atCalibrateSecondZone`): `rimThreshold` usa a mesma lógica de margem do
+threshold principal (30% do caminho), mas o "piso" agora é
+`atCrossFloor` (o vazamento, não o silêncio) em vez do ruído de fundo.
+`rimSensitivity` usa o pior caso (`atMaxHeadRimDiff`, tipicamente nas
+batidas mais fracas de aro, onde o vazamento da pele pesa proporcionalmente
+mais) + uma folga fixa de 15 (não multiplicativa — a diferença pele-aro
+pode ser negativa em golpes de aro bem limpos, então uma margem % faria
+menos sentido que uma margem fixa nesse caso).
+
+**Escopo deliberadamente limitado a `PAD_DUAL`**: prato 2/3 zonas
+(`PAD_CYMBAL_2ZONE`/`PAD_CYMBAL_3ZONE`) também usa 2 canais físicos, mas
+`cymbal2zoneSensing()`/`cymbal3zoneSensing()` discriminam zona por FAIXA
+de threshold dentro do MESMO canal (edge/cup), não por diferença entre 2
+canais — lógica de calibração diferente, que exigiria revisão própria.
+Deixado de fora por ora.
+
+**Protocolo/UI atualizados em conjunto**: `autotune_status` ganhou `zone`
+(`"primary"`/`"rim"`, só aparece pra pads de aro) no evento `"collecting"`,
+e `rim_sensitivity`/`rim_threshold` no `"done"` — ver
+[04-protocolo-serial.md](04-protocolo-serial.md). A tela física
+(`renderAutoTune()`) mostra "PELE NIVEL X/3"/"ARO NIVEL X/3" durante a
+coleta e 2 linhas extras (R.SENS/R.THRE) no resultado. O app desktop
+(`PadEditor.tsx`, `mockDevice.ts`, mockup de LCD em
+`HardwareSimulator.tsx`) foram atualizados em paralelo, incluindo a
+simulação do modo demo.
+
+**Tradeoff consciente** (aceito pelo Rodrigo antes de implementar): pads
+de aro agora levam 48 golpes pra calibrar (24 pele + 24 aro) em vez de
+24 — o dobro de tempo/esforço físico, pela mesma lógica da Fase T
+(precisão > velocidade do assistente).
+
+## 2026-09-02 — Fase V: auto-tune estendido pra prato/caixa 3 zonas (edge + cup/aro)
+
+**Contexto**: perguntado se a caixa 3 zonas (`PAD_SNARE_3ZONE`) já
+entrava no auto-tune de 2 zonas da Fase U - não entrava, de propósito
+(deixado de fora explicitamente naquela fase). Investigado
+`cymbal3zoneSensing()` (`hellodrum.cpp`, reaproveitada tanto por
+`PAD_CYMBAL_3ZONE` quanto por `PAD_SNARE_3ZONE` - mesmo código, zonas só
+renomeadas no dispatch em `main.cpp`) pra confirmar como ela discrimina
+zona, já que é uma lógica **diferente** da do `PAD_DUAL`:
+
+```cpp
+// bow/head: aro abaixo do piso o tempo todo
+if (velocity > Threshold && firstSensorValue < edgeThreshold && lastSensorValue < edgeThreshold) { ... hit = true; }
+// edge/borda: aro entre os 2 pisos, decaindo
+else if (velocity > Threshold && firstSensorValue > edgeThreshold && firstSensorValue < cupThreshold && firstSensorValue > lastSensorValue) { ... hitRim = true; }
+// cup/aro-forte: aro acima do piso mais alto, decaindo rapido
+else if (velocity > Threshold && firstSensorValue > cupThreshold && lastSensorValue < edgeThreshold) { ... hitCup = true; }
+// choke: aro alto e sustentado (nao decai)
+else if (firstSensorValue > edgeThreshold && lastSensorValue > edgeThreshold && lastSensorValue >= firstSensorValue) { choke = true; }
+```
+
+Diferente do `PAD_DUAL` (compara 2 canais), aqui a zona vem de **2
+faixas de threshold no MESMO canal secundário** (`edgeThreshold`/
+`cupThreshold` - os mesmos campos `rimSensitivity`/`rimThreshold`,
+reaproveitados com rótulos diferentes por `pad_type`: "EDGETHR"/"CUPTHR"
+no prato, "EDGETHR"/"RIMTHR" na caixa). `velocity` já é a diferença
+`|piezoValue - sensorValue|` calculada pela própria lib - não precisamos
+reproduzir isso, só o nível (`firstSensorValue`, aproximado aqui pelo
+pico observado logo após o início do golpe, igual ao resto do
+assistente) que cada zona tipicamente atinge.
+
+**Generalização do desenho da Fase U**: trocado o `bool
+atCalibrateSecondZone` (só sim/não) por um `enum AutoTuneShape`
+(`AT_SHAPE_SINGLE`/`AT_SHAPE_DUAL`/`AT_SHAPE_TRI`), decidido em
+`startAutoTune()` a partir do `pad_type`. `AT_ZONE_TERTIARY` adicionado
+ao `AutoTuneZone` (agora `PRIMARY`/`SECONDARY`/`TERTIARY`). Novo
+`atSumCupByTier[3]` acumula os picos da rodada TERTIARY (cup/aro-forte).
+`autoTuneHasNextZone()`/`autoTuneNextZone()` centralizam a sequência de
+zonas por formato, usados tanto no avanço de rodada em `autoTuneTick()`
+quanto (implicitamente, via `atShape`) no resto do código.
+
+**Fórmula do resultado** (`finishAutoTune()`, ramo `AT_SHAPE_TRI`):
+`edgeThreshold` usa a mesma margem de 30% já usada em toda parte deste
+assistente (piso = pior vazamento da rodada PRIMARY no canal secundário,
+teto = média fraca da rodada SECONDARY/edge). `cupThreshold` usa 30% do
+caminho entre a média FORTE da rodada SECONDARY (edge mais alto
+observado) e a média FRACA da rodada TERTIARY (cup mais fraco
+observado) - separa as 2 faixas com folga dos dois lados. Salvaguarda:
+se as faixas colidirem (edge forte >= cup fraco, fisicamente
+inesperado), abre um vão mínimo acima do `edgeThreshold` em vez de
+deixar `cupThreshold` inalcançável.
+
+**Nomenclatura de zona alinhada ao protocolo existente**: aproveitando a
+generalização, `autotune_status.zone` deixou de usar nomes genéricos
+(`"primary"`/`"rim"` como na Fase U original) e passou a reaproveitar o
+MESMO vocabulário já usado no evento `hit` por `pad_type`: `"head"`/
+`"rim"` (`PAD_DUAL`), `"bow"`/`"edge"`/`"cup"` (`PAD_CYMBAL_3ZONE`),
+`"head"`/`"edge"`/`"rim"` (`PAD_SNARE_3ZONE`) - inclusive a 1ª zona
+(antes sempre `"primary"`) agora tem o nome de verdade. Pequena mudança
+de contrato ainda dentro da mesma sessão de desenvolvimento (nada em
+produção consumindo o nome antigo) - ver
+[04-protocolo-serial.md](04-protocolo-serial.md).
+
+**Fora de escopo ainda**: `choke` (o gesto de abafar o prato com a mão)
+não é uma "zona" que o auto-tune calibra - não tem um `threshold`
+próprio na lib, é só a combinação "aro alto e sustentado" das mesmas 2
+faixas já calibradas.
+
+**Protocolo/UI atualizados em conjunto**: tela física
+(`autoTuneZoneTftLabel()`) mostra "BOW"/"EDGE"/"CUP" (prato) ou "PELE"/
+"BORDA"/"ARO" (caixa) durante a coleta. App desktop: `protocol.ts` ganhou
+`autoTuneShapeFor()`/`autoTuneZonesFor()` como fonte única do mapeamento
+`pad_type` → sequência de zonas (evita reimplementar esse mapeamento 3x
+em `PadEditor.tsx`, `mockDevice.ts` e `HardwareSimulator.tsx`); os
+rótulos de `rim_sensitivity`/`rim_threshold` no resultado final do
+`PadEditor.tsx` agora vêm de `PAD_TYPE_META[padType].fields` (mesmo
+rótulo dos sliders) em vez de texto fixo "aro", já que esses 2 campos
+significam coisas diferentes por `pad_type`.
+
+**Tradeoff consciente** (mesma lógica das Fases T/U): prato/caixa 3
+zonas agora levam 72 golpes pra calibrar (24 por zona × 3 zonas) em vez
+de 24.
+
+## 2026-09-02 — Fase W: auto-tune ignora o gain antigo do pad (calibra sempre "do zero")
+
+**Bug relatado (Rodrigo)**: em alguns pads, o nível FRACO da calibração
+não estava detectando as batidas — hipótese dele: o código ainda estava
+"usando as configurações atuais do pad" em vez de tratar a calibração
+como se o pad estivesse sendo configurado do zero.
+
+**Causa raiz confirmada**: `rawValue[]` não é um array próprio do
+`main.cpp` — é literalmente o mesmo `int rawValue[]` global declarado
+dentro da lib vendorizada (`hellodrum.cpp`), usado tanto pelas funções
+`*MUX()` (`piezoValue = rawValue[pin_1]`, sensing de verdade) quanto por
+`autoTuneTick()` (que lê o mesmo array pra decidir se uma pancada
+aconteceu). `applyPadGain()` (Fase P) escala esse array usando o `gain`
+salvo do pad, ANTES de qualquer um dos dois o ler (`loop()`:
+`applyPadGain()` → `dispatchSensing()` → ... → `autoTuneTick()`). Se o
+pad já tinha um `gain` != 100 (de uma calibração anterior ou ajuste
+manual), toda leitura que o assistente faz já vem escalada por esse
+valor.
+
+Isso por si só não deveria quebrar a detecção (ruído e sinal escalam
+juntos, proporcionalmente) — mas a margem de segurança do piso de
+ruído usada pelo assistente tem um termo ADITIVO fixo que não escala:
+`atNoiseFloor = (int)(atNoiseFloor * 1.3f) + 5;`. Com gain baixo (ex:
+30%), uma batida fraca de verdade que renderia ~30 sem gain vira ~9; o
+ruído ambiente que renderia ~2 vira ~0.6, e o piso calculado
+(`0.6*1.3+5 ≈ 5.8`) fica perigosamente perto (ou acima) desse ~9 — a
+batida fraca não supera o piso, e o assistente nunca detecta o golpe.
+Bate exatamente com o sintoma relatado (especificamente o nível
+FRACO, o mais sensível a essa margem).
+
+**Correção**: `startAutoTune()` salva o gain atual do pad em
+`atSavedGain` e força `padGain[pad] = 100` (neutro) assim que a
+calibração começa. Como `rawValue[]` é compartilhado com a lib, isso
+também neutraliza a sensing de verdade (`dispatchSensing()`) enquanto a
+tela AUTOTUNE está aberta — efeito colateral aceito de propósito: é
+exatamente o "calibrar do zero" pedido, e é consistente (os resultados
+calculados pelo assistente já assumiam implicitamente gain neutro,
+mesmo antes dessa correção).
+
+Novo helper `restoreAutoTuneGainIfActive()` (`if (atState != AT_IDLE)
+padGain[atPad] = atSavedGain;`, idempotente) chamado nos 2 únicos
+caminhos que saem do assistente sem aplicar: `cancelAutoTune()`
+(cobre cancelar em qualquer fase, e os 2 estados de abortado — timeout/
+canal desligado — que só saem de fato via `cancelAutoTune()`) e
+`goToLive()` (o "pânico" ENC1 hold, que pode interromper a calibração
+vindo de qualquer tela sem passar por `cancelAutoTune()`).
+`applyAutoTuneResult()`, em vez de restaurar, fixa `padGain[pad] = 100`
+de propósito — o resultado calculado só faz sentido combinado com gain
+neutro, então uma calibração aplicada sempre zera o gain antigo do pad.
+
+## 2026-09-02 — Fase X: calibração do controlador de pedal (HHC) — range + inversão
+
+**Motivação (Rodrigo)**: o assistente de auto-calibração (Fase O-W) só
+serve pra sensores de IMPACTO (piezo) — mede pico de pancada. O
+controlador de pedal (`PAD_HIHAT_PEDAL`/`PAD_HIHAT_OPTICAL`, `pad_type`
+6/7) é um sensor de POSIÇÃO contínua, sem golpe nenhum — precisava de 2
+coisas diferentes: (1) descobrir o range real do sensor (o percurso
+físico do pedal raramente cobre o ADC inteiro 0-4095, dependendo do
+modelo/montagem — sem calibrar isso, o CC de saída nunca chega nem no 0
+nem no 127 de verdade), e (2) uma opção de inverter, porque alguns
+sensores mandam a posição de trás pra frente.
+
+**Onde threshold/sensitivity já eram usados pro pedal**: investigando
+`FSRSensing()`/`TCRT5000Sensing()` (`hellodrum.cpp`) antes de implementar,
+achamos que os campos `threshold`/`sensitivity` **já** funcionam como os
+2 pontos de calibração do range — `curve()` faz
+`map(valorInterno, threshold*mult, sensitivity*mult, 1, 127)` (`mult` =
+10 pra FSR, 40 pro TCRT5000, compensando a normalização de bits
+diferente entre os 2 sensores). Ou seja: o mecanismo de range já existia,
+só nunca tinha um jeito automático de descobrir os 2 valores certos —
+sempre foi ajuste manual, no escuro.
+
+**Assistente de captura de range (`AT_HH_OPEN`/`AT_HH_CLOSED`,
+`autoTuneTick()`)**: sensor de posição contínua não tem "golpe" pra
+esperar — o assistente pula direto pra essas 2 fases (sem `AT_NOISE`,
+sem tiers/zonas). Pede pra segurar o pedal **solto** por
+`AUTOTUNE_HH_HOLD_MS` (3s), amostrando só o último `AUTOTUNE_HH_SAMPLE_MS`
+(1s) — dá tempo do usuário chegar na posição e o sinal assentar antes de
+contar — depois **pressionado até o fim**, mesma lógica.
+`hihatInternalValue()`/`hihatFieldMultiplier()` replicam a MESMA
+transformação que `FSRSensing()`/`TCRT5000Sensing()` fazem no valor bruto
+(inversão + normalização de bits), pra threshold/sensitivity saírem na
+escala certa pra sensing de verdade usar depois.
+
+**`finishHihatCalibration()`**: `threshold` = o MENOR dos 2 valores
+capturados, `sensitivity` = o MAIOR — sempre nessa ordem (min/max),
+garantindo uma faixa válida não-degenerada **independente da polaridade
+física do sensor** (não importa se "aberto" deu um valor maior ou menor
+que "fechado" no ADC — o range calculado sempre faz sentido). A direção
+certa (fica por conta do campo `hihat_invert`, separado — ver abaixo)
+não entra nessa conta.
+
+**`hihat_invert`, campo novo (não reaproveitado)**: diferente de
+`rim_sensitivity`/`rim_threshold` (sempre reaproveitados entre tipos),
+"inverter" é um conceito que nenhum campo existente cobria — novo array
+`padHihatInvert[NUM_PADS]` + byte próprio na EEPROM (mesmo padrão do
+`padGain[]`/Fase P). Aplicado **no CC final**
+(`fireControlChange(HIHAT_PEDAL_CC, invert ? 127-cc : cc)`), não no
+`rawValue[]` nem no range calibrado — assim tem efeito imediato ao
+ligar/desligar o switch na tela ou no app, sem precisar recalibrar depois
+(threshold/sensitivity continuam representando o sensor "como ele é
+fisicamente", e o invert só corrige a direção na saída).
+
+**Protocolo**: `autotune_status` ganha `phase`
+(`"hh_open"`/`"hh_closed"`) + `hold_elapsed_ms`/`hold_target_ms` no lugar
+de `tier`/`zone` pra esse fluxo, e `mode: "hihat_range"` no resultado
+final (avisa a UI que `sensitivity`/`threshold` são teto/piso de
+posição, não pico de pancada). `set_pad` ganha o campo `hihat_invert`
+(`0`/`1`). Ver [04-protocolo-serial.md](04-protocolo-serial.md) e
+[05-tipos-de-sensor.md](05-tipos-de-sensor.md).
+
+**UI**: tela física mostra "SOLTE O PEDAL"/"PRESSIONE O PEDAL" com
+contagem regressiva de 3s e a mesma barra de progresso das outras
+calibrações; tela de resultado usa "MAXIMO"/"MINIMO" em vez de
+"SENSIB"/"THRESH" (esconde SCAN/MASK, que esse fluxo não recalcula). App
+desktop: checkbox dedicado "Inverter" no `PadEditor.tsx` (mesmo padrão
+do checkbox "Canal ativo", não um slider) e mockup de LCD em
+`HardwareSimulator.tsx` ganharam um novo item especial na lista de
+campos (igual ATIVO), já que a tela física trata isso como mais uma
+linha rotacionável, não um checkbox separado.
+
+**Nunca testado com hardware real** — nem o sensor físico (FSR/VH-10/
+VH-11/TCRT5000), nem o assistente de captura de range. Ver
+[05-tipos-de-sensor.md](05-tipos-de-sensor.md), seção final.

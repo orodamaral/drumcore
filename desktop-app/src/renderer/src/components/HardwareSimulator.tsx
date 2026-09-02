@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  autoTuneZonesFor,
+  AutoTuneZone,
   FieldSpec,
   GlobalConfig,
   MIDI_OUTPUT_LABELS,
@@ -25,11 +27,39 @@ type Page = 'LIVE' | 'PADS' | 'PAD_EDIT' | 'SIGNAL' | 'GLOBAL' | 'AUTOTUNE'
 const GLOBAL_ROWS = ['MIDI CH', 'SAIDA', 'SALVAR', 'RESTAURAR'] as const
 
 const AUTOTUNE_HIT_TARGET = 8
+const AUTOTUNE_TIERS = ['weak', 'medium', 'strong'] as const
+type AutoTuneTier = (typeof AUTOTUNE_TIERS)[number]
+// [Fase X] Controlador de pedal (HHC) - segura AUTOTUNE_HH_HOLD_MS em cada
+// posicao (aberta, depois fechada), sem tier/zona - ver startAutoTuneSim().
+const AUTOTUNE_HH_HOLD_MS = 3000
+type AutoTuneHihatPhase = 'hh_open' | 'hh_closed'
+
+// Rotulo curto pra tela fisica (mesmo texto que renderAutoTune() usa no
+// firmware de verdade - ver autoTuneZoneTftLabel() em main.cpp).
+const AUTOTUNE_ZONE_TFT_LABEL: Record<AutoTuneZone, string> = {
+  head: 'PELE',
+  rim: 'ARO',
+  bow: 'BOW',
+  edge: 'EDGE',
+  cup: 'CUP'
+}
 
 interface AutoTuneSimState {
   phase: 'noise' | 'collecting' | 'done'
   hitCount: number
-  result?: { sensitivity: number; threshold: number; scan_time: number; mask_time: number }
+  tier?: AutoTuneTier
+  zone?: AutoTuneZone
+  hhPhase?: AutoTuneHihatPhase
+  holdElapsedMs?: number
+  result?: {
+    sensitivity: number
+    threshold: number
+    scan_time: number
+    mask_time: number
+    rim_sensitivity?: number
+    rim_threshold?: number
+    isHihatRange?: boolean
+  }
 }
 
 function blankPad(i: number, type: PadType = 0): PadConfigPrimary {
@@ -55,7 +85,8 @@ function blankPad(i: number, type: PadType = 0): PadConfigPrimary {
     note_rim: 39,
     note_cup: 40,
     hihat_pedal_channel: -1,
-    enabled: true
+    enabled: true,
+    hihat_invert: false
   }
 }
 
@@ -141,9 +172,18 @@ export default function HardwareSimulator() {
   const signalSeed = useRef(0)
   const autoTuneTimer = useRef<ReturnType<typeof setTimeout>>()
   const autoTuneHitCountRef = useRef(0) // fonte da verdade pro agendamento - autoTune (state) e' so' pra render
+  const autoTuneTierIndexRef = useRef(0)
+  const autoTuneZoneIndexRef = useRef(0)
+  const autoTuneHhPhaseRef = useRef<AutoTuneHihatPhase | null>(null)
+  const autoTuneHhStartRef = useRef(0)
 
   const pad = pads[editPadIndex]
   const fields = fieldsFor(pad)
+  // Item 1 (logo apos ATIVO) so' existe pra controlador de pedal (HHC,
+  // pad_type 6/7) - "Inverter" (Fase X, ver docs/01-decisoes-
+  // arquiteturais.md), igual ATIVO nao e' um PadField normal.
+  const hasHihatInvert = Boolean(pad?.primary && PAD_TYPE_META[pad.pad_type].isHihatPedal)
+  const hihatInvertOffset = hasHihatInvert ? 1 : 0
 
   function showToast(line1: string, line2: string): void {
     setToast({ line1, line2 })
@@ -164,23 +204,107 @@ export default function HardwareSimulator() {
   function startAutoTuneSim(): void {
     if (autoTuneTimer.current) clearTimeout(autoTuneTimer.current)
     autoTuneHitCountRef.current = 0
+    autoTuneTierIndexRef.current = 0
+    autoTuneZoneIndexRef.current = 0
+    autoTuneHhPhaseRef.current = null
+
+    const current = pads[editPadIndex]
+    const base = current?.primary ? current : blankPad(editPadIndex)
+
+    if (PAD_TYPE_META[base.pad_type].isHihatPedal) {
+      // [Fase X] Sensor de posicao continua - pula a fase de ruido, vai
+      // direto pra 1a posicao (aberta). Ver scheduleHihatTick().
+      autoTuneHhPhaseRef.current = 'hh_open'
+      autoTuneHhStartRef.current = Date.now()
+      setAutoTune({ phase: 'collecting', hitCount: 0, hhPhase: 'hh_open', holdElapsedMs: 0 })
+      setPage('AUTOTUNE')
+      scheduleHihatTick()
+      return
+    }
+
     setAutoTune({ phase: 'noise', hitCount: 0 })
     setPage('AUTOTUNE')
 
     autoTuneTimer.current = setTimeout(() => {
-      setAutoTune({ phase: 'collecting', hitCount: 0 })
+      const zones = autoTuneZonesFor(base.pad_type)
+      setAutoTune({ phase: 'collecting', hitCount: 0, tier: AUTOTUNE_TIERS[0], zone: zones[0] })
       scheduleAutoTuneHit()
     }, 2000)
   }
 
+  // [Fase X] Tick a cada 100ms enquanto segura o pedal aberto/fechado -
+  // atualiza a barrinha de progresso ate' completar AUTOTUNE_HH_HOLD_MS em
+  // cada posicao, depois finaliza com um resultado plausivel (sem ADC de
+  // verdade pra medir aqui).
+  function scheduleHihatTick(): void {
+    autoTuneTimer.current = setTimeout(() => {
+      const elapsed = Date.now() - autoTuneHhStartRef.current
+      if (elapsed < AUTOTUNE_HH_HOLD_MS) {
+        setAutoTune({ phase: 'collecting', hitCount: 0, hhPhase: autoTuneHhPhaseRef.current ?? undefined, holdElapsedMs: elapsed })
+        scheduleHihatTick()
+        return
+      }
+
+      if (autoTuneHhPhaseRef.current === 'hh_open') {
+        autoTuneHhPhaseRef.current = 'hh_closed'
+        autoTuneHhStartRef.current = Date.now()
+        setAutoTune({ phase: 'collecting', hitCount: 0, hhPhase: 'hh_closed', holdElapsedMs: 0 })
+        scheduleHihatTick()
+        return
+      }
+
+      const current = pads[editPadIndex]
+      const base = current?.primary ? current : blankPad(editPadIndex)
+      autoTuneHhPhaseRef.current = null
+      setAutoTune({
+        phase: 'done',
+        hitCount: 0,
+        result: {
+          sensitivity: clamp(base.sensitivity + Math.round((Math.random() - 0.5) * 4), 1, 100),
+          threshold: clamp(base.threshold + Math.round((Math.random() - 0.5) * 4), 1, 100),
+          scan_time: base.scan_time,
+          mask_time: base.mask_time,
+          isHihatRange: true
+        }
+      })
+    }, 100)
+  }
+
+  // 8 golpes por nivel (fraco/medio/forte), 24 no total, 1x por zona extra
+  // (autoTuneZonesFor - 1 rodada em PAD_DUAL, 2 em prato/caixa 3 zonas) -
+  // ver docs/01-decisoes-arquiteturais.md.
   function scheduleAutoTuneHit(): void {
     autoTuneTimer.current = setTimeout(() => {
       autoTuneHitCountRef.current += 1
       const hitCount = autoTuneHitCountRef.current
+      const current = pads[editPadIndex]
+      const base = current?.primary ? current : blankPad(editPadIndex)
+      const zones = autoTuneZonesFor(base.pad_type)
 
       if (hitCount >= AUTOTUNE_HIT_TARGET) {
-        const current = pads[editPadIndex]
-        const base = current?.primary ? current : blankPad(editPadIndex)
+        if (autoTuneTierIndexRef.current < AUTOTUNE_TIERS.length - 1) {
+          autoTuneTierIndexRef.current += 1
+          autoTuneHitCountRef.current = 0
+          setAutoTune({
+            phase: 'collecting',
+            hitCount: 0,
+            tier: AUTOTUNE_TIERS[autoTuneTierIndexRef.current],
+            zone: zones[autoTuneZoneIndexRef.current]
+          })
+          scheduleAutoTuneHit()
+          return
+        }
+
+        if (autoTuneZoneIndexRef.current < zones.length - 1) {
+          // Zona atual completa (24 golpes) - avanca pra proxima, do zero.
+          autoTuneZoneIndexRef.current += 1
+          autoTuneTierIndexRef.current = 0
+          autoTuneHitCountRef.current = 0
+          setAutoTune({ phase: 'collecting', hitCount: 0, tier: AUTOTUNE_TIERS[0], zone: zones[autoTuneZoneIndexRef.current] })
+          scheduleAutoTuneHit()
+          return
+        }
+
         setAutoTune({
           phase: 'done',
           hitCount,
@@ -188,11 +312,22 @@ export default function HardwareSimulator() {
             sensitivity: clamp(base.sensitivity + Math.round((Math.random() - 0.5) * 10), 1, 100),
             threshold: clamp(base.threshold + Math.round((Math.random() - 0.5) * 6), 1, 100),
             scan_time: clamp(8 + Math.round(Math.random() * 6), 1, 100),
-            mask_time: clamp(25 + Math.round(Math.random() * 10), 1, 100)
+            mask_time: clamp(25 + Math.round(Math.random() * 10), 1, 100),
+            ...(zones.length > 0
+              ? {
+                  rim_sensitivity: clamp(base.rim_sensitivity + Math.round((Math.random() - 0.5) * 10), 1, 100),
+                  rim_threshold: clamp(base.rim_threshold + Math.round((Math.random() - 0.5) * 6), 1, 100)
+                }
+              : {})
           }
         })
       } else {
-        setAutoTune({ phase: 'collecting', hitCount })
+        setAutoTune({
+          phase: 'collecting',
+          hitCount,
+          tier: AUTOTUNE_TIERS[autoTuneTierIndexRef.current],
+          zone: zones[autoTuneZoneIndexRef.current]
+        })
         scheduleAutoTuneHit()
       }
     }, 600 + Math.random() * 300)
@@ -216,7 +351,9 @@ export default function HardwareSimulator() {
         sensitivity: result.sensitivity,
         threshold: result.threshold,
         scan_time: result.scan_time,
-        mask_time: result.mask_time
+        mask_time: result.mask_time,
+        ...(result.rim_sensitivity !== undefined ? { rim_sensitivity: result.rim_sensitivity } : {}),
+        ...(result.rim_threshold !== undefined ? { rim_threshold: result.rim_threshold } : {})
       }
       return next
     })
@@ -277,10 +414,12 @@ export default function HardwareSimulator() {
     if (page === 'PAD_EDIT') {
       // Item 0 e' sempre o toggle "ATIVO" (nao e' um PadField, igual ao
       // FIELD_ENABLED do firmware - ver docs/01-decisoes-arquiteturais.md,
-      // Fase N). Itens 1..fields.length sao os campos normais do tipo
-      // (fields[i-1]). O ultimo item e' sempre "CALIBRAR" (FIELD_AUTOTUNE,
-      // Fase O) - so' dispara no clique, nao entra em modo de edicao.
-      const totalItems = 2 + fields.length
+      // Fase N). Item 1 e' "INVERT" (Fase X), so' pra controlador de pedal
+      // (hihatInvertOffset). Itens 1+hihatInvertOffset..fields.length sao
+      // os campos normais do tipo (fields[i-1-hihatInvertOffset]). O
+      // ultimo item e' sempre "CALIBRAR" (FIELD_AUTOTUNE, Fase O) - so'
+      // dispara no clique, nao entra em modo de edicao.
+      const totalItems = 2 + hihatInvertOffset + fields.length
       if (!editingValue) {
         setEditItemIndex((i) => clamp(i + delta, 0, Math.max(0, totalItems - 1)))
         return
@@ -296,7 +435,18 @@ export default function HardwareSimulator() {
         })
         return
       }
-      const spec = fields[editItemIndex - 1]
+      if (hasHihatInvert && editItemIndex === 1) {
+        setPads((prev) => {
+          const next = [...prev]
+          const target = next[editPadIndex]
+          if (!target.primary) return prev
+          const value = clamp((target.hihat_invert ? 1 : 0) + delta, 0, 1)
+          next[editPadIndex] = { ...target, hihat_invert: value === 1 }
+          return next
+        })
+        return
+      }
+      const spec = fields[editItemIndex - 1 - hihatInvertOffset]
       if (!spec || !pad?.primary) return
       const step = accelStep(spec.min, spec.max) * (delta > 0 ? 1 : -1)
       setPads((prev) => {
@@ -338,7 +488,7 @@ export default function HardwareSimulator() {
       return
     }
     if (page === 'PAD_EDIT') {
-      if (editItemIndex === fields.length + 1) {
+      if (editItemIndex === fields.length + 1 + hihatInvertOffset) {
         if (pad?.primary && pad.enabled) {
           startAutoTuneSim()
         }
@@ -533,8 +683,16 @@ export default function HardwareSimulator() {
                       {pad.enabled ? 'ON' : 'OFF'}
                     </span>
                   </div>
+                  {hasHihatInvert && (
+                    <div className={`hw-sim-list-row${editItemIndex === 1 ? ' selected' : ''}`}>
+                      <span className="hw-sim-list-type">INVERT</span>
+                      <span className={`hw-sim-value-box${editItemIndex === 1 && editingValue ? ' editing' : ''}`}>
+                        {pad.hihat_invert ? 'SIM' : 'NAO'}
+                      </span>
+                    </div>
+                  )}
                   {fields.map((spec, i) => {
-                    const sel = i + 1 === editItemIndex
+                    const sel = i + 1 + hihatInvertOffset === editItemIndex
                     const editingThis = sel && editingValue
                     return (
                       <div key={spec.field} className={`hw-sim-list-row${sel ? ' selected' : ''}`}>
@@ -543,7 +701,7 @@ export default function HardwareSimulator() {
                       </div>
                     )
                   })}
-                  <div className={`hw-sim-list-row${editItemIndex === fields.length + 1 ? ' selected' : ''}`}>
+                  <div className={`hw-sim-list-row${editItemIndex === fields.length + 1 + hihatInvertOffset ? ' selected' : ''}`}>
                     <span className="hw-sim-list-type">CALIBRAR</span>
                     <span className="hw-sim-value-box">INICIAR&gt;</span>
                   </div>
@@ -604,10 +762,44 @@ export default function HardwareSimulator() {
                   <p className="hw-sim-autotune-sub">não toque no pad...</p>
                 </>
               )}
-              {autoTune.phase === 'collecting' && (
+              {autoTune.phase === 'collecting' && autoTune.hhPhase && (
                 <>
-                  <p className="hw-sim-autotune-title">BATA NO PAD</p>
-                  <p className="hw-sim-autotune-sub">intensidade normal/forte</p>
+                  <p className="hw-sim-autotune-tier">
+                    {autoTune.hhPhase === 'hh_open' ? 'POSICAO ABERTA' : 'POSICAO FECHADA'}
+                  </p>
+                  <p className="hw-sim-autotune-title">
+                    {autoTune.hhPhase === 'hh_open' ? 'SOLTE O PEDAL' : 'PRESSIONE O PEDAL'}
+                  </p>
+                  <p className="hw-sim-autotune-sub">
+                    {autoTune.hhPhase === 'hh_open' ? 'deixe totalmente aberto' : "ate' o fim, segure firme"}
+                  </p>
+                  <p className="hw-sim-autotune-count">
+                    {Math.max(0, Math.ceil((AUTOTUNE_HH_HOLD_MS - (autoTune.holdElapsedMs ?? 0)) / 1000))}s
+                  </p>
+                  <div className="hw-sim-autotune-bar">
+                    <div
+                      className="hw-sim-autotune-bar-fill"
+                      style={{ width: `${Math.min(100, (100 * (autoTune.holdElapsedMs ?? 0)) / AUTOTUNE_HH_HOLD_MS)}%` }}
+                    />
+                  </div>
+                </>
+              )}
+              {autoTune.phase === 'collecting' && !autoTune.hhPhase && (
+                <>
+                  <p className="hw-sim-autotune-tier">
+                    {autoTune.zone && `${AUTOTUNE_ZONE_TFT_LABEL[autoTune.zone]} — `}
+                    NIVEL {AUTOTUNE_TIERS.indexOf(autoTune.tier ?? 'weak') + 1}/{AUTOTUNE_TIERS.length}
+                  </p>
+                  <p className="hw-sim-autotune-title">
+                    BATA {autoTune.tier === 'weak' ? 'FRACO' : autoTune.tier === 'strong' ? 'FORTE' : 'MEDIO'}
+                  </p>
+                  <p className="hw-sim-autotune-sub">
+                    {autoTune.tier === 'weak'
+                      ? 'toque de leve'
+                      : autoTune.tier === 'strong'
+                        ? 'toque com forca'
+                        : 'toque normal'}
+                  </p>
                   <p className="hw-sim-autotune-count">
                     {autoTune.hitCount}/{AUTOTUNE_HIT_TARGET}
                   </p>
@@ -623,21 +815,37 @@ export default function HardwareSimulator() {
                 <>
                   <p className="hw-sim-autotune-title done">CALIBRADO!</p>
                   <div className="hw-sim-list-row">
-                    <span className="hw-sim-list-type">SENSIB</span>
+                    <span className="hw-sim-list-type">{autoTune.result.isHihatRange ? 'MAXIMO' : 'SENSIB'}</span>
                     <span className="hw-sim-value-box">{autoTune.result.sensitivity}</span>
                   </div>
                   <div className="hw-sim-list-row">
-                    <span className="hw-sim-list-type">THRESH</span>
+                    <span className="hw-sim-list-type">{autoTune.result.isHihatRange ? 'MINIMO' : 'THRESH'}</span>
                     <span className="hw-sim-value-box">{autoTune.result.threshold}</span>
                   </div>
-                  <div className="hw-sim-list-row">
-                    <span className="hw-sim-list-type">SCAN</span>
-                    <span className="hw-sim-value-box">{autoTune.result.scan_time}</span>
-                  </div>
-                  <div className="hw-sim-list-row">
-                    <span className="hw-sim-list-type">MASK</span>
-                    <span className="hw-sim-value-box">{autoTune.result.mask_time}</span>
-                  </div>
+                  {!autoTune.result.isHihatRange && (
+                    <>
+                      <div className="hw-sim-list-row">
+                        <span className="hw-sim-list-type">SCAN</span>
+                        <span className="hw-sim-value-box">{autoTune.result.scan_time}</span>
+                      </div>
+                      <div className="hw-sim-list-row">
+                        <span className="hw-sim-list-type">MASK</span>
+                        <span className="hw-sim-value-box">{autoTune.result.mask_time}</span>
+                      </div>
+                    </>
+                  )}
+                  {autoTune.result.rim_sensitivity !== undefined && (
+                    <div className="hw-sim-list-row">
+                      <span className="hw-sim-list-type">R.SENS</span>
+                      <span className="hw-sim-value-box">{autoTune.result.rim_sensitivity}</span>
+                    </div>
+                  )}
+                  {autoTune.result.rim_threshold !== undefined && (
+                    <div className="hw-sim-list-row">
+                      <span className="hw-sim-list-type">R.THRE</span>
+                      <span className="hw-sim-value-box">{autoTune.result.rim_threshold}</span>
+                    </div>
+                  )}
                 </>
               )}
             </div>

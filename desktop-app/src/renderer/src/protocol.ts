@@ -195,6 +195,8 @@ export interface PadConfigPrimary {
   hihat_pedal_channel: number
   /** false = canal desligado (slot sem sensor físico conectado) - firmware ignora esse canal por completo (Fase N). */
   enabled: boolean
+  /** Só relevante pra pad_type 6/7 (controlador de pedal FSR/óptico) - inverte o CC final (127-CC). Fase X. */
+  hihat_invert: boolean
 }
 
 export interface PadConfigConsumed {
@@ -225,17 +227,77 @@ export interface GlobalConfig {
 // microDRUM/nanoDRUM - github.com/massimobernava/md-firmware). "collecting"
 // cobre as sub-fases internas do firmware (waiting/rising/decaying/cooldown)
 // - o app só precisa saber "esperando o usuário bater" vs "processando".
+//
+// Fase T: a coleta agora é dividida em 3 níveis de força (fraco/médio/forte),
+// 8 golpes cada (24 no total) - ver docs/01-decisoes-arquiteturais.md. Em
+// "collecting", hit_count/hit_target contam o nível atual (não um total
+// acumulado), e tier/tier_index/tier_count dizem qual nível está em coleta.
+//
+// Fase U: pads de 2 canais fazem 1 rodada extra inteira (mais 3 níveis, 24
+// golpes) por zona além da principal, pra também calibrar rim_sensitivity/
+// rim_threshold (que antes só davam pra ajustar na mão) - ver docs/01-
+// decisoes-arquiteturais.md. "zone" só aparece quando o pad calibrado tem
+// mais de 1 zona, e reaproveita o MESMO vocabulário do evento "hit" (zone
+// em "hit" - ver PAD_TYPE_META/docs/05-tipos-de-sensor.md): "head"/"rim"
+// pra PAD_DUAL (pad_type 1); "bow"/"edge"/"cup" pra PAD_CYMBAL_3ZONE
+// (pad_type 5, Fase V); "head"/"edge"/"rim" pra PAD_SNARE_3ZONE (pad_type
+// 8, Fase V) - 2 rodadas extras nesses últimos dois (edge e cup/rim são 2
+// faixas de threshold no MESMO canal secundário, não um 3º piezo).
 export const AUTOTUNE_HIT_TARGET = 8
+export const AUTOTUNE_TIER_COUNT = 3
+export const AUTOTUNE_HH_HOLD_MS = 3000
 export type AutoTuneUiState = 'idle' | 'noise' | 'collecting' | 'done' | 'aborted'
+export type AutoTuneTier = 'weak' | 'medium' | 'strong'
+export type AutoTuneZone = 'head' | 'rim' | 'bow' | 'edge' | 'cup'
+
+// "single" = 1 rodada (canal único ou pad_type sem calibração de 2ª zona
+// ainda), "dual" = 2 rodadas (PAD_DUAL), "tri" = 3 rodadas (prato/caixa 3
+// zonas) - fonte única pros 3 lugares que simulam/exibem isso (PadEditor,
+// mockDevice, HardwareSimulator), pra não duplicar esse mapeamento 3x.
+export type AutoTuneShape = 'single' | 'dual' | 'tri'
+
+export function autoTuneShapeFor(padType: PadType): AutoTuneShape {
+  if (padType === 1) return 'dual'
+  if (padType === 5 || padType === 8) return 'tri'
+  return 'single'
+}
+
+// Sequência de zonas por pad_type, na ordem em que o assistente pede
+// (1ª = zona principal). Mesmo vocabulário do evento "hit".
+export function autoTuneZonesFor(padType: PadType): AutoTuneZone[] {
+  if (padType === 1) return ['head', 'rim']
+  if (padType === 5) return ['bow', 'edge', 'cup']
+  if (padType === 8) return ['head', 'edge', 'rim']
+  return []
+}
+// Fase X: controlador de pedal (HHC, pad_type 6/7) usa um assistente
+// diferente do resto (sensor de posição contínua, não de impacto) - sem
+// tier/hit_count, só 2 fases (`phase`) segurando o pedal aberto/fechado
+// por um tempo (`hold_elapsed_ms`/`hold_target_ms`). O resultado final
+// ganha `mode: "hihat_range"` pra a UI saber que sensitivity/threshold
+// são o teto/piso de posição, não pico de pancada - ver
+// docs/01-decisoes-arquiteturais.md.
+export type AutoTuneHihatPhase = 'hh_open' | 'hh_closed'
+
 export interface AutoTuneStatus {
   pad: number
   state: AutoTuneUiState
   hit_count: number
   hit_target: number
+  tier?: AutoTuneTier
+  tier_index?: number
+  tier_count?: number
+  zone?: AutoTuneZone
+  phase?: AutoTuneHihatPhase
+  hold_elapsed_ms?: number
+  hold_target_ms?: number
   sensitivity?: number
   threshold?: number
   scan_time?: number
   mask_time?: number
+  rim_sensitivity?: number
+  rim_threshold?: number
+  mode?: 'hihat_range'
   reason?: 'timeout' | 'channel_disabled'
 }
 

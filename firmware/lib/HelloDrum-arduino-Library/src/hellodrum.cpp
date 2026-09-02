@@ -1033,6 +1033,17 @@ void HelloDrum::FSRSensing(byte sens, byte thre, byte scanStart, byte scanEnd, b
 
 int HelloDrum::curve(int velocityRaw, int threshold, int sensRaw, byte curveType)
 {
+  // [MODIFICADO - projeto DrumCore, 2026-09-02] blindagem contra
+  // threshold >= sensRaw (ex: sensitivity e threshold configurados iguais,
+  // ou threshold maior que sensitivity, pelo app/tela) - sem isso, o
+  // map(velocityRaw, threshold, sensRaw, 1, 127) logo abaixo recebe
+  // min==max (ou invertido), loga "Invalid input range" toda chamada e
+  // devolve lixo. Forca uma faixa minima valida.
+  if (sensRaw <= threshold)
+  {
+    sensRaw = threshold + 1;
+  }
+
   //Curve Type 0 : Linear
   if (curveType == 0)
   {

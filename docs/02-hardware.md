@@ -208,20 +208,13 @@ para o mapeamento completo e o racional.
 
 | Encoder | Sinal | Função | GPIO (ESP32-S3) |
 |---|---|---|---|
-| 1 (pad/valor) | A | Quadratura | 1 |
-| 1 (pad/valor) | B | Quadratura | 2 |
-| 1 (pad/valor) | SW (chave) | EDIT/SET | 42 |
-| 2 (item/parâmetro) | A | Quadratura | 41 |
-| 2 (item/parâmetro) | B | Quadratura | 40 |
-| 2 (item/parâmetro) | SW (chave) | Reservada (sem função ainda) | 39 |
+| 1 (pad/valor) | S1 (A) | Quadratura | 1 |
+| 1 (pad/valor) | S2 (B) | Quadratura | 2 |
+| 1 (pad/valor) | KEY (SW) | EDIT/SET | 42 |
+| 2 (item/parâmetro) | S1 (A) | Quadratura | 41 |
+| 2 (item/parâmetro) | S2 (B) | Quadratura | 40 |
+| 2 (item/parâmetro) | KEY (SW) | Reservada (sem função ainda) | 39 |
 
-> **Status: proposto, ainda não validado em hardware real.** Trocados na
-> Fase L (antes: 15/16/17/18/21/38) pra sair inteiramente do header
-> direito da placa real — os dois encoders usam só `GND` comum (pull-up
-> interno do ESP32-S3, sem resistor/VCC externo), então não precisam do
-> `3V3` que só existe no header esquerdo. GPIO38 (fora da faixa usada) é
-> evitado por acionar o LED embutido (`BUILTIN LED`) dessa placa.
->
 > **Ajuste de contiguidade (2026-08-31)**: a atribuição anterior
 > (42/41/40 e 37/36/35) deixava um vão de 2 pinos (`GPIO39`, `GPIO38`)
 > entre os dois encoders na ordem física real do header (`...44,1,2,
@@ -232,6 +225,24 @@ para o mapeamento completo e o racional.
 > [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)) e não
 > toca no `GPIO43/44` (TXD0/RXD0, usados pela porta UART/USB-serial de
 > debug).
+>
+> **VCC dos encoders (2026-09-02, correção)**: o plano original (Fase L)
+> presumia um encoder "nu", sem placa — só `GND` comum + pull-up interno
+> do ESP32-S3 (`INPUT_PULLUP`, que o firmware já configura em `S1`/`S2`
+> via construtor da lib `RotaryEncoder`, e em `KEY` explicitamente no
+> `setup()`). Os módulos físicos que chegaram são breakouts prontos (5
+> pinos: `GND S1 S2 KEY VCC`) com componentes SMD visíveis na placa
+> (resistor + capacitor) — quase certamente pull-ups de `S1`/`S2`/`KEY`
+> pra `VCC` (+ talvez um capacitor de debounce), não um encoder cru.
+> **Decisão**: ligar o `VCC` dos 2 encoders no `3V3` também, em vez de
+> arriscar assumir o desenho exato da placa — mesmo tipo de exceção "um
+> fio isolado cruzando pro header esquerdo" já aceito pro `VCC` da tela
+> (ver seção da tela acima). Ter os dois pull-ups ativos ao mesmo tempo
+> (o da placa do encoder + o interno do ESP32) não causa problema
+> elétrico (mesmo trilho de 3.3V, só reforça o pull-up).
+>
+> **Status: proposto, ainda não validado em hardware real** (2x
+> encoder chegaram fisicamente em 2026-09-02, ligação em andamento).
 
 ## Notas
 

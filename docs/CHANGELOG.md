@@ -2,6 +2,143 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-02 — Fase X: calibração do controlador de pedal (HHC) — range + inversão
+
+- **Novo assistente de captura de range** (`PAD_HIHAT_PEDAL`/
+  `PAD_HIHAT_OPTICAL`, pad_type 6/7): diferente do resto (sensor de
+  posição contínua, não de impacto) — pede pra segurar o pedal solto e
+  depois pressionado até o fim, 3s cada, e calcula `threshold`/
+  `sensitivity` (min/max) sozinho. Esses 2 campos já eram usados pela lib
+  como os pontos de calibração do range (`curve()`/`map()` em
+  `FSRSensing()`/`TCRT5000Sensing()`) — só nunca tinham um jeito
+  automático de descobrir os valores certos.
+- **Novo campo `hihat_invert`** (Sim/Não): alguns sensores mandam a
+  posição invertida — liga isso pra corrigir. Aplicado no CC final
+  (`127 - CC`), não no range calibrado — efeito imediato, sem precisar
+  recalibrar. Novo array `padHihatInvert[]` + persistência EEPROM (mesmo
+  padrão do `gain`, Fase P).
+- Protocolo (`autotune_status` ganha `phase`/`hold_elapsed_ms`/
+  `hold_target_ms`/`mode`, `set_pad` ganha `hihat_invert` — ver
+  [04-protocolo-serial.md](04-protocolo-serial.md)), tela física e app
+  desktop (checkbox dedicado "Inverter", mockups de LCD e modo demo)
+  atualizados em conjunto. Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase X)
+  pro relato completo.
+- **Nunca testado com hardware real** (nem o sensor físico, nem o
+  assistente) — ver [05-tipos-de-sensor.md](05-tipos-de-sensor.md).
+
+## 2026-09-02 — Fase W: auto-tune agora ignora o gain antigo do pad (calibra sempre "do zero")
+
+- **Bug relatado**: em alguns pads, o nível FRACO da calibração não
+  detectava as batidas. Causa: `rawValue[]` é um array global
+  compartilhado entre `main.cpp` e a lib (`int rawValue[]` em
+  `hellodrum.cpp`) — `applyPadGain()` (Fase P) escala ele usando o
+  `gain` que o pad já tinha ANTES de `autoTuneTick()` ler o mesmo
+  array. Se esse gain não estava neutro (100, ex: de uma calibração/
+  ajuste manual anterior), a margem de segurança do piso de ruído
+  (`atNoiseFloor*1.3 + 5`) tem um "+5" fixo que não escala junto — com
+  gain baixo, uma batida fraca de verdade podia não superar esse piso.
+- **Correção**: `startAutoTune()` agora salva o gain atual do pad
+  (`atSavedGain`) e força `padGain[pad] = 100` (neutro) assim que a
+  calibração começa — o assistente sempre parte "do zero", como pedido.
+  Como `rawValue[]` é compartilhado, isso também neutraliza a sensing de
+  verdade enquanto a calibração está rodando (consistente — os
+  resultados calculados assumem gain neutro). Restaurado em
+  `cancelAutoTune()`/`goToLive()` (ambos os únicos caminhos de saída sem
+  aplicar, incluindo o "pânico" ENC1 hold → LIVE) se o usuário não
+  aplicar; fica em 100 de propósito se aplicar
+  (`applyAutoTuneResult()`), já que o resultado calculado só faz sentido
+  combinado com gain neutro.
+- Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)
+  (Fase W) pro relato completo.
+
+## 2026-09-02 — Fase V: auto-tune estendido pra prato/caixa 3 zonas (edge + cup/aro)
+
+- **Generalização da Fase U**: o assistente de auto-calibração agora
+  também cobre `PAD_CYMBAL_3ZONE` (prato) e `PAD_SNARE_3ZONE` (caixa),
+  não só `PAD_DUAL`. `cymbal3zoneSensing()` (`hellodrum.cpp`) discrimina
+  zona por 2 FAIXAS de threshold no MESMO canal secundário (`edgeThreshold`/
+  `cupThreshold`), diferente do `PAD_DUAL` (diferença entre 2 canais) —
+  então esses pads fazem 2 rodadas extras (edge, depois cup/aro) em vez
+  de 1, cada uma com os mesmos 3 níveis × 8 golpes.
+- `bool atCalibrateSecondZone` virou `enum AutoTuneShape`
+  (single/dual/tri), decidido por `pad_type` em `startAutoTune()`. Novo
+  `atSumCupByTier[3]` acumula a rodada extra do cup/aro-forte.
+  `edgeThreshold` sai da mesma margem de 30% usada em todo o assistente;
+  `cupThreshold` sai de 30% do caminho entre o edge mais forte e o cup
+  mais fraco observados, com salvaguarda contra faixas sobrepostas.
+- **Nomenclatura de zona alinhada ao protocolo**: `autotune_status.zone`
+  passou de nomes genéricos (`"primary"`/`"rim"`) pro MESMO vocabulário
+  já usado no evento `hit`: `"head"`/`"rim"` (`PAD_DUAL`), `"bow"`/
+  `"edge"`/`"cup"` (prato), `"head"`/`"edge"`/`"rim"` (caixa) — ver
+  [04-protocolo-serial.md](04-protocolo-serial.md).
+- App desktop: `protocol.ts` ganhou `autoTuneShapeFor()`/
+  `autoTuneZonesFor()` como fonte única do mapeamento `pad_type` →
+  sequência de zonas (evita reimplementar isso em 3 arquivos
+  diferentes); rótulos de `rim_sensitivity`/`rim_threshold` no resultado
+  agora vêm do mesmo lugar que os sliders (`PAD_TYPE_META`), não mais um
+  texto fixo "aro". Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)
+  (Fase V) pro relato completo, incluindo a lógica de
+  `cymbal3zoneSensing()` investigada antes de implementar.
+- **Tradeoff aceito de antemão**: prato/caixa 3 zonas agora levam 72
+  golpes pra calibrar (24 por zona × 3 zonas) em vez de 24.
+
+## 2026-09-02 — Fase U: auto-tune passa a calibrar também o aro em pads de 2 zonas
+
+- **Ideia do Rodrigo**: em pads `PAD_DUAL` (pele+aro), os 2 piezos sempre
+  disparam juntos (bater na pele "vaza" pro aro e vice-versa), e a
+  classificação de zona (`dualPiezoSensing()` em `hellodrum.cpp`) decide
+  isso comparando os 2 picos do mesmo golpe — não olhando cada piezo
+  isolado. O auto-tune (Fase O/T) nunca calibrava `rim_sensitivity`/
+  `rim_threshold` (sempre manual), então essa comparação nunca tinha dado
+  real por trás.
+- **Nova 2ª passada**: pads `PAD_DUAL` agora repetem os 3 níveis inteiros
+  (mais 24 golpes) batendo no ARO, depois da passada normal na pele —
+  capturando os dois canais em paralelo nas duas rodadas (o que importa é
+  a diferença entre eles, não cada um isolado). `rimThreshold` sai do
+  pior vazamento visto no aro durante os golpes de pele; `rimSensitivity`
+  sai do pior caso (maior diferença pele-aro) visto nos golpes reais de
+  aro, com folga.
+- **Fora de escopo por ora**: prato 2/3 zonas (mesmo tendo 2 canais
+  físicos) usa uma lógica de discriminação diferente (faixa de threshold
+  no mesmo canal, não diferença entre 2 canais) — não mexido.
+- Protocolo (`autotune_status` ganha `zone`/`rim_sensitivity`/
+  `rim_threshold` — ver [04-protocolo-serial.md](04-protocolo-serial.md)),
+  tela física e app desktop (`PadEditor.tsx`, `mockDevice.ts`,
+  `HardwareSimulator.tsx`) atualizados em conjunto. Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase U)
+  pro relato completo, incluindo a fórmula do resultado do aro.
+- **Tradeoff aceito de antemão**: pads de aro agora levam 48 golpes pra
+  calibrar (24 pele + 24 aro) em vez de 24.
+
+## 2026-09-02 — Fase T: auto-tune corrigido (mesma inversão do ESP32 da Fase S) e evoluído pra 3 níveis de força
+
+- **Bug encontrado**: `autoTuneTick()` (`firmware/src/main.cpp`) tinha
+  sua própria cópia da fórmula de normalização do ESP32 que fora
+  corrigida em `hellodrum.cpp` na Fase S — ainda invertida
+  (`1023 - rawValue[atPad] / 4`). Era a causa do "auto-calibrar não
+  funciona": o piso de ruído calculado ficava mais alto que qualquer
+  pancada real, e o assistente sempre estourava o timeout de 15s.
+  Corrigido pra `rawValue[atPad] / 4` (sem inversão).
+- **Achado à parte**: pad 0 estava com `sensitivity`/`threshold`/
+  `mask_time` zerados (resíduo de experimentação anterior), causando
+  disparo constante e erros `map(): min == max`. Corrigido ao vivo via
+  `set_pad` (sem reflash); adicionada uma salvaguarda em
+  `HelloDrum::curve()` pra essa classe de config nunca mais travar/
+  disparar sem parar.
+- **Calibração em 3 níveis** (fraco/médio/forte, 8 golpes cada — 24 no
+  total, antes eram 8 de intensidade livre): nível fraco calibra o
+  `threshold`, nível forte calibra a `sensitivity`, nível médio serve só
+  de checagem de consistência. Novo `atSumPeakByTier[3]` no lugar de um
+  único acumulador. Atualizado em conjunto: tela física
+  (`renderAutoTune()`), protocolo serial (`autotune_status` ganha
+  `tier`/`tier_index`/`tier_count` — ver
+  [04-protocolo-serial.md](04-protocolo-serial.md)), e o app desktop
+  (`PadEditor.tsx`, `mockDevice.ts`, mockup de LCD em
+  `HardwareSimulator.tsx`). Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase T)
+  pro relato completo, incluindo a fórmula do resultado.
+
 ## 2026-09-01 — Fase S (continuação): primeiro sensing real validado — fórmula do ESP32 estava invertida
 
 - **Marco**: primeira leitura de piezo real, velocity-sensitive,

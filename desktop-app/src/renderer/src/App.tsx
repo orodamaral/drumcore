@@ -171,6 +171,10 @@ export default function App() {
     send({ cmd: 'set_pad', pad, field: 'enabled', value: enabled ? 1 : 0 })
   }
 
+  function setPadHihatInvert(pad: number, invert: boolean): void {
+    send({ cmd: 'set_pad', pad, field: 'hihat_invert', value: invert ? 1 : 0 })
+  }
+
   function startAutoTune(pad: number): void {
     send({ cmd: 'start_autotune', pad })
   }
@@ -328,6 +332,7 @@ export default function App() {
             onChangeType={(type) => changePadType(selectedPad, type)}
             onChangeHihatLink={(channel) => changeHihatLink(selectedPad, channel)}
             onChangeEnabled={(enabled) => setPadEnabled(selectedPad, enabled)}
+            onChangeHihatInvert={(invert) => setPadHihatInvert(selectedPad, invert)}
             autoTune={autoTune?.pad === selectedPad ? autoTune : null}
             onStartAutoTune={() => startAutoTune(selectedPad)}
             onCancelAutoTune={cancelAutoTune}
