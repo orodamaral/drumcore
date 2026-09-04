@@ -180,14 +180,13 @@ void bringUpNativeUsbHardware()
 #define MUX0_Z 15 // SIG do HW-178 #0 (pads 0-15) - ADC2_4
 #define MUX1_Z 16 // SIG do HW-178 #1 (pads 16-31) - ADC2_5
 
-// TESTE TEMPORARIO (2026-09-01) - leitura direta de 2 pinos, sem MUX, pra
-// testar um pad dual-zone (canais 0/1, "Pad 1" na UI) enquanto o MUX
-// fisico nao chega. GPIO17/18: livres, ADC2, contiguos - ver
-// docs/02-hardware.md ("Notas" - pinos livres/sobressalentes). Usados em
-// loop() (sobrescreve rawValue[0]/[1] depois do scan dos MUX) e em
-// setup() (habilita o pad 0 como PAD_DUAL). Remover quando o MUX chegar.
+// TESTE TEMPORARIO (2026-09-02) - leitura direta de 1 pino, sem MUX, pra
+// testar o sensor hall (SS49E) do controlador de HH, canal 0 ("Pad 1" na
+// UI), enquanto o MUX fisico nao chega. GPIO17: livre, ADC2 - ver
+// docs/02-hardware.md ("Notas" - pinos livres/sobressalentes). Usado em
+// loop() (sobrescreve rawValue[0] depois do scan dos MUX) e em setup()
+// (habilita o pad 0 como PAD_SINGLE). Remover quando o MUX chegar.
 #define TEST_DIRECT_HEAD_PIN 17
-#define TEST_DIRECT_RIM_PIN 18
 
 #define NUM_MUX 2
 #define PADS_PER_MUX 16
@@ -3853,23 +3852,20 @@ void setup()
         padEnabled[i] = false;
     }
 
-    // TESTE TEMPORARIO (2026-09-01, a pedido do Rodrigo) - o MUX fisico
-    // ainda nao chegou. Habilita so' o pad 0 (canais 0 e 1, "Pad 1" na UI
-    // 1-based) como dual-zone (corpo+aro), lido direto de 2 pinos do
-    // ESP32-S3 em vez do MUX (ver leitura em loop(), logo apos o scan dos
-    // MUX - sobrescreve rawValue[0]/rawValue[1], que os MUX tambem
-    // escrevem, com lixo/flutuando, ja' que o MUX0 nao esta' conectado de
-    // verdade ainda). "Pad 2" (canal 1) aparece como "canal ocupado" na
-    // lista, igual qualquer outro dual-zone - e' esperado, nao e' um
-    // segundo pad de verdade. Remover esse bloco (e a leitura em loop())
-    // quando o MUX chegar e a fiacao real dos 32 canais for feita - ver
-    // docs/02-hardware.md pros pinos GPIO17/GPIO18 usados aqui (livres,
-    // ADC2, sem uso previsto ate' entao).
-    padTypes[0] = PAD_DUAL;
+    // TESTE TEMPORARIO (2026-09-02, a pedido do Rodrigo) - o MUX fisico
+    // ainda nao chegou. Habilita so' o pad 0 (canal 0, "Pad 1" na UI
+    // 1-based) como single-channel, lido direto de 1 pino do ESP32-S3 em
+    // vez do MUX (ver leitura em loop(), logo apos o scan dos MUX -
+    // sobrescreve rawValue[0], que os MUX tambem escrevem, com lixo/
+    // flutuando, ja' que o MUX0 nao esta' conectado de verdade ainda) -
+    // pra testar o sensor hall (SS49E) do controlador de HH. Remover esse
+    // bloco (e a leitura em loop()) quando o MUX chegar e a fiacao real
+    // dos 32 canais for feita - ver docs/02-hardware.md pro pino GPIO17
+    // usado aqui (livre, ADC2, sem uso previsto ate' entao).
+    padTypes[0] = PAD_SINGLE;
     padEnabled[0] = true;
     recomputeChannelPrimary();
     rebuildPadName(0);
-    rebuildPadName(1);
 
     renderBootProgress(80);
 
@@ -3901,13 +3897,12 @@ void loop()
         mux[m].scan();
     }
 
-    // TESTE TEMPORARIO (2026-09-01) - ver defines TEST_DIRECT_HEAD_PIN/
-    // TEST_DIRECT_RIM_PIN acima. Sobrescreve de proposito o que
-    // mux[0].scan() acabou de escrever em rawValue[0]/[1] (lixo/flutuando,
-    // MUX0 nao conectado de verdade ainda) com a leitura real dos 2 pinos
-    // diretos. Remover quando o MUX chegar.
+    // TESTE TEMPORARIO (2026-09-02) - ver define TEST_DIRECT_HEAD_PIN
+    // acima. Sobrescreve de proposito o que mux[0].scan() acabou de
+    // escrever em rawValue[0] (lixo/flutuando, MUX0 nao conectado de
+    // verdade ainda) com a leitura real do pino direto (sensor hall).
+    // Remover quando o MUX chegar.
     rawValue[0] = analogRead(TEST_DIRECT_HEAD_PIN);
-    rawValue[1] = analogRead(TEST_DIRECT_RIM_PIN);
 
     applyPadGain(); // Fase P - antes do dispatch, pra ja ler o rawValue calibrado
 
