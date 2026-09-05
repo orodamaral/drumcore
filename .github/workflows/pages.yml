@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -37,8 +37,26 @@ jobs:
       - name: Install and build web-app (versão web do app desktop)
         working-directory: web-app
         run: |
-          npm ci
-          npm run build
+          (npm ci && npm run build) > /tmp/webapp_build_log.txt 2>&1
+          cat /tmp/webapp_build_log.txt
+
+      # Diagnostico temporario (2026-09-06): esse passo esta falhando na CI
+      # mas nao localmente - publica o log num branch dedicado pra ler sem
+      # precisar de token de autenticacao. Remover assim que resolvido.
+      - name: Publish build log for unauthenticated debugging
+        if: always()
+        run: |
+          rm -rf /tmp/debug-log-repo
+          mkdir -p /tmp/debug-log-repo
+          cd /tmp/debug-log-repo
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -q --orphan ci-debug-logs
+          cp /tmp/webapp_build_log.txt webapp_build_log.txt
+          git add webapp_build_log.txt
+          git commit -q -m "debug: webapp build log from run ${{ github.run_id }}"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-debug-logs
 
       # Junta o site estatico com o build do app web num diretorio unico
       # antes de publicar - app fica acessivel em /app/ dentro do site.
