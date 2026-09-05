@@ -2,6 +2,50 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-06 — Firmware gravado não bootava; achado e corrigido (CI + CORS + layout)
+
+- **Sintoma real**: Rodrigo gravou o firmware pela aba nova e a tela não
+  ligou. Pinagem (encoder/tela/MUX/GPIO9) conferida linha a linha em
+  `firmware/src/main.cpp` contra `docs/02-hardware.md` — bate 100%, não
+  era bug de pinagem.
+- **Causa raiz #1 (CORS)**: "Verificar atualizações" na aba Firmware
+  falhava com "Failed to fetch" — os links de asset do GitHub
+  (`release-assets.githubusercontent.com`) não mandam CORS liberado pro
+  renderer. Fetch/download movidos pro processo main (Node, sem essa
+  restrição) via novo `desktop-app/src/main/firmwareRelease.ts` + 2
+  handlers IPC.
+- **Causa raiz #2 (o binário mesclado vinha com cabeçalho errado)**: a CI
+  de release montava o `merge_bin` assumindo `--flash_mode qio` (baseado
+  num comentário errado do `platformio.ini`) e sem `--flash_freq` — o real
+  é `dio`/`80m` (confirmado no comando de upload de verdade). Um binário
+  com flash_mode errado grava sem erro nenhum mas não boota direito
+  (sensível aqui por causa da PSRAM octal). `extract_flash_args.py`
+  reescrito pra extrair os valores reais do log verboso do PlatformIO em
+  vez de assumir.
+- **Causa raiz #3 (a CI nunca chegava a rodar o upload verboso)**: mesmo
+  corrigido, a extração continuava falhando — o log nunca tinha uma linha
+  `write_flash`. Diagnosticado publicando o log completo num branch
+  temporário (`ci-debug-logs`, já removido) pra ler sem precisar de token
+  de autenticação. Causa: a instalação do zero da CI puxa
+  `tool-scons@~4.41101.0` (SCons upstream 4.11.1), que tem um bug real no
+  modo verbose (`SCons/Action.py:print_cmd_line` faz `s + "\n"` com `s`
+  sendo o sentinela interno `_Null`, `TypeError`, build inteiro falha).
+  Tentativa de fixar a versão via `platform_packages` não colou (o
+  PlatformIO detecta o conflito e remove a versão fixada, mantendo a que
+  o `espressif32` pede). Solução: `.github/scripts/
+  patch_scons_verbose_bug.py`, que corrige o arquivo com bug depois que o
+  PlatformIO instala os pacotes (build normal primeiro, sem `-v`) e antes
+  do build verboso que a CI precisa pra descobrir os parâmetros reais.
+  De quebra, também fixada a versão da plataforma (`espressif32@7.0.1`)
+  pra CI parar de divergir silenciosamente da versão testada localmente.
+- **Layout**: o quadro da aba Firmware ficava restrito a 640px (sobrava
+  num canto) — removido, agora ocupa a página inteira como as outras
+  abas.
+- Validado publicando `fw-v0.0.2-test`: manifest e binário conferidos
+  byte a byte (`flash_mode: dio`, cabeçalho `0x02` correto, versão
+  embutida certa) — pipeline completa (build → extrai parâmetros reais →
+  mescla → publica) funcionando de ponta a ponta pela primeira vez.
+
 ## 2026-09-06 — Aba de Firmware no app desktop + instalador do app
 
 - **Objetivo**: montar/atualizar um DrumCore sem saber programar — hoje
