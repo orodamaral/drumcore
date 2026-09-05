@@ -2,6 +2,47 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-06 — App de configuração também como página web (`web-app/`)
+
+- **Motivação**: a aba Firmware já usava Web Serial (funciona em qualquer
+  navegador Chromium, não só Electron) — deu pra estender o mesmo
+  mecanismo pras abas Pads/Global e publicar o app inteiro como uma
+  página do `site/` (GitHub Pages), sem precisar instalar nada.
+- **Reuso total de código**: só `App.tsx` e `FirmwareManager.tsx` tocavam
+  `window.drumCore` (confirmado por grep) — todo o resto
+  (`PadGrid`/`PadEditor`/`protocol`/`mockDevice`/`styles.css`) já era
+  100% portável. Novo `web-app/` (projeto Vite standalone, irmão de
+  `desktop-app/`) reusa esses arquivos direto de
+  `desktop-app/src/renderer/src/` via import relativo — zero duplicação.
+- **`webDrumCore.ts`** (novo): segunda implementação de `DrumCoreApi`
+  (a de sempre é o preload/`contextBridge` do Electron), baseada em
+  `navigator.serial` — leitor de linhas NDJSON via `TextDecoderStream`
+  equivalente ao `ReadlineParser` do lado Electron
+  (`desktop-app/src/main/serial.ts`). `listPorts()` sempre `[]` (Web
+  Serial não expõe nome de porta por privacidade) — `App.tsx` ajustado
+  pra só exigir porta selecionada quando a lista não estiver vazia.
+- **CORS do firmware resolvido na raiz, não mais contornado**: descoberto
+  que `raw.githubusercontent.com` manda `Access-Control-Allow-Origin: *`
+  pra qualquer arquivo do repo — diferente dos assets de Release
+  (`release-assets.githubusercontent.com`, sem CORS). A CI de release do
+  firmware (`firmware-release.yml`) agora também publica
+  `manifest.json`/`.bin` num branch dedicado (`firmware-artifacts/<tag>/`,
+  um commit por release). Isso eliminou a necessidade de proxy externo
+  (chegou a ser cogitado Cloudflare Worker) e permitiu **remover** todo o
+  caminho IPC que tinha sido criado pra isso no Electron
+  (`desktop-app/src/main/firmwareRelease.ts` e os 2 handlers
+  correspondentes) — `FirmwareManager.tsx` agora usa um módulo
+  compartilhado (`firmwareCheck.ts`) igual nos dois builds.
+- **Publicação**: `.github/workflows/pages.yml` builda `web-app/` e
+  publica em `site/app/` junto do site estático de sempre —
+  `https://orodamaral.github.io/drumcore/app/`. Link novo no nav/hero de
+  `site/index.html`.
+- Validado localmente: `web-app` compila e builda limpo (typecheck +
+  `vite build`, incluindo os componentes reusados do `desktop-app`);
+  `desktop-app` continua buildando normalmente depois da remoção do
+  código IPC de firmware. Teste real de conexão via Web Serial (que
+  precisa de navegador + hardware) fica para o Rodrigo.
+
 ## 2026-09-06 — Firmware gravado não bootava; achado e corrigido (CI + CORS + layout)
 
 - **Sintoma real**: Rodrigo gravou o firmware pela aba nova e a tela não

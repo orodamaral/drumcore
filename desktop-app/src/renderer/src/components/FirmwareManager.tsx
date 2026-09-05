@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ESPLoader, Transport } from 'esptool-js'
 import esp32UartImage from '../assets/esp32-uart.png'
-import type { FirmwareManifest } from '../env'
+import { downloadFirmwareBinary, getLatestFirmware, type FirmwareManifest } from '../firmwareCheck'
 
 const FLASH_BAUD_RATE = 115200
 
@@ -33,10 +33,7 @@ export default function FirmwareManager({
     setStatus({ phase: 'checking' })
     setCheckError(null)
     try {
-      // Roda no processo main (window.drumCore.getLatestFirmware) - os
-      // links de asset do GitHub nao mandam CORS liberado pro renderer, um
-      // fetch direto daqui falha. Ver src/main/firmwareRelease.ts.
-      const { manifest, downloadUrl } = await window.drumCore.getLatestFirmware()
+      const { manifest, downloadUrl } = await getLatestFirmware()
       setStatus({ phase: 'ready', manifest, downloadUrl })
     } catch (err) {
       setCheckError(err instanceof Error ? err.message : String(err))
@@ -57,19 +54,17 @@ export default function FirmwareManager({
     try {
       setStatus({ phase: 'connecting' })
 
-      // Web Serial (API do navegador, WICG) - porta separada da usada pela
-      // aba Pads/Global (essa usa serialport/Node via window.drumCore). O
-      // picker de dispositivo e' resolvido no processo main (ver
-      // main/index.ts, handler 'select-serial-port').
+      // Web Serial (API do navegador, WICG) - no build Electron, o picker
+      // de dispositivo e' resolvido no processo main (ver main/index.ts,
+      // handler 'select-serial-port'); numa pagina web pura o proprio
+      // navegador mostra o seletor nativo, sem nada extra necessario.
       const port = await navigator.serial.requestPort()
       const transport = new Transport(port)
       const loader = new ESPLoader({ transport, baudrate: FLASH_BAUD_RATE })
       await loader.main()
 
       setStatus({ phase: 'downloading' })
-      // Mesmo motivo do getLatestFirmware() acima - o link de asset nao tem
-      // CORS liberado, o download roda no processo main.
-      const firmwareBytes = await window.drumCore.downloadFirmwareBinary(downloadUrl)
+      const firmwareBytes = await downloadFirmwareBinary(downloadUrl)
 
       setStatus({ phase: 'writing', percent: 0 })
       await loader.writeFlash({

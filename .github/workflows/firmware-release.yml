@@ -146,3 +146,32 @@ jobs:
           files: |
             firmware/${{ env.MERGED_NAME }}
             firmware/manifest.json
+
+      # Publica os mesmos 2 arquivos tambem em raw.githubusercontent.com
+      # (via um branch dedicado no proprio repo) - diferente dos assets da
+      # Release (que redirecionam pra release-assets.githubusercontent.com,
+      # sem CORS liberado), raw.githubusercontent.com manda
+      # Access-Control-Allow-Origin: * pra qualquer arquivo do repo.
+      # E' o que permite o app web (site/app/, sem processo Electron pra
+      # servir de intermediario) baixar o firmware direto do navegador.
+      # Um commit por release (sem --force, sem recriar o orphan toda vez)
+      # - preserva o historico de versoes.
+      - name: Publish to raw.githubusercontent.com (firmware-artifacts branch)
+        run: |
+          rm -rf /tmp/firmware-artifacts-repo
+          git clone --depth 1 --branch firmware-artifacts \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" \
+            /tmp/firmware-artifacts-repo \
+            || (mkdir -p /tmp/firmware-artifacts-repo && cd /tmp/firmware-artifacts-repo && git init -q -b firmware-artifacts)
+          cd /tmp/firmware-artifacts-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git remote get-url origin > /dev/null 2>&1; then
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          fi
+          mkdir -p "${{ steps.version.outputs.tag }}"
+          cp "${{ github.workspace }}/firmware/${{ env.MERGED_NAME }}" "${{ steps.version.outputs.tag }}/"
+          cp "${{ github.workspace }}/firmware/manifest.json" "${{ steps.version.outputs.tag }}/"
+          git add "${{ steps.version.outputs.tag }}"
+          git commit -q -m "firmware ${{ steps.version.outputs.tag }}"
+          git push -q origin firmware-artifacts

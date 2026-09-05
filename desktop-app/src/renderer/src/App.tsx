@@ -223,7 +223,7 @@ export default function App() {
             Modo demo (sem hardware)
           </label>
 
-          {!demoMode && (
+          {!demoMode && ports.length > 0 && (
             <select
               value={selectedPort}
               disabled={connected}
@@ -239,8 +239,12 @@ export default function App() {
             </select>
           )}
 
+          {/* No build web (Web Serial), listPorts() sempre retorna [] - o
+              dropdown acima nem aparece, e o proprio navegador.serial.requestPort()
+              mostra o seletor de dispositivo ao clicar em Conectar, sem precisar
+              de porta pre-selecionada. */}
           {!connected ? (
-            <button onClick={connect} disabled={!demoMode && !selectedPort}>
+            <button onClick={connect} disabled={!demoMode && ports.length > 0 && !selectedPort}>
               Conectar
             </button>
           ) : (

@@ -1,19 +1,24 @@
-// Busca/baixa releases de firmware do GitHub (tag "fw-v*") no processo
-// main, nao no renderer - fetch() aqui e' Node puro, sem enforcement de
-// CORS. A listagem de releases (api.github.com) ate' manda
-// Access-Control-Allow-Origin: * e funcionaria direto do renderer, mas os
-// links de asset (browser_download_url) redirecionam pra
-// release-assets.githubusercontent.com, que NAO manda esse header - um
-// fetch direto do renderer falha com erro de CORS. Ver
-// desktop-app/src/renderer/src/components/FirmwareManager.tsx.
+// Busca/baixa a release de firmware mais recente (tag "fw-v*") direto do
+// renderer - funciona tanto no build Electron quanto numa pagina web pura
+// (web-app/), sem precisar de nenhum processo Node/main como
+// intermediario. Os arquivos (manifest.json + binario mesclado) sao lidos
+// via raw.githubusercontent.com, que manda Access-Control-Allow-Origin: *
+// pra qualquer arquivo do repo - diferente dos assets de Release
+// (browser_download_url), que redirecionam pra
+// release-assets.githubusercontent.com e NAO liberam CORS. A CI de
+// release do firmware publica os mesmos arquivos num branch dedicado
+// (firmware-artifacts/<tag>/...) so' pra isso - ver
+// .github/workflows/firmware-release.yml.
 
 const GITHUB_REPO = 'orodamaral/drumcore'
+const RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_REPO}/firmware-artifacts`
 
 export interface FirmwareManifest {
   version: string
   chip: string
   flash_size: string
   flash_mode: string
+  flash_freq: string
   offset: string
   file: string
 }
@@ -23,21 +28,14 @@ export interface LatestFirmware {
   downloadUrl: string
 }
 
-interface GithubReleaseAsset {
-  name: string
-  browser_download_url: string
-}
-
 interface GithubRelease {
   tag_name: string
-  assets: GithubReleaseAsset[]
 }
 
 // A aba Firmware busca de novo toda vez que o usuario troca de aba (o
 // componente remonta) - sem cache, isso pode facilmente estourar o limite
 // de requisicoes sem autenticacao da API do GitHub (60/hora por IP, bem
-// baixo) so' de alternar entre abas algumas vezes. Cache simples em
-// memoria do processo main, valido por alguns minutos.
+// baixo) so' de alternar entre abas algumas vezes.
 const CACHE_TTL_MS = 5 * 60 * 1000
 let cache: { result: LatestFirmware; fetchedAt: number } | null = null
 
@@ -68,22 +66,16 @@ export async function getLatestFirmware(): Promise<LatestFirmware> {
   // sempre o mesmo formato fw-vMAJOR.MINOR.PATCH com mesma contagem de
   // digitos na pratica deste projeto - se isso mudar, trocar por
   // comparacao semver de verdade.
-  const firmwareReleases = releases
-    .filter((release) => release.tag_name.startsWith('fw-v'))
-    .sort((a, b) => (a.tag_name < b.tag_name ? 1 : -1))
-  const latest = firmwareReleases[0]
-  if (!latest) throw new Error('Nenhuma release de firmware encontrada no GitHub ainda.')
+  const tag = releases
+    .map((release) => release.tag_name)
+    .filter((tagName) => tagName.startsWith('fw-v'))
+    .sort((a, b) => (a < b ? 1 : -1))[0]
+  if (!tag) throw new Error('Nenhuma release de firmware encontrada no GitHub ainda.')
 
-  const manifestAsset = latest.assets.find((asset) => asset.name === 'manifest.json')
-  const binAsset = latest.assets.find((asset) => asset.name.endsWith('.bin'))
-  if (!manifestAsset || !binAsset) {
-    throw new Error('Release encontrada, mas faltam os arquivos esperados (manifest.json / .bin).')
-  }
-
-  const manifestRes = await githubFetch(manifestAsset.browser_download_url)
+  const manifestRes = await githubFetch(`${RAW_BASE}/${tag}/manifest.json`)
   const manifest = (await manifestRes.json()) as FirmwareManifest
 
-  const result: LatestFirmware = { manifest, downloadUrl: binAsset.browser_download_url }
+  const result: LatestFirmware = { manifest, downloadUrl: `${RAW_BASE}/${tag}/${manifest.file}` }
   cache = { result, fetchedAt: Date.now() }
   return result
 }

@@ -14,6 +14,7 @@
     <a class="brand" href="index.html"><span class="dot"></span>DRUMCORE</a>
     <ul class="navlinks">
       <li><a class="active" href="index.html">Visão geral</a></li>
+      <li><a href="app/">Configurar (web)</a></li>
       <li><a href="flash.html">Gravar firmware</a></li>
       <li><a href="hardware.html">Hardware</a></li>
       <li><a class="nav-gh" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">GitHub ↗</a></li>
@@ -33,7 +34,8 @@
       e um app desktop pra ajustar tudo com mais conforto.
     </p>
     <div class="hero-actions">
-      <a class="btn btn-primary" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Ver código no GitHub</a>
+      <a class="btn btn-primary" href="app/">Configurar pelo navegador ↗</a>
+      <a class="btn btn-ghost" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Ver código no GitHub</a>
       <a class="btn btn-ghost" href="flash.html">Gravar o firmware</a>
       <a class="btn btn-ghost" href="hardware.html">Esquemático de ligação</a>
     </div>
@@ -71,8 +73,8 @@
       </div>
       <div class="card">
         <div class="icon">🧰</div>
-        <h3>App desktop de configuração</h3>
-        <p>Electron + React, conversa com o módulo via protocolo serial NDJSON — edição completa de todos os parâmetros de cada pad, com modo demo pra testar sem hardware.</p>
+        <h3>App de configuração (web ou desktop)</h3>
+        <p>Direto pelo navegador (<a href="app/">Chrome/Edge, via Web Serial</a>, sem instalar nada) ou como app desktop (Electron) — mesma interface, mesmo protocolo serial NDJSON, edição completa de todos os parâmetros de cada pad, com modo demo pra testar sem hardware.</p>
       </div>
       <div class="card">
         <div class="icon">🎯</div>
@@ -123,8 +125,8 @@
       </div>
       <div class="card">
         <div class="icon">💻</div>
-        <h3>App desktop</h3>
-        <p><code>desktop-app/</code> — Electron + React/TypeScript. Fala com o módulo por protocolo serial NDJSON (<code>docs/04-protocolo-serial.md</code>), com modo demo pra configurar sem hardware conectado.</p>
+        <h3>App de configuração</h3>
+        <p><code>desktop-app/</code> — Electron + React/TypeScript, e <code>web-app/</code> — mesma UI/componentes, rodando puro no navegador via Web Serial (publicado em <code>site/app/</code>, sem duplicar código). Os dois falam com o módulo pelo mesmo protocolo serial NDJSON (<code>docs/04-protocolo-serial.md</code>), com modo demo pra configurar sem hardware conectado.</p>
       </div>
       <div class="card">
         <div class="icon">🔧</div>

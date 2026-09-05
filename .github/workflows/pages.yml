@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - "site/**"
+      - "web-app/**"
+      - "desktop-app/src/renderer/src/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -27,13 +29,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install and build web-app (versão web do app desktop)
+        working-directory: web-app
+        run: |
+          npm ci
+          npm run build
+
+      # Junta o site estatico com o build do app web num diretorio unico
+      # antes de publicar - app fica acessivel em /app/ dentro do site.
+      - name: Assemble Pages artifact
+        run: |
+          rm -rf pages-dist
+          cp -r site pages-dist
+          mkdir -p pages-dist/app
+          cp -r web-app/dist/. pages-dist/app/
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload site/ as Pages artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: pages-dist
 
       - name: Deploy to GitHub Pages
         id: deployment

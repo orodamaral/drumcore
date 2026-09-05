@@ -11,6 +11,12 @@ desktop-app/out/
 desktop-app/dist/
 desktop-app/build/
 
+# App web (Vite puro, reusa componentes de desktop-app/src/renderer/src -
+# ver web-app/vite.config.ts). Build publicado em site/app/ pelo CI, nunca
+# commitado aqui.
+web-app/node_modules/
+web-app/dist/
+
 # Sistema
 .DS_Store
 Thumbs.db
