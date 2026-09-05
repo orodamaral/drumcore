@@ -39,18 +39,37 @@ jobs:
       - name: Install PlatformIO and esptool
         run: pip install platformio esptool
 
-      # Builda o firmware normalmente e, na mesma chamada, tenta gravar numa
-      # porta serial que nao existe de proposito (nao ha placa conectada
-      # neste runner) - so' precisamos do log verboso que o PlatformIO
-      # imprime ANTES de tentar abrir a porta, com o comando esptool
+      # Um caminho tipo /dev/ttyUSB99 que nao existe de verdade faz o
+      # PlatformIO/esptool abortar ANTES de montar e imprimir o comando
+      # write_flash no Linux (diferente do Windows, onde uma porta COM
+      # inexistente ainda deixa o comando ser impresso antes de falhar) -
+      # confirmado rodando a CI de verdade (2026-09-06). Criamos um par de
+      # pseudo-terminais de verdade com socat: sao dispositivos validos pro
+      # SO, entao o upload chega a tentar abrir e conversar com a porta
+      # (e falha por timeout/protocolo, sem placa real do outro lado) - a
+      # essa altura o comando completo ja foi montado e impresso.
+      - name: Create a fake serial port (no board attached on this runner)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq socat
+          socat -d -d pty,raw,echo=0,link=/tmp/ttyFAKE0 pty,raw,echo=0,link=/tmp/ttyFAKE1 &
+          for i in $(seq 1 20); do
+            [ -e /tmp/ttyFAKE0 ] && break
+            sleep 0.5
+          done
+          ls -la /tmp/ttyFAKE0 /tmp/ttyFAKE1
+
+      # Builda o firmware normalmente e, na mesma chamada, tenta gravar na
+      # porta fake criada acima - so' precisamos do log verboso que o
+      # PlatformIO imprime ANTES/ao tentar a gravacao, com o comando esptool
       # completo (chip, offsets, arquivos). A falha em si e' esperada
-      # (`|| true`); o que importa e' o upload_log.txt gerado.
+      # (`|| true`, nao ha placa real do outro lado do pseudo-terminal); o
+      # que importa e' o upload_log.txt gerado.
       - name: Build firmware and capture verbose upload command
         working-directory: firmware
         env:
           FW_VERSION: ${{ steps.version.outputs.tag }}
         run: |
-          pio run -e esp32-s3-devkitc-1 -t upload -v --upload-port /dev/ttyUSB99 > upload_log.txt 2>&1 || true
+          pio run -e esp32-s3-devkitc-1 -t upload -v --upload-port /tmp/ttyFAKE0 > upload_log.txt 2>&1 || true
           echo "----- upload_log.txt -----"
           cat upload_log.txt
 
