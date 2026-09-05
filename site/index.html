@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DrumCore — módulo MIDI-USB/BLE para bateria eletrônica</title>
+<meta name="description" content="DrumCore: módulo de disparo MIDI para bateria eletrônica baseado em ESP32-S3, com 32 canais analógicos, USB-MIDI nativo, BLE-MIDI e app desktop de configuração." />
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="dot"></span>DRUMCORE</a>
+    <ul class="navlinks">
+      <li><a class="active" href="index.html">Visão geral</a></li>
+      <li><a href="flash.html">Gravar firmware</a></li>
+      <li><a href="hardware.html">Hardware</a></li>
+      <li><a class="nav-gh" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">GitHub ↗</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Módulo MIDI-USB / BLE · ESP32-S3</p>
+    <h1>Bateria eletrônica com cérebro próprio.</h1>
+    <p class="lede">
+      DrumCore é um módulo de disparo MIDI para bateria eletrônica: lê até 32 canais
+      analógicos de pads/pratos/chimbal, converte em notas e Control Change, e manda
+      via <strong>USB-MIDI nativo</strong> (plug-and-play) e <strong>BLE-MIDI</strong>
+      simultaneamente. Tela TFT + encoder rotativo pra configurar direto no hardware,
+      e um app desktop pra ajustar tudo com mais conforto.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Ver código no GitHub</a>
+      <a class="btn btn-ghost" href="flash.html">Gravar o firmware</a>
+      <a class="btn btn-ghost" href="hardware.html">Esquemático de ligação</a>
+    </div>
+    <div class="status-pill"><span class="dot"></span>Em desenvolvimento — firmware compila e grava, ainda em validação com hardware real</div>
+  </div>
+</header>
+
+<section class="block">
+  <div class="wrap">
+    <h2>O que o módulo faz</h2>
+    <p class="block-sub">
+      Tudo roda num único ESP32-S3: leitura dos sensores, lógica de disparo (velocity,
+      threshold, curva de resposta), saída MIDI e a interface de configuração na tela.
+    </p>
+    <div class="grid">
+      <div class="card">
+        <div class="icon">🥁</div>
+        <h3>32 canais analógicos</h3>
+        <p>2x multiplexador CD4067 (módulo HW-178, 16 canais cada) escaneados pelo ESP32-S3 — dá pra montar um kit inteiro de pads, pratos e chimbal num único módulo.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔌</div>
+        <h3>USB-MIDI nativo</h3>
+        <p>Classe USB de verdade (TinyUSB), sem driver extra nem "Hairless MIDI" — conecta o cabo e já aparece como dispositivo MIDI no seu DAW.</p>
+      </div>
+      <div class="card">
+        <div class="icon">📶</div>
+        <h3>BLE-MIDI simultâneo</h3>
+        <p>Ao mesmo tempo que o USB, o módulo também anuncia como dispositivo MIDI via Bluetooth — sem precisar escolher um ou outro.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🖥️</div>
+        <h3>Tela + encoder</h3>
+        <p>TFT ST7735 (SPI) com navegação por 1 encoder rotativo (girar navega, clicar entra/confirma, segurar volta) — configura sensibilidade, threshold, nota e mais direto na bancada.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🧰</div>
+        <h3>App desktop de configuração</h3>
+        <p>Electron + React, conversa com o módulo via protocolo serial NDJSON — edição completa de todos os parâmetros de cada pad, com modo demo pra testar sem hardware.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🎯</div>
+        <h3>Auto-calibração assistida</h3>
+        <p>Assistente guiado que bate no pad algumas vezes e calcula sensibilidade/threshold sozinho, em vez de ajustar slider no escuro.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <h2>9 tipos de sensor, configuráveis por canal</h2>
+    <p class="block-sub">
+      Cada um dos 32 canais pode ser configurado independentemente como qualquer um
+      desses tipos, pelo app desktop. Nenhum tipo usa mais de 2 canais físicos.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Tipo</th><th>Canais</th><th>Zonas / comportamento</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Simples</td><td class="mono">1</td><td class="wrap-text">Pad ou prato de zona única (bow).</td></tr>
+          <tr><td>Aro / Dual</td><td class="mono">2</td><td class="wrap-text">Pele (head) + aro (rim) — caixa/tom com sensor de aro.</td></tr>
+          <tr><td>Chimbal simples</td><td class="mono">1</td><td class="wrap-text">1 zona; a nota muda conforme o pedal está aberto ou fechado.</td></tr>
+          <tr><td>Prato 2 zonas</td><td class="mono">2</td><td class="wrap-text">Corpo (bow) + borda (edge).</td></tr>
+          <tr><td>Chimbal 2 zonas</td><td class="mono">2</td><td class="wrap-text">Bow + edge, nota muda com o pedal aberto/fechado.</td></tr>
+          <tr><td>Prato 3 zonas</td><td class="mono">2</td><td class="wrap-text">Bow + edge/cup (cup e edge no mesmo canal, separados por threshold).</td></tr>
+          <tr><td>Caixa 3 zonas</td><td class="mono">2</td><td class="wrap-text">Centro da pele + borda da pele (edge) + aro de verdade (rim), mesma técnica do prato 3 zonas.</td></tr>
+          <tr><td>Pedal de chimbal (FSR)</td><td class="mono">1</td><td class="wrap-text">Sensor de posição contínua (FSR/VH-10/VH-11) — controla abertura/fechamento via CC.</td></tr>
+          <tr><td>Pedal de chimbal (óptico)</td><td class="mono">1</td><td class="wrap-text">Mesmo conceito, sensor óptico TCRT5000.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="callout"><span class="glyph">ℹ️</span>Ver <code>docs/05-tipos-de-sensor.md</code> no repositório pro detalhamento completo de cada tipo.</p>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <h2>Como o projeto é organizado</h2>
+    <div class="grid">
+      <div class="card">
+        <div class="icon">⚙️</div>
+        <h3>Firmware</h3>
+        <p><code>firmware/</code> — ESP32-S3, Arduino framework, build via PlatformIO. Biblioteca de sensing baseada num fork vendorizado da <a href="https://github.com/RyoKosaka/HelloDrum-arduino-Library" target="_blank" rel="noopener">HelloDrum-arduino-Library</a> de Ryo Kosaka.</p>
+      </div>
+      <div class="card">
+        <div class="icon">💻</div>
+        <h3>App desktop</h3>
+        <p><code>desktop-app/</code> — Electron + React/TypeScript. Fala com o módulo por protocolo serial NDJSON (<code>docs/04-protocolo-serial.md</code>), com modo demo pra configurar sem hardware conectado.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔧</div>
+        <h3>Hardware</h3>
+        <p><code>hardware/</code> — a "jackboard" (conectores TRS 6.35mm com rede de proteção — resistor série, resistor paralelo e diodo por canal), projetada em KiCad. O resto (ESP32-S3, MUX, tela, encoder) liga direto na própria placa de dev do ESP32-S3, sem mainboard dedicada — pouca fiação o bastante pra dispensar isso.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    Projeto DrumCore — módulo MIDI-USB/BLE para bateria eletrônica, construído em cima da
+    <a href="https://github.com/RyoKosaka/HelloDrum-arduino-Library" target="_blank" rel="noopener">HelloDrum-arduino-Library</a>.
+    <div class="foot-links">
+      <a href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Repositório no GitHub</a>
+      <a href="flash.html">Gravar o firmware</a>
+      <a href="hardware.html">Esquemático de ligação</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -252,8 +252,8 @@ export type AutoTuneZone = 'head' | 'rim' | 'bow' | 'edge' | 'cup'
 
 // "single" = 1 rodada (canal único ou pad_type sem calibração de 2ª zona
 // ainda), "dual" = 2 rodadas (PAD_DUAL), "tri" = 3 rodadas (prato/caixa 3
-// zonas) - fonte única pros 3 lugares que simulam/exibem isso (PadEditor,
-// mockDevice, HardwareSimulator), pra não duplicar esse mapeamento 3x.
+// zonas) - fonte única pros lugares que exibem isso (PadEditor,
+// mockDevice), pra não duplicar esse mapeamento.
 export type AutoTuneShape = 'single' | 'dual' | 'tri'
 
 export function autoTuneShapeFor(padType: PadType): AutoTuneShape {

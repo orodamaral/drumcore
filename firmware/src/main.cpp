@@ -139,89 +139,73 @@ void bringUpNativeUsbHardware()
 }
 
 // ---------------------------------------------------------------------------
-// Pinout - Fase L (+ ajustes de contiguidade fisica, ver
-// docs/01-decisoes-arquiteturais.md). Usa o pinout REAL da placa comprada
-// (dev board ESP32-S3 c/ headers fisicos esquerdo/direito - ver
-// docs/02-hardware.md). Cada subsistema sai inteiro de um unico header:
-//   HEADER ESQUERDO (tem 3V3 no topo e GND na base - unico lado c/ alimentacao):
-//     - CD4067 (S0-S3, SIG0/SIG1): GPIO4,5,6,7,15,16 - sequencia continua
-//       na ordem fisica real do header, logo abaixo do 3V3/RST.
-//     - TFT: GPIO9,10,11,12,13,14 - contiguos entre si, na base do header
-//       (logo acima do 5V/GND), na ordem fisica de baixo pra cima BLK,CS,
-//       DC,RES,SDA,SCL (ver defines abaixo) - escolhido assim (2026-08-31)
-//       pra espelhar a ordem fisica do proprio conector da tela (GND,VCC,
-//       SCL,SDA,RES,DC,CS,BLK): GND da tela vai pro GND da base do header
-//       (mesma extremidade), e subindo os demais sinais casam um a um com
-//       a sequencia da tela, sem entrelacar fios. So o VCC foge da
-//       sequencia (o 3V3 so existe no topo do header) - fio isolado
-//       inevitavel. Isso deixa de formar um unico feixe continuo com o
-//       MUX (GPIO17,18,8 ficam livres entre os dois grupos), troca
-//       aceita de proposito em favor de bater com o conector da tela.
-//   HEADER DIREITO (so GND, encoders usam so pull-up interno - sem VCC):
-//     - Encoder 1 + Encoder 2: GPIO1,2,42,41,40,39 - sequencia continua na
-//       ordem fisica real do header (...44,1,2,42,41,40,39,38...), pulando
-//       so o GPIO38 (LED embutido, ver abaixo). Corrige o pinout anterior
-//       (42,41,40 / 37,36,35), que tinha um vao de 2 pinos (39,38) no meio
-//       por evitar o GPIO38; como bonus, tambem deixa de depender do
-//       GPIO35-37 (risco anotado de PSRAM octal, ver
-//       docs/01-decisoes-arquiteturais.md).
-// SIG0/SIG1 usam GPIO15/16 (ADC2, nao ADC1) - o conflito classico de ADC2
-// e' com o driver Wi-Fi (arbitragem de RF); este projeto nunca inicializa
-// Wi-Fi (so' BLE, que nao usa esse caminho), entao a rescricao "so ADC1"
-// das fases anteriores foi relaxada aqui de proposito.
+// Pinout - Fase Z (2026-09-05, reorganizado por FUNCAO em vez de por
+// alimentacao - ver docs/01-decisoes-arquiteturais.md pro racional
+// completo). Usa o pinout REAL da placa comprada (dev board ESP32-S3 c/
+// headers fisicos esquerdo/direito - ver docs/02-hardware.md). A partir
+// desta fase a placa fisica vai ter 3V3/GND disponiveis nos DOIS headers
+// (pads extras adicionados por fora do dev board original), entao a
+// divisao deixou de ser "quem precisa de VCC" (Fase L) e passou a ser por
+// FUNCAO: interface do usuario (encoder + tela) num header, sensing (MUX)
+// no outro - cada lado continua usando um bloco unico de pinos fisicamente
+// CONTIGUOS (sem nenhum outro sinal no meio), so' que agrupados por essa
+// logica nova:
+//   HEADER ESQUERDO - interface (encoder + tela), GPIO4,5,6,7,15,16,17,18,8
+//     (bloco continuo de 9 pinos, logo apos o 3V3/RST do topo): encoder nos
+//     3 primeiros (4,5,6), tela nos 6 seguintes (7,15,16,17,18,8).
+//   HEADER DIREITO - sensing (2x CD4067), GPIO1,2,42,41,40,39 (bloco
+//     continuo de 6 pinos, mesma faixa antes usada pelos 2 encoders -
+//     Fase Y ja tinha liberado GPIO1/2/42 do 2o encoder; agora GPIO41/40/39
+//     tambem saem do encoder unico, que migrou pro header esquerdo).
+// SIG0/SIG1 (leitura analogica dos 2 MUX) precisam de pino ADC - unicos 2
+// pinos ADC nesse bloco direito sao GPIO1/GPIO2 (ADC1_CH0/CH1), entao SIG0/
+// SIG1 ficam neles; S0-S3 (linhas digitais de selecao, sem precisar de ADC)
+// ficam em GPIO42/41/40/39. Isso troca o MUX de ADC2 (Fase L) pra ADC1 -
+// simplifica o racional antigo ("ADC2 e' seguro aqui pq nao tem Wi-Fi"): em
+// ADC1 esse cuidado nem precisa ser mencionado, nunca conflita com nada.
 // ---------------------------------------------------------------------------
 
-// --- CD4067 (2x, 32 canais) - header ESQUERDO ---
-#define MUX_S0 4
-#define MUX_S1 5
-#define MUX_S2 6
-#define MUX_S3 7
+// --- Encoder (1x, Fase Y) - header ESQUERDO ---
+#define ENC_A 4
+#define ENC_B 5
+#define ENC_SW 6
 
-#define MUX0_Z 15 // SIG do HW-178 #0 (pads 0-15) - ADC2_4
-#define MUX1_Z 16 // SIG do HW-178 #1 (pads 16-31) - ADC2_5
+#define HOLD_MS 600     // duracao de "hold" no encoder (design/SPEC.md)
+#define SW_DEBOUNCE_MS 25
 
-// TESTE TEMPORARIO (2026-09-02) - leitura direta de 1 pino, sem MUX, pra
-// testar o sensor hall (SS49E) do controlador de HH, canal 0 ("Pad 1" na
-// UI), enquanto o MUX fisico nao chega. GPIO17: livre, ADC2 - ver
-// docs/02-hardware.md ("Notas" - pinos livres/sobressalentes). Usado em
-// loop() (sobrescreve rawValue[0] depois do scan dos MUX) e em setup()
-// (habilita o pad 0 como PAD_SINGLE). Remover quando o MUX chegar.
-#define TEST_DIRECT_HEAD_PIN 17
+// --- Tela TFT ST7735 (SPI) - header ESQUERDO, mesmo bloco do encoder ---
+// Ordem dos GPIOs (7,15,16,17,18,8) casada com a ordem fisica do proprio
+// conector da tela (GND,VDD,SCL,SDA,RST,DC,CS,BLK - a pedido do Rodrigo,
+// 2026-09-06) - sem cruzar fio nenhum: SCL(7),SDA(15),RST(16),DC(17),
+// CS(18),BLK(8).
+#define TFT_SCLK 7
+#define TFT_MOSI 15
+#define TFT_RST 16
+#define TFT_DC 17
+#define TFT_CS 18
+#define TFT_BLK 8
+
+// --- CD4067 (2x, 32 canais) - header DIREITO ---
+#define MUX_S0 42
+#define MUX_S1 41
+#define MUX_S2 40
+#define MUX_S3 39
+
+#define MUX0_Z 1 // SIG do HW-178 #0 (pads 0-15) - ADC1_0
+#define MUX1_Z 2 // SIG do HW-178 #1 (pads 16-31) - ADC1_1
+
+// TESTE TEMPORARIO (2026-09-02, pino atualizado na Fase Z) - leitura
+// direta de 1 pino, sem MUX, pra testar o sensor hall (SS49E) do
+// controlador de HH, canal 0 ("Pad 1" na UI), enquanto o MUX fisico nao
+// chega. GPIO9: livre, ADC1 - ver docs/02-hardware.md ("Notas" - pinos
+// livres/sobressalentes). Usado em loop() (sobrescreve rawValue[0] depois
+// do scan dos MUX) e em setup() (habilita o pad 0 como PAD_SINGLE).
+// Remover quando o MUX chegar.
+#define TEST_DIRECT_HEAD_PIN 9
 
 #define NUM_MUX 2
 #define PADS_PER_MUX 16
 #define NUM_PADS (NUM_MUX * PADS_PER_MUX) // 32
-
-// --- Tela TFT ST7735 (SPI) - header ESQUERDO, base do header ---
-// Ordem fisica de baixo pra cima (perto do GND -> perto do MUX):
-// BLK(9), CS(10), DC(11), RES/RST(12), SDA/MOSI(13), SCL/SCLK(14) -
-// espelha o conector da propria tela (GND,VCC,SCL,SDA,RES,DC,CS,BLK) na
-// direcao oposta (GND da tela = GND da base do header).
-#define TFT_BLK 9
-#define TFT_CS 10
-#define TFT_DC 11
-#define TFT_RST 12
-#define TFT_MOSI 13
-#define TFT_SCLK 14
-
-// ---------------------------------------------------------------------------
-// Pinout - 2 encoders rotativos com chave (ENC1 = pagina/pad em foco,
-// ENC2 = navegacao/valor - ver design/SPEC.md secao 1) - header DIREITO.
-// GPIO38 (fora dessa faixa) foi evitado por acionar um LED embutido
-// (BUILTIN LED) dessa placa - o LED RGB endereçável fica no GPIO48
-// (ja excluido por outro motivo, ver acima) - ver
-// docs/01-decisoes-arquiteturais.md (Fase L).
-// ---------------------------------------------------------------------------
-#define ENC1_A 1
-#define ENC1_B 2
-#define ENC1_SW 42
-
-#define ENC2_A 41
-#define ENC2_B 40
-#define ENC2_SW 39
-
-#define HOLD_MS 600     // duracao de "hold" nos dois encoders (design/SPEC.md)
-#define SW_DEBOUNCE_MS 25
 
 // ---------------------------------------------------------------------------
 // Paleta (RGB565) - tokens do design/SPEC.md secao 4.
@@ -423,17 +407,11 @@ Adafruit_ST7735 tft(TFT_CS, TFT_DC, TFT_RST);
 // tft - roda so uma vez no boot, nao faz parte do flicker reportado.
 GFXcanvas16 canvas(160, 128);
 
-RotaryEncoder enc1(ENC1_A, ENC1_B, RotaryEncoder::LatchMode::FOUR3);
-RotaryEncoder enc2(ENC2_A, ENC2_B, RotaryEncoder::LatchMode::FOUR3);
+RotaryEncoder enc(ENC_A, ENC_B, RotaryEncoder::LatchMode::FOUR3);
 
-void IRAM_ATTR isrEnc1()
+void IRAM_ATTR isrEnc()
 {
-    enc1.tick();
-}
-
-void IRAM_ATTR isrEnc2()
-{
-    enc2.tick();
+    enc.tick();
 }
 
 // padLabels[i]: texto livre editavel (ex: "Caixa"), vazio por padrao.
@@ -480,18 +458,15 @@ void startAutoTune(byte pad);
 void cancelAutoTune();
 bool applyAutoTuneResult(); // false = ainda nao terminou de calibrar (ver AT_DONE)
 
-// Forward decls - encoders virtuais via serial (Fase Q, encoders fisicos
-// ainda nao conectados). Mesmo motivo das de auto-tune acima: essas seis
-// funcoes sao o handler real de cada encoder fisico (chamadas por
-// handleEncoders(), implementado mais abaixo perto das telas), e
+// Forward decls - encoder fisico unico (Fase Y - antes eram 6 funcoes pra
+// 2 encoders, ver docs/01-decisoes-arquiteturais.md). Mesmo motivo das de
+// auto-tune acima: essas 3 funcoes sao o handler real do encoder (chamadas
+// por handleEncoder(), implementado mais abaixo perto das telas), e
 // handleSerialCommand() precisa poder chama-las tambem pro comando
 // "enc_input" - ver docs/04-protocolo-serial.md.
-void onEnc1Rotate(int delta);
-void onEnc1Click();
-void onEnc1Hold();
-void onEnc2Rotate(int delta);
-void onEnc2Click();
-void onEnc2Hold();
+void onEncRotate(int delta);
+void onEncClick();
+void onEncHold();
 
 // Configuracao global (GLOBAL) - persistida como um bloco pequeno em EEPROM.
 byte midiChannel = DEFAULT_MIDI_CHANNEL;
@@ -562,6 +537,7 @@ enum FieldId
     FIELD_XTALK,
     FIELD_XTALK_GROUP,
     FIELD_HIHAT_INVERT,
+    FIELD_VIEW_SIGNAL, // Fase Y - clicar aqui abre a tela SIGNAL (antes era o click do ENC1)
 };
 
 struct FieldDef
@@ -573,7 +549,7 @@ struct FieldDef
     bool accelerates; // true pros campos 1-127 (design/SPEC.md: acelera >8 detents/s)
 };
 
-#define MAX_FIELDS_PER_PAD 17
+#define MAX_FIELDS_PER_PAD 18
 
 byte getFieldsForType(byte padType, FieldDef *out)
 {
@@ -648,9 +624,12 @@ byte getFieldsForType(byte padType, FieldDef *out)
     out[n++] = {FIELD_XTALK, "XTALK", 0, 100, true};
     out[n++] = {FIELD_XTALK_GROUP, "XGRUPO", 0, 4, false};
 
-    // Universal, sempre o ultimo item - "clicar" aqui (sem entrar em modo de
-    // edicao) dispara o assistente de auto-calibracao (Fase O). Ver
-    // docs/01-decisoes-arquiteturais.md.
+    // Universais, sempre os 2 ultimos itens - "clicar" aqui (sem entrar em
+    // modo de edicao) abre a tela SIGNAL (grafico ao vivo) ou dispara o
+    // assistente de auto-calibracao (Fase O). SINAL substitui o antigo
+    // click do ENC1 pra alternar PAD_EDIT<->SIGNAL (Fase Y, encoder unico -
+    // ver docs/01-decisoes-arquiteturais.md).
+    out[n++] = {FIELD_VIEW_SIGNAL, "SINAL", 0, 0, false};
     out[n++] = {FIELD_AUTOTUNE, "CALIBRAR", 0, 0, false};
 
     return n;
@@ -795,6 +774,13 @@ enum ScreenPage
 
 ScreenPage currentPage = PAGE_BOOT;
 bool forceScreenRedraw = true;
+
+// true = encoder no "carrossel" do topo (LIVE<->PADS<->GLOBAL, rotate troca
+// de pagina) - so' relevante quando currentPage e' LIVE/PADS/GLOBAL. false
+// (so' possivel em PADS/GLOBAL) = "descido" pra dentro da propria pagina
+// (rotate move a lista/linha selecionada em vez de trocar de pagina). Fase Y
+// (encoder unico) - ver docs/01-decisoes-arquiteturais.md.
+bool homeBrowsing = true;
 
 byte padsListSelection = 0; // 0-31, pad selecionado na lista PADS
 byte padsListTop = 0;       // primeira linha visivel (janela de 8)
@@ -1400,10 +1386,13 @@ void handleSerialCommand(const String &line)
     }
     else if (strcmp(cmd, "enc_input") == 0)
     {
-        // Encoder virtual (app desktop) - mesma semantica dos fisicos (ver
+        // Encoder virtual (app desktop) - mesma semantica do fisico (ver
         // design/SPEC.md secao 1). Sem resposta dedicada: o resultado ja'
         // aparece na tela fisica do modulo, que e' a fonte da verdade de
         // navegacao (o app nao espelha currentPage/editItemIndex/etc).
+        // [Fase Y] O hardware agora tem 1 encoder so', mas o campo "enc"
+        // continua aceitando 1 ou 2 por compatibilidade com o app desktop
+        // existente - os dois valores caem no mesmo handler unico.
         int enc = doc["enc"] | 0;
         const char *action = doc["action"] | "";
         if (enc != 1 && enc != 2)
@@ -1419,15 +1408,15 @@ void handleSerialCommand(const String &line)
                 sendError(cmd, "invalid_delta");
                 return;
             }
-            if (enc == 1) onEnc1Rotate(delta); else onEnc2Rotate(delta);
+            onEncRotate(delta);
         }
         else if (strcmp(action, "click") == 0)
         {
-            if (enc == 1) onEnc1Click(); else onEnc2Click();
+            onEncClick();
         }
         else if (strcmp(action, "hold") == 0)
         {
-            if (enc == 1) onEnc1Hold(); else onEnc2Hold();
+            onEncHold();
         }
         else
         {
@@ -1813,25 +1802,20 @@ void suppressCrosstalk()
 }
 
 // ---------------------------------------------------------------------------
-// Encoders - leitura com deteccao de hold (design/SPEC.md secao 1: hold
-// 600ms nos dois encoders tem significado proprio, diferente de um clique).
+// Encoder - leitura com deteccao de hold (design/SPEC.md secao 1: hold
+// 600ms tem significado proprio, diferente de um clique). Fase Y - era
+// 2 encoders (enc1/enc2), agora e' 1 so' (ver docs/01-decisoes-
+// arquiteturais.md).
 // ---------------------------------------------------------------------------
-long enc1LastPos = 0;
-long enc2LastPos = 0;
+long encLastPos = 0;
 
-bool sw1State = HIGH;
-unsigned long sw1DebounceMs = 0;
-bool sw1WaitingRelease = false;
-bool sw1HoldFired = false;
-unsigned long sw1PressedAtMs = 0;
+bool swState = HIGH;
+unsigned long swDebounceMs = 0;
+bool swWaitingRelease = false;
+bool swHoldFired = false;
+unsigned long swPressedAtMs = 0;
 
-bool sw2State = HIGH;
-unsigned long sw2DebounceMs = 0;
-bool sw2WaitingRelease = false;
-bool sw2HoldFired = false;
-unsigned long sw2PressedAtMs = 0;
-
-unsigned long enc2LastStepMs = 0;
+unsigned long encLastStepMs = 0;
 
 // ---------------------------------------------------------------------------
 // Auto-tune (Fase O) - assistente de auto-calibracao inspirado no recurso
@@ -2655,8 +2639,9 @@ bool applyAutoTuneResult()
 // calibracao estava mesmo ativa (idempotente, seguro de chamar sempre).
 // Todo caminho de saida do assistente que NAO seja um apply bem sucedido
 // (cancelar em qualquer fase, abortar por timeout/canal desligado -
-// ambos so' saem de fato via cancelAutoTune() - ou o "panico" ENC1 hold
-// -> LIVE a partir de qualquer tela) precisa passar por aqui.
+// ambos so' saem de fato via cancelAutoTune() - ou o "panico" hold
+// repetido -> LIVE a partir de qualquer tela, Fase Y) precisa passar por
+// aqui.
 void restoreAutoTuneGainIfActive()
 {
     if (atState != AT_IDLE)
@@ -2679,52 +2664,20 @@ void goToLive()
     restoreAutoTuneGainIfActive();
     atState = AT_IDLE; // seguranca - nao deixa o assistente rodando fora da tela dele
     currentPage = PAGE_LIVE;
+    homeBrowsing = true; // reseta o "carrossel" do topo - Fase Y
+    editingValue = false;
+    globalEditing = false;
     forceScreenRedraw = true;
 }
 
-void onEnc1Rotate(int delta)
+// Rotate no "carrossel" do topo (currentPage LIVE/PADS/GLOBAL, homeBrowsing
+// true) - circular entre as 3 paginas. Fase Y.
+void cycleHomePage(int delta)
 {
-    if (currentPage == PAGE_AUTOTUNE)
-    {
-        return; // sem navegacao durante o assistente - so' ENC2 (aplicar/cancelar) ou hold (cancelar)
-    }
-
-    if (currentPage == PAGE_PAD_EDIT || currentPage == PAGE_SIGNAL)
-    {
-        editPadIndex = (editPadIndex + delta + NUM_PADS) % NUM_PADS;
-        editItemIndex = 0;
-        editingValue = false;
-        signalNeedsRedraw = true;
-    }
-    else
-    {
-        // Circular entre as 3 paginas de topo: LIVE <-> PADS <-> GLOBAL.
-        int order = currentPage == PAGE_LIVE ? 0 : currentPage == PAGE_PADS ? 1 : currentPage == PAGE_GLOBAL ? 2 : 0;
-        order = (order + delta + 3) % 3;
-        currentPage = order == 0 ? PAGE_LIVE : order == 1 ? PAGE_PADS : PAGE_GLOBAL;
-    }
+    int order = currentPage == PAGE_LIVE ? 0 : currentPage == PAGE_PADS ? 1 : currentPage == PAGE_GLOBAL ? 2 : 0;
+    order = (order + delta + 3) % 3;
+    currentPage = order == 0 ? PAGE_LIVE : order == 1 ? PAGE_PADS : PAGE_GLOBAL;
     forceScreenRedraw = true;
-}
-
-void onEnc1Click()
-{
-    if (currentPage == PAGE_AUTOTUNE)
-    {
-        return;
-    }
-
-    if (currentPage == PAGE_PAD_EDIT)
-    {
-        currentPage = PAGE_SIGNAL;
-        signalNeedsRedraw = true;
-        forceScreenRedraw = true;
-    }
-    else if (currentPage == PAGE_SIGNAL)
-    {
-        currentPage = PAGE_PAD_EDIT;
-        forceScreenRedraw = true;
-    }
-    // Sem efeito em LIVE/PADS/GLOBAL (design/SPEC.md).
 }
 
 int currentFieldStep(const FieldDef &field)
@@ -2734,15 +2687,39 @@ int currentFieldStep(const FieldDef &field)
         return 1;
     }
     unsigned long now = millis();
-    int step = (now - enc2LastStepMs) < 125 ? 5 : 1; // >8 detents/s = acelera (design/SPEC.md)
-    enc2LastStepMs = now;
+    int step = (now - encLastStepMs) < 125 ? 5 : 1; // >8 detents/s = acelera (design/SPEC.md)
+    encLastStepMs = now;
     return step;
 }
 
-void onEnc2Rotate(int delta)
+// Fase Y (encoder unico) - rotate SEMPRE navega: no topo (homeBrowsing)
+// troca de pagina; "descido" numa pagina, move a lista/item ou ajusta o
+// valor em edicao. Ver docs/01-decisoes-arquiteturais.md pro racional
+// completo (substitui os antigos onEnc1Rotate/onEnc2Rotate).
+void onEncRotate(int delta)
 {
+    if (currentPage == PAGE_AUTOTUNE)
+    {
+        return; // sem navegacao durante o assistente - so' click (aplicar/cancelar) ou hold (cancelar)
+    }
+
+    if (currentPage == PAGE_SIGNAL)
+    {
+        // Unica coisa pra navegar nessa tela: passear pelo grafico de
+        // outros pads sem precisar sair pra PAD_EDIT primeiro.
+        editPadIndex = (editPadIndex + delta + NUM_PADS) % NUM_PADS;
+        signalNeedsRedraw = true;
+        forceScreenRedraw = true;
+        return;
+    }
+
     if (currentPage == PAGE_PADS)
     {
+        if (homeBrowsing)
+        {
+            cycleHomePage(delta);
+            return;
+        }
         int next = (int)padsListSelection + delta;
         if (next < 0) next = 0;
         if (next > NUM_PADS - 1) next = NUM_PADS - 1;
@@ -2750,32 +2727,16 @@ void onEnc2Rotate(int delta)
         if (padsListSelection < padsListTop) padsListTop = padsListSelection;
         if (padsListSelection > padsListTop + 7) padsListTop = padsListSelection - 7;
         forceScreenRedraw = true;
+        return;
     }
-    else if (currentPage == PAGE_PAD_EDIT)
-    {
-        FieldDef fields[MAX_FIELDS_PER_PAD];
-        byte n = getFieldsForType(padTypes[editPadIndex], fields);
 
-        if (!editingValue)
-        {
-            int next = (int)editItemIndex + delta;
-            if (next < 0) next = 0;
-            if (next > n - 1) next = n - 1;
-            editItemIndex = next;
-        }
-        else
-        {
-            FieldDef &f = fields[editItemIndex];
-            int step = currentFieldStep(f) * (delta > 0 ? 1 : -1);
-            int value = getFieldValue(editPadIndex, f.id) + step;
-            if (value < f.minVal) value = f.minVal;
-            if (value > f.maxVal) value = f.maxVal;
-            setFieldValue(editPadIndex, f.id, value);
-        }
-        forceScreenRedraw = true;
-    }
-    else if (currentPage == PAGE_GLOBAL)
+    if (currentPage == PAGE_GLOBAL)
     {
+        if (homeBrowsing)
+        {
+            cycleHomePage(delta);
+            return;
+        }
         if (!globalEditing)
         {
             int next = (int)globalSelection + delta;
@@ -2799,7 +2760,37 @@ void onEnc2Rotate(int delta)
             unsavedChanges = true;
         }
         forceScreenRedraw = true;
+        return;
     }
+
+    if (currentPage == PAGE_PAD_EDIT)
+    {
+        FieldDef fields[MAX_FIELDS_PER_PAD];
+        byte n = getFieldsForType(padTypes[editPadIndex], fields);
+
+        if (!editingValue)
+        {
+            int next = (int)editItemIndex + delta;
+            if (next < 0) next = 0;
+            if (next > n - 1) next = n - 1;
+            editItemIndex = next;
+        }
+        else
+        {
+            FieldDef &f = fields[editItemIndex];
+            int step = currentFieldStep(f) * (delta > 0 ? 1 : -1);
+            int value = getFieldValue(editPadIndex, f.id) + step;
+            if (value < f.minVal) value = f.minVal;
+            if (value > f.maxVal) value = f.maxVal;
+            setFieldValue(editPadIndex, f.id, value);
+        }
+        forceScreenRedraw = true;
+        return;
+    }
+
+    // PAGE_LIVE: sempre homeBrowsing==true aqui (nada pra "descer" nessa
+    // pagina - ver onEncClick()).
+    cycleHomePage(delta);
 }
 
 void showToast(const char *line1, const char *line2)
@@ -2811,21 +2802,91 @@ void showToast(const char *line1, const char *line2)
     toastUntilMs = millis() + 900;
 }
 
-void onEnc2Click()
+// Fase Y (Y2, 2026-09-05: click confirma/sai do modo de editar valor
+// direto, sem precisar de hold - ver docs/01-decisoes-arquiteturais.md) -
+// click desce um nivel, alterna entra/sai do modo de edicao de valor
+// (PAD_EDIT/GLOBAL), ou dispara a acao imediata de uma linha (tipo
+// SALVAR/RESTAURAR/CALIBRAR). Hold nunca e' necessario pra confirmar nada
+// - so' serve pra voltar (ver onEncHold()). Substitui os antigos
+// onEnc1Click/onEnc2Click.
+void onEncClick()
 {
+    if (currentPage == PAGE_AUTOTUNE)
+    {
+        if (atState == AT_DONE)
+        {
+            applyAutoTuneResult();
+            showToast("CALIBRADO", "VALORES APLICADOS");
+        }
+        else if (atState == AT_ABORTED)
+        {
+            cancelAutoTune();
+        }
+        // Durante NOISE/WAITING/RISING/DECAYING/COOLDOWN, clicar nao faz
+        // nada - so' hold cancela no meio do assistente.
+        return;
+    }
+
+    if (currentPage == PAGE_SIGNAL)
+    {
+        return; // nada pra descer aqui - so' rotate (troca pad) e hold (volta)
+    }
+
     if (currentPage == PAGE_PADS)
     {
+        if (homeBrowsing)
+        {
+            homeBrowsing = false; // desce pra lista de pads
+            forceScreenRedraw = true;
+            return;
+        }
         editPadIndex = padsListSelection;
         editItemIndex = 0;
         editingValue = false;
         currentPage = PAGE_PAD_EDIT;
         forceScreenRedraw = true;
+        return;
     }
-    else if (currentPage == PAGE_PAD_EDIT)
+
+    if (currentPage == PAGE_GLOBAL)
+    {
+        if (homeBrowsing)
+        {
+            homeBrowsing = false; // desce pra lista de linhas do GLOBAL
+            forceScreenRedraw = true;
+            return;
+        }
+        if (globalSelection == GLOBAL_ROW_SAVE)
+        {
+            saveAllToEeprom();
+            showToast("SALVO", "32 PADS EM NVS");
+        }
+        else if (globalSelection == GLOBAL_ROW_RESTORE)
+        {
+            loadAllFromEeprom();
+            showToast("RESTAURADO", "32 PADS DA NVS");
+        }
+        else
+        {
+            // Click alterna entra/confirma-e-sai do modo de edicao (Fase Y2)
+            // - hold continua funcionando igual (e' so' "voltar", nunca
+            // exclusivo pra confirmar), mas nao e' mais necessario aqui.
+            globalEditing = !globalEditing;
+        }
+        forceScreenRedraw = true;
+        return;
+    }
+
+    if (currentPage == PAGE_PAD_EDIT)
     {
         FieldDef fields[MAX_FIELDS_PER_PAD];
         byte n = getFieldsForType(padTypes[editPadIndex], fields);
-        if (editItemIndex < n && fields[editItemIndex].id == FIELD_AUTOTUNE)
+        if (editItemIndex >= n)
+        {
+            return;
+        }
+        FieldId id = fields[editItemIndex].id;
+        if (id == FIELD_AUTOTUNE)
         {
             if (padEnabled[editPadIndex])
             {
@@ -2843,141 +2904,110 @@ void onEnc2Click()
                 forceScreenRedraw = true;
             }
         }
+        else if (id == FIELD_VIEW_SIGNAL)
+        {
+            currentPage = PAGE_SIGNAL;
+            signalNeedsRedraw = true;
+            forceScreenRedraw = true;
+        }
         else
         {
+            // Click alterna entra/confirma-e-sai do modo de edicao (Fase Y2)
+            // - hold continua funcionando igual (e' so' "voltar", nunca
+            // exclusivo pra confirmar), mas nao e' mais necessario aqui.
             editingValue = !editingValue;
             forceScreenRedraw = true;
         }
+        return;
     }
-    else if (currentPage == PAGE_GLOBAL)
-    {
-        if (globalSelection == GLOBAL_ROW_SAVE)
-        {
-            saveAllToEeprom();
-            showToast("SALVO", "32 PADS EM NVS");
-        }
-        else if (globalSelection == GLOBAL_ROW_RESTORE)
-        {
-            loadAllFromEeprom();
-            showToast("RESTAURADO", "32 PADS DA NVS");
-        }
-        else
-        {
-            globalEditing = !globalEditing;
-        }
-        forceScreenRedraw = true;
-    }
-    else if (currentPage == PAGE_AUTOTUNE)
-    {
-        if (atState == AT_DONE)
-        {
-            applyAutoTuneResult();
-            showToast("CALIBRADO", "VALORES APLICADOS");
-        }
-        else if (atState == AT_ABORTED)
-        {
-            cancelAutoTune();
-        }
-        // Durante NOISE/WAITING/RISING/DECAYING/COOLDOWN, clicar nao faz
-        // nada - so' ENC2 hold cancela no meio do assistente.
-    }
+
+    // PAGE_LIVE: nada pra descer (design/SPEC.md).
 }
 
-void onEnc1Hold()
+// Fase Y (Y2, 2026-09-05: PADS/GLOBAL viram excecao - hold ali vai direto
+// pra LIVE em vez de subir um nivel de cada vez, ver docs/01-decisoes-
+// arquiteturais.md) - hold sobe um nivel (o inverso do click) em
+// PAD_EDIT/SIGNAL/AUTOTUNE; em PADS/GLOBAL e' sempre o atalho direto pra
+// LIVE. Substitui os antigos onEnc1Hold/onEnc2Hold.
+void onEncHold()
 {
-    goToLive();
-}
-
-void onEnc2Hold()
-{
-    editingValue = false;
-    globalEditing = false;
-    if (currentPage == PAGE_PAD_EDIT)
+    if (currentPage == PAGE_AUTOTUNE)
     {
-        currentPage = PAGE_PADS;
-        forceScreenRedraw = true;
+        cancelAutoTune(); // cancela em qualquer estado, inclusive no meio da coleta de golpes
+        return;
     }
-    else if (currentPage == PAGE_SIGNAL)
+
+    if (currentPage == PAGE_SIGNAL)
     {
         currentPage = PAGE_PAD_EDIT;
         forceScreenRedraw = true;
+        return;
     }
-    else if (currentPage == PAGE_AUTOTUNE)
+
+    if (currentPage == PAGE_PAD_EDIT)
     {
-        cancelAutoTune(); // cancela em qualquer estado, inclusive no meio da coleta de golpes
+        if (editingValue)
+        {
+            editingValue = false;
+        }
+        else
+        {
+            currentPage = PAGE_PADS;
+            homeBrowsing = false; // volta pra lista de pads, nao pro carrossel do topo
+        }
+        forceScreenRedraw = true;
+        return;
     }
-    // PADS/GLOBAL/LIVE nao tem nivel abaixo - sem efeito (design/SPEC.md
-    // so define essa transicao a partir de PAD_EDIT/SIGNAL).
+
+    if (currentPage == PAGE_GLOBAL || currentPage == PAGE_PADS)
+    {
+        // Hold em PADS/GLOBAL vai direto pra LIVE, nao importa o sub-nivel
+        // (carrossel do topo, lista/linhas, ou editando um valor do
+        // GLOBAL) - pedido do Rodrigo, 2026-09-05: ver
+        // docs/01-decisoes-arquiteturais.md.
+        goToLive();
+        return;
+    }
+
+    // PAGE_LIVE: ja' e' o topo - hold so' garante que volta (idempotente).
+    goToLive();
 }
 
-void handleEncoders()
+void handleEncoder()
 {
-    long p1 = enc1.getPosition();
-    if (p1 != enc1LastPos)
+    long p = enc.getPosition();
+    if (p != encLastPos)
     {
-        onEnc1Rotate(p1 > enc1LastPos ? 1 : -1);
-        enc1LastPos = p1;
-    }
-
-    long p2 = enc2.getPosition();
-    if (p2 != enc2LastPos)
-    {
-        onEnc2Rotate(p2 > enc2LastPos ? 1 : -1);
-        enc2LastPos = p2;
+        onEncRotate(p > encLastPos ? 1 : -1);
+        encLastPos = p;
     }
 
     unsigned long now = millis();
 
-    bool raw1 = digitalRead(ENC1_SW);
-    if (raw1 != sw1State && (now - sw1DebounceMs) > SW_DEBOUNCE_MS)
+    bool raw = digitalRead(ENC_SW);
+    if (raw != swState && (now - swDebounceMs) > SW_DEBOUNCE_MS)
     {
-        sw1State = raw1;
-        sw1DebounceMs = now;
-        if (sw1State == LOW)
+        swState = raw;
+        swDebounceMs = now;
+        if (swState == LOW)
         {
-            sw1WaitingRelease = true;
-            sw1HoldFired = false;
-            sw1PressedAtMs = now;
+            swWaitingRelease = true;
+            swHoldFired = false;
+            swPressedAtMs = now;
         }
-        else if (sw1WaitingRelease)
+        else if (swWaitingRelease)
         {
-            sw1WaitingRelease = false;
-            if (!sw1HoldFired)
+            swWaitingRelease = false;
+            if (!swHoldFired)
             {
-                onEnc1Click();
+                onEncClick();
             }
         }
     }
-    if (sw1WaitingRelease && !sw1HoldFired && (now - sw1PressedAtMs) >= HOLD_MS)
+    if (swWaitingRelease && !swHoldFired && (now - swPressedAtMs) >= HOLD_MS)
     {
-        sw1HoldFired = true;
-        onEnc1Hold();
-    }
-
-    bool raw2 = digitalRead(ENC2_SW);
-    if (raw2 != sw2State && (now - sw2DebounceMs) > SW_DEBOUNCE_MS)
-    {
-        sw2State = raw2;
-        sw2DebounceMs = now;
-        if (sw2State == LOW)
-        {
-            sw2WaitingRelease = true;
-            sw2HoldFired = false;
-            sw2PressedAtMs = now;
-        }
-        else if (sw2WaitingRelease)
-        {
-            sw2WaitingRelease = false;
-            if (!sw2HoldFired)
-            {
-                onEnc2Click();
-            }
-        }
-    }
-    if (sw2WaitingRelease && !sw2HoldFired && (now - sw2PressedAtMs) >= HOLD_MS)
-    {
-        sw2HoldFired = true;
-        onEnc2Hold();
+        swHoldFired = true;
+        onEncHold();
     }
 }
 
@@ -3310,6 +3340,11 @@ bool renderPadEdit()
             strncpy(valueBuf, "INICIAR>", sizeof(valueBuf) - 1);
             valueBuf[sizeof(valueBuf) - 1] = '\0';
         }
+        else if (fields[idx].id == FIELD_VIEW_SIGNAL)
+        {
+            strncpy(valueBuf, "ABRIR>", sizeof(valueBuf) - 1);
+            valueBuf[sizeof(valueBuf) - 1] = '\0';
+        }
         else if (fields[idx].id == FIELD_ENABLED || fields[idx].id == FIELD_HIHAT_INVERT)
         {
             strncpy(valueBuf, getFieldValue(editPadIndex, fields[idx].id) ? "SIM" : "NAO", sizeof(valueBuf) - 1);
@@ -3323,14 +3358,6 @@ bool renderPadEdit()
         drawValueRow(y, fields[idx].label, valueBuf, sel, editingThis);
     }
 
-    canvas.fillRect(0, 116, canvas.width(), 12, COL_SURFACE);
-    canvas.setTextSize(1);
-    canvas.setTextColor(COL_TXT_DIM);
-    canvas.setCursor(4, 118);
-    canvas.print("ENC2 GIRA VALOR");
-    canvas.setTextColor(COL_EDIT);
-    canvas.setCursor(canvas.width() - 46, 118);
-    canvas.print("PUSH OK");
     return true;
 }
 
@@ -3442,19 +3469,36 @@ bool renderGlobal()
 
     if (showingToast)
     {
-        canvas.fillRect(14, 56, 100, 34, COL_BG);
-        canvas.drawRect(14, 56, 100, 34, COL_OK);
+        // Caixa centralizada na largura real da tela (160px) - antes usava
+        // x=14 (caixa de 100px indo ate' 114, centro em 64) com o texto
+        // centrado nesse mesmo 64, mas a tela tem 160px de largura (centro
+        // = 80) - caixa e texto ficavam os dois deslocados 16px pra
+        // esquerda do centro real. Bug reportado pelo Rodrigo, 2026-09-05.
+        canvas.fillRect(30, 56, 100, 34, COL_BG);
+        canvas.drawRect(30, 56, 100, 34, COL_OK);
         int16_t x1, y1;
         uint16_t w, h;
+        // Tamanho 2 (12px/char) so' cabe ate' uns 7 caracteres na caixa de
+        // 100px (92px uteis) - "RESTAURADO"/"CALIBRADO" nao cabem nesse
+        // tamanho e estouravam a caixa. Cai pro tamanho 1 quando o texto
+        // for largo demais, em vez de mensagem fixa por palavra. Bug
+        // reportado pelo Rodrigo, 2026-09-05.
         canvas.setTextSize(2);
         canvas.getTextBounds(toastLine1, 0, 0, &x1, &y1, &w, &h);
+        byte line1Size = 2;
+        if (w > 92)
+        {
+            canvas.setTextSize(1);
+            canvas.getTextBounds(toastLine1, 0, 0, &x1, &y1, &w, &h);
+            line1Size = 1;
+        }
         canvas.setTextColor(COL_OK);
-        canvas.setCursor(64 - (int)w / 2, 63);
+        canvas.setCursor(80 - (int)w / 2, line1Size == 2 ? 63 : 66);
         canvas.print(toastLine1);
         canvas.setTextSize(1);
         canvas.getTextBounds(toastLine2, 0, 0, &x1, &y1, &w, &h);
         canvas.setTextColor(COL_TXT_DIM);
-        canvas.setCursor(64 - (int)w / 2, 80);
+        canvas.setCursor(80 - (int)w / 2, 80);
         canvas.print(toastLine2);
     }
     return true;
@@ -3614,29 +3658,6 @@ bool renderAutoTune()
         }
     }
 
-    canvas.fillRect(0, 116, canvas.width(), 12, COL_SURFACE);
-    canvas.setTextSize(1);
-    if (atState == AT_DONE)
-    {
-        canvas.setTextColor(COL_OK);
-        canvas.setCursor(4, 118);
-        canvas.print("PUSH APLICA");
-        canvas.setTextColor(COL_TXT_DIM);
-        canvas.setCursor(canvas.width() - 52, 118);
-        canvas.print("HOLD SAI");
-    }
-    else if (atState == AT_ABORTED)
-    {
-        canvas.setTextColor(COL_TXT_DIM);
-        canvas.setCursor(4, 118);
-        canvas.print("PUSH/HOLD VOLTA");
-    }
-    else
-    {
-        canvas.setTextColor(COL_TXT_DIM);
-        canvas.setCursor(4, 118);
-        canvas.print("HOLD CANCELA");
-    }
     return true;
 }
 
@@ -3860,8 +3881,8 @@ void setup()
     // flutuando, ja' que o MUX0 nao esta' conectado de verdade ainda) -
     // pra testar o sensor hall (SS49E) do controlador de HH. Remover esse
     // bloco (e a leitura em loop()) quando o MUX chegar e a fiacao real
-    // dos 32 canais for feita - ver docs/02-hardware.md pro pino GPIO17
-    // usado aqui (livre, ADC2, sem uso previsto ate' entao).
+    // dos 32 canais for feita - ver docs/02-hardware.md pro pino GPIO9
+    // usado aqui (livre, ADC1, sem uso previsto ate' entao).
     padTypes[0] = PAD_SINGLE;
     padEnabled[0] = true;
     recomputeChannelPrimary();
@@ -3869,12 +3890,9 @@ void setup()
 
     renderBootProgress(80);
 
-    pinMode(ENC1_SW, INPUT_PULLUP);
-    pinMode(ENC2_SW, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(ENC1_A), isrEnc1, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(ENC1_B), isrEnc1, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(ENC2_A), isrEnc2, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(ENC2_B), isrEnc2, CHANGE);
+    pinMode(ENC_SW, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(ENC_A), isrEnc, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(ENC_B), isrEnc, CHANGE);
     renderBootProgress(100);
 
     // 2026-09-01, a pedido do Rodrigo - tela de boot ficava visivel por
@@ -3933,7 +3951,7 @@ void loop()
         autoTuneTick();
     }
 
-    handleEncoders();
+    handleEncoder();
     renderScreen();
     pollSerialCommands();
 }

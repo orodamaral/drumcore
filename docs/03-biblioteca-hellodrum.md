@@ -89,8 +89,9 @@ Build validado (compila e linka), **teste em hardware real ainda pendente**.
 
 A classe `HelloDrumButton` pressupõe 5 botões físicos (EDIT/UP/DOWN/NEXT/BACK),
 lidos via `readButtonState()` (que faz `digitalRead()` direto nos pinos do
-construtor). Como optamos por 2 encoders rotativos com chave em vez de botões
-(ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)), usamos o
+construtor). Como optamos por encoder(s) rotativo(s) com chave em vez de
+botões (2 até a Fase Y, 2026-09-04; 1 só depois — ver
+[01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)), usamos o
 overload `readButton(bool set, bool up, bool down, bool next, bool back)` —
 que já existe na lib exatamente para isso, sem precisar modificar nada. O
 `main.cpp` traduz cada evento de encoder (giro/clique) num pulso momentâneo de

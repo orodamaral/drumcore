@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gravar o firmware — DrumCore</title>
+<meta name="description" content="Passo a passo pra compilar e gravar o firmware do DrumCore num ESP32-S3 usando PlatformIO." />
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="dot"></span>DRUMCORE</a>
+    <ul class="navlinks">
+      <li><a href="index.html">Visão geral</a></li>
+      <li><a class="active" href="flash.html">Gravar firmware</a></li>
+      <li><a href="hardware.html">Hardware</a></li>
+      <li><a class="nav-gh" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">GitHub ↗</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero" style="padding: 52px 0 40px;">
+  <div class="wrap">
+    <p class="eyebrow">Guia rápido</p>
+    <h1 style="font-size: clamp(28px, 4.5vw, 40px);">Gravando o firmware na placa</h1>
+    <p class="lede">
+      O firmware é construído com <strong>PlatformIO</strong> (não Arduino IDE), pra manter
+      as dependências versionadas junto com o código. A placa alvo é um
+      <strong>ESP32-S3</strong> (módulo real usado: ESP32-S3-N16R8, 16MB flash + 8MB PSRAM octal).
+    </p>
+  </div>
+</header>
+
+<section class="block">
+  <div class="wrap">
+    <h2>Pré-requisitos</h2>
+    <p class="block-sub">Qualquer um dos dois caminhos abaixo funciona — o segundo é mais rápido se você só quer compilar/gravar sem abrir um editor.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="icon">🧩</div>
+        <h3>VS Code + extensão PlatformIO</h3>
+        <p>Instale a extensão "PlatformIO IDE" na Marketplace do VS Code. Ela já traz o CLI embutido e integra com os botões de build/upload.</p>
+      </div>
+      <div class="card">
+        <div class="icon">⌨️</div>
+        <h3>PlatformIO CLI standalone</h3>
+        <p>Com Python instalado: <code>pip install platformio</code>. Os comandos deste guia (<code>pio run ...</code>) funcionam direto no terminal depois disso.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <h2>Passo a passo</h2>
+    <ol class="steps">
+      <li>
+        <h3>Clone o repositório</h3>
+        <p>Pega o código-fonte completo (firmware, app desktop, hardware, documentação).</p>
+        <pre><code>git clone https://github.com/orodamaral/drumcore.git
+cd drumcore/firmware</code></pre>
+      </li>
+      <li>
+        <h3>Abra a pasta <code>firmware/</code></h3>
+        <p>No VS Code: <em>File → Open Folder</em>, aponte pra <code>firmware/</code> — o PlatformIO detecta o <code>platformio.ini</code> automaticamente. A biblioteca de sensing vendorizada em <code>firmware/lib/</code> é carregada junto, sem passo extra.</p>
+      </li>
+      <li>
+        <h3>Conecte a placa via USB-C</h3>
+        <p>Use um cabo USB-C que transmita dados (alguns cabos são só de energia). O sistema deve reconhecer uma porta serial nova (ex: <code>COM5</code> no Windows, <code>/dev/ttyUSB0</code>/<code>/dev/ttyACM0</code> no Linux).</p>
+      </li>
+      <li>
+        <h3>Compile</h3>
+        <p>Só pra conferir que fecha sem erro antes de gravar:</p>
+        <pre><code>pio run -e esp32-s3-devkitc-1</code></pre>
+      </li>
+      <li>
+        <h3>Grave na placa</h3>
+        <p>Compila de novo (se algo mudou) e já envia pro ESP32-S3 via USB:</p>
+        <pre><code>pio run -e esp32-s3-devkitc-1 -t upload</code></pre>
+        <div class="callout">
+          <span class="glyph">💡</span>
+          Se a porta certa não for detectada automaticamente, especifique com
+          <code>--upload-port COM5</code> (troque pela porta real da sua máquina).
+        </div>
+      </li>
+      <li>
+        <h3>Acompanhe pelo monitor serial (opcional)</h3>
+        <p>O firmware fala NDJSON a 115200 baud com o app desktop, mas também dá pra ver os logs direto:</p>
+        <pre><code>pio device monitor -b 115200</code></pre>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <h2>Ambientes de build disponíveis</h2>
+    <p class="block-sub">
+      <code>firmware/platformio.ini</code> define um ambiente principal e alguns ambientes de
+      teste isolado — cada um compila só um arquivo <code>.cpp</code> (com seu próprio
+      <code>setup()</code>/<code>loop()</code>), úteis pra validar uma peça de hardware
+      isoladamente sem o firmware inteiro no meio.
+    </p>
+    <div class="env-grid">
+      <div class="env-card">
+        <span class="env-name">esp32-s3-devkitc-1</span>
+        <p>Firmware principal — MUX, tela, encoder, USB-MIDI, BLE-MIDI, EEPROM, protocolo serial. É o que vai pro módulo de verdade.</p>
+        <code class="cmd">pio run -e esp32-s3-devkitc-1 -t upload</code>
+      </div>
+      <div class="env-card">
+        <span class="env-name">display_test</span>
+        <p>Só a tela TFT (logo de boot) — isolado de MUX/encoder/USB/BLE/EEPROM.</p>
+        <code class="cmd">pio run -e display_test -t upload</code>
+      </div>
+      <div class="env-card">
+        <span class="env-name">test_pads</span>
+        <p>Regressão do array de 32 pads da biblioteca de sensing — sem tela/MUX/USB/BLE.</p>
+        <code class="cmd">pio run -e test_pads -t upload</code>
+      </div>
+      <div class="env-card">
+        <span class="env-name">test_rgbled</span>
+        <p>LED RGB embutido (GPIO48) — teste mínimo de saúde do build/gravação.</p>
+        <code class="cmd">pio run -e test_rgbled -t upload</code>
+      </div>
+      <div class="env-card">
+        <span class="env-name">test_hall</span>
+        <p>Leitura direta do sensor hall (SS49E) no GPIO17, valor bruto do ADC na tela + Serial.</p>
+        <code class="cmd">pio run -e test_hall -t upload</code>
+      </div>
+    </div>
+    <p class="callout warn">
+      <span class="glyph">⚠️</span>
+      Todos usam a mesma placa serigrafada <code>esp32-s3-devkitc-1</code> do PlatformIO, mas
+      com overrides pro módulo real (N16R8 — 16MB flash, PSRAM octal). Se você usar outra
+      variante do ESP32-S3, confira <code>board_build.*</code>/<code>board_upload.*</code>
+      em <code>platformio.ini</code> antes de gravar.
+    </p>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    Dúvidas sobre o porquê de cada escolha de build (USB mode, PSRAM, link do TinyUSB)?
+    Ver <code>docs/01-decisoes-arquiteturais.md</code> no repositório — cada decisão de
+    infraestrutura tem o racional completo registrado.
+    <div class="foot-links">
+      <a href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Repositório no GitHub</a>
+      <a href="index.html">Visão geral</a>
+      <a href="hardware.html">Esquemático de ligação</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,25 +1,37 @@
 # Módulo de bateria eletrônica — Especificação de UI
 
-Hardware: ESP32-S3, display TFT 1.44" 128x128, 2 rotary encoders com botão, 32 pads.
-Referência visual: `Modulo Bateria UI.dc.html` (abra no navegador — telas em tamanho real e ampliadas).
+> **Nota de escopo (2026-09-05)**: este doc foi escrito na Fase J e cobre
+> fielmente o controle (seção 1-2) e os tokens visuais (seção 4-6), mas a
+> lista de parâmetros da seção 3 (SCR 3 — PAD_EDIT) ficou pra trás das
+> fases seguintes — o firmware real (`firmware/src/main.cpp`,
+> `getFieldsForType()`) hoje tem campos por tipo de sensor (RETRIGGER,
+> GAIN, XTALK/XTALK_GROUP, campos de aro/edge/cup, PEDAL_LINK,
+> HIHAT_INVERT, SINAL, CALIBRAR) e uma 7ª tela (AUTOTUNE) que não estão
+> documentados aqui. Não foi refeito nesta revisão (Fase Z) por ser um
+> escopo bem maior que o pinout/encoder — considerar como próximo passo.
+
+Hardware: ESP32-S3, display TFT ST7735 1.8" 128x160 (rodando em paisagem,
+160x128), 1 encoder rotativo com chave (Fase Y, 2026-09-04 — antes eram 2),
+32 pads.
+Referência visual: `Modulo Bateria UI.dc.html` (abra no navegador — telas em
+tamanho real e ampliadas). **Aviso**: esse mockup ainda mostra o controle de
+2 encoders antigo (pré-Fase Y) — não foi atualizado pro encoder único; use
+esta seção (1) e a seção 2 como fonte da verdade pro comportamento atual,
+não o mockup visual.
 
 ---
 
-## 1. Controles
+## 1. Controles (Fase Y — 1 encoder rotativo com chave)
 
-**ENC1 — página**
+Um encoder só cobre toda a navegação, via uma hierarquia de profundidade:
+girar navega no nível atual, clicar desce um nível (ou dispara a ação de
+uma linha), segurar sempre volta.
+
 | Evento | Ação |
 |---|---|
-| Girar | Troca de página: LIVE ◀▶ PADS ◀▶ GLOBAL (circular). Dentro de PAD_EDIT / SIGNAL, troca o pad em foco. |
-| Push | Alterna entre PAD_EDIT e SIGNAL do pad atual. Sem efeito nas páginas de topo. |
-| Hold 600 ms | Volta direto para LIVE de qualquer lugar. |
-
-**ENC2 — navegação e valor**
-| Evento | Ação |
-|---|---|
-| Girar | Move a seleção na lista. Em modo edição, altera o valor do parâmetro selecionado. |
-| Push | Entra no item / confirma. Em parâmetro, alterna entre navegar e editar. |
-| Hold 600 ms | Volta um nível na hierarquia. |
+| Girar | No topo (LIVE/PADS/GLOBAL): circula entre as 3 páginas. Dentro da lista de PADS ou das linhas do GLOBAL: move a seleção. Dentro de PAD_EDIT: move o item selecionado (ou ajusta o valor, se estiver em modo edição). Em SIGNAL: troca o pad em foco. Sem efeito em AUTOTUNE. |
+| Clique | Em PADS/GLOBAL no topo: desce pra dentro da lista/linhas. Em PADS: entra em PAD_EDIT no pad selecionado. Em PAD_EDIT: alterna entra/sai do modo de edição do valor selecionado, ou dispara a ação da linha (CALIBRAR inicia o auto-tune, SINAL abre a tela SIGNAL). Em GLOBAL: entra/sai de editar o campo, ou dispara SALVAR/RESTAURAR na hora. Em AUTOTUNE: aplica (se pronto) ou cancela (se abortado). |
+| Segurar 600 ms | Sempre volta um nível — exceto em PADS/GLOBAL, onde vai direto pra LIVE não importa o sub-nível. Em SIGNAL volta pra PAD_EDIT. Em AUTOTUNE cancela sempre. |
 
 Debounce sugerido: 5 ms nos pinos A/B, 25 ms no botão. Hold = 600 ms sem release.
 Aceleração: >8 detents/s muda o passo de 1 para 5 (apenas em valores 1–127).
@@ -27,18 +39,23 @@ Aceleração: >8 detents/s muda o passo de 1 para 5 (apenas em valores 1–127).
 ## 2. Máquina de estados
 
 ```
-BOOT --(init ok / qualquer botão)--> LIVE
+BOOT --(init ok)--> LIVE
 
-ENC1 girar:   LIVE <-> PADS <-> GLOBAL <-> LIVE   (circular)
+girar (topo):  LIVE <-> PADS <-> GLOBAL <-> LIVE   (circular)
 
-PADS      + ENC2 push      -> PAD_EDIT (pad selecionado)
-PAD_EDIT  + ENC2 push      -> alterna NAV <-> EDIT do parâmetro
-PAD_EDIT  + ENC2 hold      -> PADS (aplica valores no buffer RAM)
-PAD_EDIT  + ENC1 girar     -> pad anterior / próximo, mesma tela
-PAD_EDIT  + ENC1 push      -> SIGNAL (push de novo volta)
-GLOBAL    + ENC2 push em SALVAR    -> grava NVS + toast "SALVO"
-GLOBAL    + ENC2 push em RESTAURAR -> recarrega NVS + toast
-qualquer  + ENC1 hold      -> LIVE
+PADS      + click          -> entra na lista (desce do carrossel do topo)
+PADS      + click (na lista) -> PAD_EDIT (pad selecionado)
+PAD_EDIT  + click           -> alterna NAV <-> EDIT do parâmetro
+PAD_EDIT  + click em SINAL  -> SIGNAL
+PAD_EDIT  + click em CALIBRAR -> AUTOTUNE
+PAD_EDIT  + hold             -> PADS (lista, não o carrossel do topo)
+SIGNAL    + girar            -> pad anterior / próximo, mesma tela
+SIGNAL    + hold             -> PAD_EDIT
+GLOBAL    + click em SALVAR     -> grava NVS + toast "SALVO"
+GLOBAL    + click em RESTAURAR  -> recarrega NVS + toast
+PADS/GLOBAL + hold (qualquer sub-nível) -> LIVE
+AUTOTUNE  + click (pronto)   -> aplica valores, volta pra PAD_EDIT
+AUTOTUNE  + hold              -> cancela, volta pra PAD_EDIT
 ```
 
 Edição altera apenas o buffer em RAM. Persistência só acontece em GLOBAL > SALVAR.
@@ -53,7 +70,11 @@ Edição altera apenas o buffer em RAM. Persistência só acontece em GLOBAL > S
 - Sai para LIVE ao terminar init de ADC/MIDI/NVS.
 
 ### SCR 1 — LIVE
-- Barra de título 128x12: "LIVE" (ACCENT) à esquerda; à direita "USB" (OK se conectado, LINE se não) e "DIN".
+- Barra de título 128x12: "LIVE" (ACCENT) à esquerda; à direita "U" (USB, OK se
+  montado/conectado, LINE se não) e "B" (BLE-MIDI, OK se conectado, LINE se
+  não) — ver `firmware/src/main.cpp`, `renderLive()`. Não existe indicador de
+  DIN (decidido contra DIN MIDI no projeto todo, ver
+  [01-decisoes-arquiteturais.md](../docs/01-decisoes-arquiteturais.md)).
 - Grade 8x4 de células 14x14 em x=1, y=31. Gap 2 px horizontal, 8 px vertical (bloco 126x68).
 - Número do pad (01–32) centralizado na célula, size 1.
 - Estados da célula:
@@ -73,7 +94,7 @@ Edição altera apenas o buffer em RAM. Persistência só acontece em GLOBAL > S
 ### SCR 3 — PAD_EDIT
 - Título: "PAD nn" | "EDIT".
 - 7 linhas de 14 px (y=12..110) — cabem todas, sem rolagem.
-- Rodapé 128x12: "ENC2 GIRA VALOR" | "PUSH OK".
+- Sem rodapé de instrução (removido na Fase Y "Y2" — interface considerada simples o bastante sem ele).
 - Linha em navegação selecionada: fundo SURFACE, rótulo TXT.
 - Linha em modo edição: caixa do valor com fundo EDIT e texto BG.
 
@@ -101,7 +122,7 @@ Clamp nos limites, sem wrap-around.
 
 ### SCR 5 — GLOBAL
 - Título: "GLOBAL".
-- Linhas de 14 px: MIDI CH (1–16) · SAIDA (USB / DIN / USB+DIN) · BRILHO (10–100%) · KIT (01–nn) · SALVAR (ação) · RESTAURAR (ação).
+- Linhas de 14 px: MIDI CH (1–16) · SAIDA (USB / BLE / USB+BLE) · SALVAR (ação) · RESTAURAR (ação). (BRILHO e KIT nunca foram implementados — não há circuito de MIDI DIN nem controle de brilho da tela; ver docs/01-decisoes-arquiteturais.md, Fase J.)
 - Linha de ação selecionada usa o mesmo destaque da lista.
 - Toast: 100x34 centrado em x=14,y=56, borda OK 1 px, título size 2 e subtítulo size 1; visível 900 ms; salvar a região por baixo antes de desenhar para restaurar sem repintar a tela.
 

@@ -24,3 +24,7 @@ Thumbs.db
 
 # Nunca versionar arquivos de torrent/distribuicao de software.
 *.torrent
+
+# MCP config e locks de editor - especificos da maquina/sessao local
+.mcp.json
+hardware/**/~*.lck

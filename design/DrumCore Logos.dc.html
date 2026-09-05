@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Archivo:wght@500;700;900&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #0B0D0F; }
+  a { color: #00D2FF; text-decoration: none; }
+  a:hover { color: #FFB020; }
+</style>
+</helmet>
+
+<template id="__bundler_thumbnail" data-bg-color="#101418">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#101418" />
+    <g fill="#E6EDF3">
+      <rect x="420" y="290" width="70" height="70" /><rect x="505" y="290" width="70" height="70" /><rect x="675" y="290" width="70" height="70" />
+      <rect x="420" y="375" width="70" height="70" /><rect x="590" y="375" width="70" height="70" /><rect x="675" y="375" width="70" height="70" />
+    </g>
+    <rect x="590" y="290" width="70" height="70" fill="#FF7A1A" />
+    <rect x="420" y="490" width="325" height="26" fill="#00D2FF" />
+  </svg>
+</template>
+
+<section style="background:#0B0D0F;color:#E6EDF3;font-family:'Space Grotesk',sans-serif;padding:56px 64px 96px;display:flex;flex-direction:column;gap:40px">
+
+  <div style="display:flex;flex-direction:column;gap:10px;border-bottom:1px solid #38434D;padding-bottom:24px">
+    <div style="font-family:'Silkscreen',monospace;font-size:11px;letter-spacing:2px;color:#00D2FF">TURNO 1 · 5 DIREÇÕES</div>
+    <div style="font-size:38px;font-weight:700;letter-spacing:-0.5px">DrumCore — marcas</div>
+    <div style="font-size:15px;color:#7A8894;max-width:640px;text-wrap:pretty">Marcas tipográficas e geométricas, construídas na mesma paleta da UI. Cada opção mostra a versão grande, a versão 1-bit (para a tela de boot em 128 px) e o ícone quadrado.</div>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start">
+
+    <div id="1a" style="width:520px;background:#101418;border:1px solid #1E252B;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #1E252B">
+        <span style="font-family:'Silkscreen',monospace;font-size:11px;color:#FFB020">1A</span>
+        <span style="font-size:13px;color:#7A8894">Pixel · grade de pads</span>
+      </div>
+      <div style="padding:52px 20px;display:flex;flex-direction:column;align-items:center;gap:22px">
+        <div style="display:grid;grid-template-columns:repeat(8,14px);grid-auto-rows:14px;gap:3px">
+          <sc-for list="{{ gridCells }}" as="c" hint-placeholder-count="32">
+            <div style="width:14px;height:14px;background:{{ c.bg }}"></div>
+          </sc-for>
+        </div>
+        <div style="font-family:'Silkscreen',monospace;font-size:30px;letter-spacing:2px;color:#E6EDF3">DRUMCORE</div>
+      </div>
+      <div style="display:flex;border-top:1px solid #1E252B">
+        <div style="flex:1;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px;border-right:1px solid #1E252B">
+          <div style="font-family:'Silkscreen',monospace;font-size:13px;letter-spacing:1px;color:#FFFFFF">DRUMCORE</div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">1-BIT 128PX</span>
+        </div>
+        <div style="width:150px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px">
+          <div style="width:44px;height:44px;display:grid;grid-template-columns:repeat(4,9px);grid-auto-rows:9px;gap:2px;align-content:center;justify-content:center">
+            <sc-for list="{{ iconCells }}" as="c" hint-placeholder-count="16">
+              <div style="width:9px;height:9px;background:{{ c.bg }}"></div>
+            </sc-for>
+          </div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">ÍCONE</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="1b" style="width:520px;background:#101418;border:1px solid #1E252B;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #1E252B">
+        <span style="font-family:'Silkscreen',monospace;font-size:11px;color:#FFB020">1B</span>
+        <span style="font-size:13px;color:#7A8894">Peso partido · sans</span>
+      </div>
+      <div style="padding:64px 20px;display:flex;flex-direction:column;align-items:center;gap:14px">
+        <div style="font-family:'Archivo',sans-serif;font-size:56px;line-height:1;letter-spacing:-2px">
+          <span style="font-weight:500;color:#7A8894">DRUM</span><span style="font-weight:900;color:#E6EDF3">CORE</span>
+        </div>
+        <div style="width:264px;height:3px;background:#00D2FF"></div>
+      </div>
+      <div style="display:flex;border-top:1px solid #1E252B">
+        <div style="flex:1;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px;border-right:1px solid #1E252B">
+          <div style="font-family:'Archivo',sans-serif;font-size:19px;letter-spacing:-0.5px"><span style="font-weight:500;color:#7A8894">DRUM</span><span style="font-weight:900;color:#FFFFFF">CORE</span></div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">1-BIT 128PX</span>
+        </div>
+        <div style="width:150px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px">
+          <div style="width:44px;height:44px;background:#00D2FF;display:flex;align-items:center;justify-content:center;font-family:'Archivo',sans-serif;font-weight:900;font-size:22px;color:#101418;letter-spacing:-1px">DC</div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">ÍCONE</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="1c" style="width:520px;background:#101418;border:1px solid #1E252B;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #1E252B">
+        <span style="font-family:'Silkscreen',monospace;font-size:11px;color:#FFB020">1C</span>
+        <span style="font-size:13px;color:#7A8894">Núcleo concêntrico · lockup</span>
+      </div>
+      <div style="padding:48px 20px;display:flex;align-items:center;justify-content:center;gap:22px">
+        <div style="width:76px;height:76px;border:5px solid #E6EDF3;display:flex;align-items:center;justify-content:center;flex:none">
+          <div style="width:44px;height:44px;border:5px solid #E6EDF3;display:flex;align-items:center;justify-content:center">
+            <div style="width:16px;height:16px;background:#FF7A1A"></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="font-family:'Archivo',sans-serif;font-weight:900;font-size:38px;line-height:1;letter-spacing:-1.5px">DRUMCORE</div>
+          <div style="font-family:'Silkscreen',monospace;font-size:10px;letter-spacing:3px;color:#7A8894">TRIGGER MODULE</div>
+        </div>
+      </div>
+      <div style="display:flex;border-top:1px solid #1E252B">
+        <div style="flex:1;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px;border-right:1px solid #1E252B">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:22px;height:22px;border:2px solid #FFFFFF;display:flex;align-items:center;justify-content:center;flex:none">
+              <div style="width:8px;height:8px;background:#FFFFFF"></div>
+            </div>
+            <div style="font-family:'Archivo',sans-serif;font-weight:900;font-size:17px;letter-spacing:-0.5px;color:#FFFFFF">DRUMCORE</div>
+          </div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">1-BIT 128PX</span>
+        </div>
+        <div style="width:150px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px">
+          <div style="width:44px;height:44px;border:3px solid #E6EDF3;display:flex;align-items:center;justify-content:center;box-sizing:border-box">
+            <div style="width:24px;height:24px;border:3px solid #E6EDF3;box-sizing:border-box;display:flex;align-items:center;justify-content:center">
+              <div style="width:8px;height:8px;background:#FF7A1A"></div>
+            </div>
+          </div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">ÍCONE</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="1d" style="width:520px;background:#101418;border:1px solid #1E252B;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #1E252B">
+        <span style="font-family:'Silkscreen',monospace;font-size:11px;color:#FFB020">1D</span>
+        <span style="font-size:13px;color:#7A8894">Envelope · linha de base</span>
+      </div>
+      <div style="padding:54px 20px 44px;display:flex;flex-direction:column;align-items:center;gap:0">
+        <div style="font-family:'Archivo',sans-serif;font-weight:700;font-size:48px;line-height:1;letter-spacing:5px;color:#E6EDF3">DRUMCORE</div>
+        <div style="width:326px;display:flex;align-items:flex-end;gap:3px;height:26px;margin-top:12px">
+          <sc-for list="{{ bars }}" as="b" hint-placeholder-count="24">
+            <div style="flex:1;height:{{ b.h }};background:{{ b.c }}"></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display:flex;border-top:1px solid #1E252B">
+        <div style="flex:1;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px;border-right:1px solid #1E252B">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+            <div style="font-family:'Archivo',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:#FFFFFF">DRUMCORE</div>
+            <div style="width:110px;display:flex;align-items:flex-end;gap:2px;height:9px">
+              <sc-for list="{{ barsMono }}" as="b" hint-placeholder-count="16">
+                <div style="flex:1;height:{{ b.h }};background:#FFFFFF"></div>
+              </sc-for>
+            </div>
+          </div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">1-BIT 128PX</span>
+        </div>
+        <div style="width:150px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px">
+          <div style="width:44px;height:44px;border:1px solid #38434D;display:flex;align-items:flex-end;justify-content:center;gap:2px;padding:0 5px 7px;box-sizing:border-box">
+            <sc-for list="{{ barsIcon }}" as="b" hint-placeholder-count="7">
+              <div style="width:3px;height:{{ b.h }};background:{{ b.c }}"></div>
+            </sc-for>
+          </div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">ÍCONE</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="1e" style="width:520px;background:#101418;border:1px solid #1E252B;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #1E252B">
+        <span style="font-family:'Silkscreen',monospace;font-size:11px;color:#FFB020">1E</span>
+        <span style="font-size:13px;color:#7A8894">Placa · monograma em caixa</span>
+      </div>
+      <div style="padding:48px 20px;display:flex;flex-direction:column;align-items:center;gap:18px">
+        <div style="display:flex;align-items:stretch;border:3px solid #E6EDF3">
+          <div style="background:#E6EDF3;color:#101418;font-family:'Archivo',sans-serif;font-weight:900;font-size:44px;padding:8px 14px;letter-spacing:-2px;line-height:1.1">DC</div>
+          <div style="display:flex;flex-direction:column;justify-content:center;padding:0 18px;gap:3px">
+            <span style="font-family:'Archivo',sans-serif;font-weight:700;font-size:24px;letter-spacing:1px;line-height:1">DRUMCORE</span>
+            <span style="font-family:'Silkscreen',monospace;font-size:8px;letter-spacing:2px;color:#00D2FF">32 PAD · ESP32-S3</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;border-top:1px solid #1E252B">
+        <div style="flex:1;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px;border-right:1px solid #1E252B">
+          <div style="display:flex;align-items:stretch;border:1px solid #FFFFFF">
+            <div style="background:#FFFFFF;color:#101418;font-family:'Archivo',sans-serif;font-weight:900;font-size:16px;padding:2px 5px;line-height:1.2;letter-spacing:-1px">DC</div>
+            <span style="font-family:'Archivo',sans-serif;font-weight:700;font-size:13px;letter-spacing:1px;color:#FFFFFF;padding:3px 7px">DRUMCORE</span>
+          </div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">1-BIT 128PX</span>
+        </div>
+        <div style="width:150px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px">
+          <div style="width:44px;height:44px;background:#E6EDF3;color:#101418;font-family:'Archivo',sans-serif;font-weight:900;font-size:21px;display:flex;align-items:center;justify-content:center;letter-spacing:-1.5px">DC</div>
+          <span style="font-family:'Silkscreen',monospace;font-size:8px;color:#38434D">ÍCONE</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px;border-top:1px solid #1E252B;padding-top:28px">
+    <div style="font-family:'Silkscreen',monospace;font-size:11px;letter-spacing:2px;color:#FFB020">NA TELA DE BOOT</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap">
+      <sc-for list="{{ bootIds }}" as="b" hint-placeholder-count="3">
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:center">
+          <div style="width:256px;height:256px;background:#101418;border:1px solid #38434D;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+            <div style="font-family:{{ b.font }};font-weight:{{ b.weight }};font-size:{{ b.size }};letter-spacing:{{ b.tracking }};color:#00D2FF;text-align:center">DRUMCORE</div>
+            <div style="width:160px;height:8px;background:#1E252B"><div style="width:104px;height:8px;background:#00D2FF"></div></div>
+            <div style="position:absolute;bottom:18px;font-family:'Silkscreen',monospace;font-size:14px;color:#38434D">v0.1  ESP32-S3</div>
+          </div>
+          <span style="font-family:'Silkscreen',monospace;font-size:9px;color:#7A8894">{{ b.id }} · 128PX @2X</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;hitColor&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#FF7A1A&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#FF7A1A&quot;,&quot;#FF3B5C&quot;,&quot;#FFB020&quot;,&quot;#00D2FF&quot;],&quot;section&quot;:&quot;Tema&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const hit = this.props.hitColor ?? '#FF7A1A';
+    const on = '#E6EDF3';
+    const off = '#1E252B';
+
+    const lit = [1, 2, 5, 6, 9, 11, 12, 14, 17, 18, 21, 22, 25, 26, 29, 30];
+    const gridCells = Array.from({ length: 32 }, (_, i) => ({
+      bg: i === 12 ? hit : lit.includes(i) ? on : off
+    }));
+
+    const iconLit = [1, 2, 4, 7, 8, 11, 13, 14];
+    const iconCells = Array.from({ length: 16 }, (_, i) => ({
+      bg: i === 5 ? hit : iconLit.includes(i) ? on : off
+    }));
+
+    const env = [4, 26, 22, 25, 18, 20, 15, 17, 12, 14, 10, 12, 8, 9, 7, 8, 6, 6, 5, 5, 4, 4, 3, 3];
+    const bars = env.map((h, i) => ({ h: h + 'px', c: i < 2 ? hit : on }));
+    const barsMono = env.filter((_, i) => i % 2 === 0).slice(0, 16).map(h => ({ h: Math.max(1, Math.round(h / 3)) + 'px' }));
+    const barsIcon = [4, 22, 17, 13, 10, 7, 5].map((h, i) => ({ h: h + 'px', c: i === 1 ? hit : on }));
+
+    const bootIds = [
+      { id: '1A', font: "'Silkscreen',monospace", weight: 400, size: '30px', tracking: '2px' },
+      { id: '1B', font: "'Archivo',sans-serif", weight: 900, size: '34px', tracking: '-1px' },
+      { id: '1D', font: "'Archivo',sans-serif", weight: 700, size: '28px', tracking: '4px' }
+    ];
+
+    return { gridCells, iconCells, bars, barsMono, barsIcon, bootIds };
+  }
+}
+</script>
+</body>
+</html>

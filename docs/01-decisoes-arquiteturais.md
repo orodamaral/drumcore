@@ -190,6 +190,15 @@ pesou mais que a velocidade extra da TFT_eSPI.
 
 ## 2026-08-20 — Navegação: 2 encoders rotativos com chave (em vez de 5 botões)
 
+> **Atualização (Fase J, 2026-08-21)**: mapeamento de rotação/clique
+> redesenhado por completo pra navegação de 6 telas — ver entrada "Fase J"
+> mais abaixo. **Atualização (Fase Y, 2026-09-04)**: reduzido de 2
+> encoders pra 1 só (rotate navega, click desce um nível/confirma, hold
+> sobe um nível) — ver entrada "Fase Y". Mantida aqui como registro
+> histórico do porquê os encoders (2, na época) foram escolhidos no lugar
+> dos 5 botões originais da lib — esse racional continua válido mesmo com
+> 1 encoder só.
+
 **Decisão**: usar 2 encoders rotativos com chave (push-button) para navegar e
 editar a configuração, em vez dos 5 botões discretos (EDIT/UP/DOWN/NEXT/BACK)
 que a classe `HelloDrumButton` pressupõe nos exemplos originais da lib.
@@ -612,8 +621,9 @@ essa fonte diretamente, sem precisar do hack de substring.
 **Simulador atualizado em paralelo**: `HardwareSimulator.tsx` replica os
 dois estados novos (grid com hits simulados periodicamente, velocímetro via
 SVG) usando as mesmas constantes de tempo (`IDLE_TIMEOUT_MS`,
-`PAD_FLASH_MS`) pra ficar fiel ao firmware. Ver
-[06-simulador-hardware.md](06-simulador-hardware.md).
+`PAD_FLASH_MS`) pra ficar fiel ao firmware (esse simulador — e o doc que o
+descrevia — foi removido do app desktop em 2026-09-04, ver Fase Y mais
+abaixo).
 
 **Status de validação**: build/typecheck do firmware e do app passam
 limpo. **Nada testado em hardware real** — em especial, a legibilidade do
@@ -2199,3 +2209,201 @@ linha rotacionável, não um checkbox separado.
 **Nunca testado com hardware real** — nem o sensor físico (FSR/VH-10/
 VH-11/TCRT5000), nem o assistente de captura de range. Ver
 [05-tipos-de-sensor.md](05-tipos-de-sensor.md), seção final.
+
+## 2026-09-04 — Fase Y: navegação reduzida de 2 encoders pra 1 (rotate/click/hold)
+
+**Motivação (Rodrigo)**: revisando o uso real da tela (Fase J), o ENC1
+(página/pad em foco) tinha poucas responsabilidades na prática — só troca
+de página no topo (LIVE/PADS/GLOBAL) e troca de pad dentro de
+PAD_EDIT/SIGNAL — enquanto o ENC2 concentrava quase toda a navegação
+(item, valor, confirmar, salvar/restaurar, disparar auto-tune). Decisão:
+manter 1 encoder só, cobrindo tudo via uma hierarquia de profundidade
+(rotate = navega no nível atual, click = desce um nível, hold = sobe um
+nível), em vez de 2 eixos simultâneos. Checkpoint de git criado antes
+dessa mudança (commit `373dfb9`), caso a UI de 1 encoder não ficasse boa.
+
+**Hardware**: mantidos os pinos GPIO41/40/39 (antes ENC2_A/B/SW) como o
+encoder único (`ENC_A`/`ENC_B`/`ENC_SW`) — era o que tinha mais lógica já
+testada. GPIO1/2/42 (antes ENC1_A/B/SW) ficam livres/sobressalentes no
+header direito.
+
+**Modelo de profundidade** (substitui o mapeamento de 2 encoders da seção
+"Navegação: 2 encoders..." acima, já desatualizada desde a Fase J):
+- Topo (`homeBrowsing == true`, páginas LIVE/PADS/GLOBAL): rotate circula
+  entre as 3; click em PADS/GLOBAL desce pra dentro da lista/linhas dessa
+  página (`homeBrowsing = false`); sem efeito em LIVE (nada pra descer).
+- PADS (`homeBrowsing == false`): rotate move o cursor da lista; click
+  entra em PAD_EDIT no pad selecionado; hold sobe de volta pro topo (ou
+  vai direto pra LIVE se já não tinha nada abaixo — "pânico" repetido).
+- PAD_EDIT: rotate move o item selecionado (ou ajusta o valor, se
+  `editingValue`); click entra em editar o valor (`editingValue = true`,
+  antes era toggle — agora só entra, sair é só via hold) ou dispara a
+  ação da linha (CALIBRAR/SINAL); hold sai da edição de valor, ou volta
+  pra PADS (mantendo `homeBrowsing = false`, ou seja volta pra dentro da
+  lista, não pro carrossel do topo).
+- GLOBAL: mesmo padrão de PADS+PAD_EDIT combinados (linha selecionada →
+  editando valor), com SALVAR/RESTAURAR disparando na hora do click, sem
+  entrar em modo de edição.
+- SIGNAL/AUTOTUNE: sem esse conceito de profundidade — SIGNAL só usa
+  rotate (troca de pad, era o antigo ENC1 rotate) e hold (volta pra
+  PAD_EDIT); AUTOTUNE só usa click (aplicar/cancelar) e hold (cancelar
+  sempre), igual antes.
+
+**Item novo "SINAL" em PAD_EDIT**: antes, alternar entre PAD_EDIT e
+SIGNAL (gráfico ao vivo do sinal) era o click do ENC1 — uma ação lateral
+que não cabe no modelo de profundidade linear de 1 encoder só. Virou uma
+linha universal na lista de campos (`FIELD_VIEW_SIGNAL`, rótulo "SINAL",
+logo antes de "CALIBRAR"), clicável igual ao auto-tune — subiu
+`MAX_FIELDS_PER_PAD` de 17 pra 18 (o pad mais cheio, 3 zonas, já usava os
+17 antigos por inteiro).
+
+**Protocolo serial**: `enc_input` continua aceitando `"enc": 1` ou `2`
+(compatibilidade com o app desktop existente) — os dois valores agora
+caem no mesmo handler único (`onEncRotate`/`onEncClick`/`onEncHold`). Não
+quebra o app, mas o app não reflete mais o comportamento real do hardware
+físico (só 1 encoder).
+
+**Nunca testado com hardware real** — a lógica foi só compilada/gravada
+(`pio run -e esp32-s3-devkitc-1 -t upload`), sem o encoder físico
+conectado ainda pra confirmar a navegação na tela.
+
+**Ajuste (2026-09-05, "Y2")**: 2 refinamentos pedidos depois de usar a
+navegação de 1 encoder na prática:
+- **Click volta a alternar** entra/sai do modo de edição de valor em
+  PAD_EDIT/GLOBAL (não é mais só "entra, sair é via hold" como descrito
+  acima) — testando, ficou claro que exigir hold só pra confirmar um
+  valor já ajustado era fricção desnecessária. Hold continua funcionando
+  igual (sempre "voltar"), só deixou de ser a ÚNICA forma de sair da
+  edição.
+- **Hold em PADS/GLOBAL vai direto pra LIVE**, não importa o sub-nível
+  (carrossel do topo, lista/linhas, ou editando um valor) — em vez de
+  subir um nível de cada vez feito nesses casos.
+- Rodapés de instrução nas telas PAD_EDIT/AUTOTUNE (ex: "GIRA SELECIONA"/
+  "PUSH ENTRA") removidos — interface considerada simples o bastante sem
+  eles.
+
+**Simulador do app desktop removido (2026-09-04, mesmo dia)**:
+`HardwareSimulator.tsx`/`EncoderRemote.tsx`/`docs/06-simulador-hardware.md`
+(e ~400 linhas de CSS associadas) foram apagados por completo — não fazia
+mais sentido simular 2 encoders físicos que deixaram de existir, e
+recriar o simulador pro modelo de 1 encoder seria trabalho duplicado sem
+pedido concreto. A configuração de pads (`PadEditor.tsx`/`PadGrid.tsx`) e
+o modo demo (`mockDevice.ts`) não dependiam do simulador e continuam
+intactos. Isso resolve o "próximo passo" que a nota original de protocolo
+(logo acima) tinha deixado em aberto.
+
+## 2026-09-05 — Fase Z: pinout reorganizado por função (encoder+tela vs MUX)
+
+**Motivação (Rodrigo)**: a ideia de 1 encoder só (Fase Y) foi aprovada em
+definitivo. Segundo pedido: reorganizar o pinout físico — encoder e tela
+devem sair de um lado da placa, o MUX do outro, sempre seguindo a
+contiguidade dos pinos usados em cada header. Sobre `3V3`/`GND`: não
+precisa se preocupar, porque a placa física vai ganhar esses pads
+disponíveis nos dois lados (modificação por fora do dev board original) —
+isso é o que abre espaço pra reorganizar por função em vez de por
+alimentação (que era a restrição real por trás da divisão da Fase L).
+
+**Novo critério de divisão**: até aqui (Fase L), a regra era "quem precisa
+de VCC fica no header esquerdo, que é o único com `3V3`". Com `3V3`/`GND`
+nos dois headers, a regra virou "agrupar por função": interface do
+usuário (encoder + tela) de um lado, sensing (2x CD4067) do outro. A
+regra de contiguidade física (cada subsistema usa um bloco de pinos sem
+nenhum outro sinal no meio) continua igual — só mudou o critério de quais
+sinais formam cada bloco.
+
+**Como os blocos bateram exatos, sem sobra**: o header esquerdo tem um
+bloco contíguo de exatamente 9 GPIOs livres logo após o `3V3`/`RST`
+(`4,5,6,7,15,16,17,18,8` — descontando os 2 pinos de strapping `3`/`46`
+que ficam no meio dessa faixa física) — e encoder (3 sinais) + tela (6
+sinais) somam exatamente 9. O header direito tem um bloco contíguo de
+6 GPIOs (`1,2,42,41,40,39` — a mesma faixa que os 2 encoders usavam antes
+da Fase Y, descontando o `GPIO38` evitado) — e o MUX (S0-S3 + SIG0 + SIG1)
+precisa de exatamente 6. Coincidência conveniente, não foi preciso abrir
+mão de contiguidade em lugar nenhum pra fazer a troca.
+
+**Pinout resultante**:
+| Header | Sinal | GPIO (era) |
+|---|---|---|
+| Esquerdo | Encoder A | 4 (era MUX S0) |
+| Esquerdo | Encoder B | 5 (era MUX S1) |
+| Esquerdo | Encoder SW | 6 (era MUX S2) |
+| Esquerdo | TFT DC | 7 (era MUX S3) |
+| Esquerdo | TFT CS | 15 (era MUX SIG0) |
+| Esquerdo | TFT MOSI | 16 (era MUX SIG1) |
+| Esquerdo | TFT SCLK | 17 (era teste hall temporário) |
+| Esquerdo | TFT BLK | 18 (era livre) |
+| Esquerdo | TFT RST | 8 (era livre) |
+| Direito | MUX S0 | 42 (era Encoder SW) |
+| Direito | MUX S1 | 41 (era Encoder B) |
+| Direito | MUX S2 | 40 (era Encoder A) |
+| Direito | MUX S3 | 39 (era livre) |
+| Direito | MUX0 SIG | 1 (era livre, ex-ENC1 A) |
+| Direito | MUX1 SIG | 2 (era livre, ex-ENC1 B) |
+
+**Ajuste (2026-09-06)**: a tabela acima foi a primeira versão da Fase Z,
+com a tela na mesma ordem de sinais que ela já usava antes (DC/CS/MOSI/
+SCLK/BLK/RST, só migrada de posição). O Rodrigo pediu pra reordenar os 6
+GPIOs da tela pra bater com a ordem física real do conector dela (`GND
+VDD SCL SDA RES DC CS BLK`) — dentro do MESMO bloco de pinos (`7,15,16,
+17,18,8`, a posição não mudou, só qual sinal vai em cada um):
+`SCL(7) → SDA(15) → RES(16) → DC(17) → CS(18) → BLK(8)`. Isso é o mesmo
+tipo de espelhamento que a Fase L original fazia (antes perto do `GND` da
+base do header; agora dentro do bloco novo, com `GND`/`VDD` da tela indo
+em pads extras adicionados perto desse bloco). Atualizados
+`firmware/src/main.cpp` (`#define TFT_SCLK/MOSI/RST/DC/CS/BLK`),
+`docs/02-hardware.md` e o esquemático (`docs/assets/
+esquematico-hellodrum.html` + cópia em `site/`).
+
+**ADC1 em vez de ADC2 pro MUX**: dentro do bloco `1,2,42,41,40,39`, só
+`GPIO1`/`GPIO2` têm ADC (ADC1_CH0/CH1) — os outros 4 (`42,41,40,39`) não
+têm ADC nenhum, então SIG0/SIG1 (que precisam ler tensão analógica) só
+podiam ir neles. Isso troca o MUX de ADC2 (Fase L, GPIO15/16) pra ADC1 —
+simplifica o racional: ADC2 exigia justificar "tá seguro pq o projeto não
+usa Wi-Fi"; ADC1 nunca conflita com nada, esse cuidado nem precisa
+existir mais.
+
+**Teste temporário do sensor hall migrado**: `TEST_DIRECT_HEAD_PIN` (ver
+Fase S) usava GPIO17 — que virou `TFT_SCLK`, um sinal permanente agora.
+Migrado pra GPIO9 (livre, ADC1, no antigo bloco da tela que ficou
+desocupado).
+
+**Correção encontrada de brinde**: `docs/02-hardware.md` listava
+`GPIO43`/`GPIO44` como "livres, sem uso previsto" — na verdade são o UART
+físico que o firmware usa pra `Serial` (protocolo NDJSON) quando compilado
+com `ARDUINO_USB_CDC_ON_BOOT=0` (Fase R). Corrigido.
+
+**Arquivos atualizados**: `firmware/src/main.cpp` (defines + comentário
+de racional do pinout), `docs/02-hardware.md` (reescrito por completo —
+divisão, tabelas, notas), `docs/assets/esquematico-hellodrum.html` (SVG
+redesenhado com MUX no header direito e encoder+tela no esquerdo — cópia
+sincronizada em `site/assets/schematic.html`).
+
+**Pendente — projeto KiCad real não foi tocado**: `hardware/mainboard/
+drumcore_mainboard.kicad_sch`/`.kicad_pcb` ainda têm o desenho de **2
+encoders físicos** (símbolos `RotaryEncoder_Switch` duplicados, nets
+`ENC1_*`/`ENC2_*`, conector `ENCODERS_CONN`) — a Fase Y só mudou o
+firmware (liberou GPIO1/2/42), nunca atualizou a placa; a Fase Z também
+não conseguiu (ferramenta de edição de KiCad — Konnect MCP — indisponível
+nesta sessão). Falta decidir e aplicar: remover o footprint do 2º encoder
+do design (ou deixar posicionado e não montar), e mover as nets do MUX/
+tela/encoder pros headers corretos no esquemático e no PCB.
+
+**Resolvido (2026-09-06) — mainboard aposentada, não atualizada**:
+Rodrigo decidiu que não vale mais a pena manter um PCB dedicado pra
+mainboard — com o pinout novo (Fase Z), a fiação ficou pouca o bastante
+(1 encoder + 1 tela de um lado, MUX do outro, tudo em blocos contíguos)
+pra conectar tudo direto nos headers da própria placa de dev do ESP32-S3,
+sem precisar desenhar/fabricar uma PCB própria. `hardware/mainboard/`
+(o `.kicad_sch`/`.kicad_pcb`/`.kicad_pro`/`.kicad_prl` e o `.png`) foi
+**apagado do repositório** — o pendente acima (2 encoders desatualizados
+no design) fica sem efeito, não existe mais projeto pra corrigir. A
+jackboard (`hardware/jackboard/`) continua normalmente, é uma placa de
+verdade (conectores TRS + rede de proteção) que ainda faz sentido
+fabricar.
+
+**Validado em hardware real (2026-09-06)**: Rodrigo religou o encoder
+(GPIO4/5/6) e a tela (GPIO7/15/16/17/18/8, ordem ajustada pro conector
+dela) nesse pinout novo e confirmou os dois funcionando — navegação por
+encoder e imagem na tela. **Ainda não validado**: o MUX (header direito,
+GPIO1/2/42/41/40/39) — o CD4067 físico ainda não foi conectado nesse
+layout.

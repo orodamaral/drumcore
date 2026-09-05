@@ -2,6 +2,147 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-06 — Jackboard: roteamento completo, silk final, logo e ajuste de placa
+
+- **Roteamento completo** (via Konnect MCP): as 16 trilhas de canal (U1 →
+  rede de proteção de cada canal) e o barramento de controle U2↔J9 (S0-S3,
+  SIG, +3V3, GND) foram totalmente roteados. Conflitos de cruzamento
+  resolvidos com detours e com divisão de camada (56 trilhas de junção
+  série→paralelo→diodo movidas pra B.Cu). DRC limpo: 0 `shorting_items`,
+  0 `unconnected_items` — só ficam os 112 avisos de courtyard/PTH aceitos
+  por design (footprints de jack fisicamente próximos dos resistores/diodos
+  do canal, sem risco elétrico real).
+- **U1/U2 recentralizados**: os headers do HC4067 (U1, 16 pinos) e do
+  header de controle (U2, 8 pinos) estavam deslocados ~8mm à direita do
+  centro real da placa (resquício de uma placa mais larga de uma fase
+  anterior). Corrigido com um shift uniforme de -8.32mm em X nos dois, com
+  re-roteamento completo das 66 trilhas afetadas.
+- **Silkscreen só com referência (sem valor)**: referências dos resistores/
+  diodos (R.SilkS/F.SilkS) ajustadas à mão pelo Rodrigo no KiCad — texto de
+  valor ocultado, referência rotacionada legível dentro do componente.
+  Nenhuma ferramenta Konnect expõe edição de `fp_text`/rotação hoje (só
+  gráficos de footprint, não texto) — ajuste feito direto na UI do KiCad.
+- **Logo "DRUMCORE" na serigrafia** (F.SilkS, canto superior esquerdo):
+  wordmark pixel-art 5x7 (134 quadrados), direção 1A do `design/LOGOS.md`.
+  Construído pixel a pixel via `import_svg_logo` (a ferramenta só persiste
+  a 1ª forma de um SVG multi-shape — workaround: 1 chamada por pixel, com
+  um SVG reutilizável de 1 quadrado). Colocado por engano em B.SilkS
+  (verso) na primeira tentativa; corrigido para F.SilkS (frente/topo).
+- **Pad de teste +3V3 no estilo dos resistores**: o antigo via de acesso a
+  +3V3 perto do J1 foi substituído por um footprint de pad único (círculo
+  THT 1.6mm/furo 0.8mm, mesmas dimensões do pad dos resistores) — criado via
+  `create_footprint` na biblioteca local do projeto
+  (`drumcore_jackboard.pretty/TestPoint_3V3.kicad_mod`). O net do pad não
+  pôde ser atribuído por nenhuma ferramenta Konnect (sem símbolo no
+  esquemático, não há chamada de "atribuir net a um pad solto"); atribuído
+  manualmente pelo Rodrigo no KiCad (Pad Properties → Net → `/+3V3`).
+- **Ajuste de dimensão da placa**: altura reduzida em ~2.5mm (feito manualmente
+  pelo Rodrigo no KiCad) pra deixar a rosca de um dos jacks pra fora da
+  placa. A malha de GND (`GND_POUR_BOTTOM`, B.Cu) foi recriada com o novo
+  contorno e recalculada (`refill_zones`).
+- **Gerbers regenerados** (3x ao longo do dia, conforme cada ajuste acima) em
+  `hardware/jackboard/fab/`, incluindo `drumcore_jackboard_gerbers.zip`.
+- **Arquitetura esclarecida (confirmado por Rodrigo)**: o sistema final usa
+  **2 jackboards idênticas** (16 canais cada) para completar os 32 canais
+  já descritos em `docs/00-visao-geral.md`/`docs/02-hardware.md` (2x
+  CD4067) — a jackboard atual não é uma redução de escopo, é a primeira das
+  duas unidades. `README.md` atualizado pra refletir isso.
+
+## 2026-09-06 — Pinout da tela ajustado pro conector + mainboard aposentada
+
+- **Tela**: os 6 GPIOs (dentro do mesmo bloco contíguo da Fase Z) foram
+  reordenados pra bater com a ordem física do conector dela (`GND VDD SCL
+  SDA RES DC CS BLK`) — `SCL(7) → SDA(15) → RES(16) → DC(17) → CS(18) →
+  BLK(8)`, a pedido do Rodrigo. Atualizados `firmware/src/main.cpp` (+
+  `test_display.cpp`/`test_hall.cpp`, que tinham pinos antigos próprios),
+  `docs/02-hardware.md` e o esquemático.
+- **Validado em hardware real**: Rodrigo religou o encoder e a tela
+  nesse pinout novo — os dois confirmados funcionando (navegação por
+  encoder, imagem na tela). O MUX ainda não foi conectado nesse layout.
+- **Mainboard aposentada**: com o pinout novo, a fiação ficou pouca o
+  bastante pra conectar tudo direto nos headers da própria placa de dev
+  do ESP32-S3, sem precisar de uma PCB dedicada — `hardware/mainboard/`
+  (`.kicad_sch`/`.kicad_pcb`/`.kicad_pro`/`.kicad_prl`/`.png`) foi
+  **apagado** do repositório. Isso resolve (por não ser mais relevante) o
+  pendente da Fase Z sobre esse projeto ainda ter 2 encoders desenhados —
+  não existe mais projeto pra corrigir. A jackboard continua normalmente.
+
+## 2026-09-05 — Fase Z: pinout reorganizado por função (encoder+tela vs MUX)
+
+- **Motivação**: a placa física ganhou pads de `3V3`/`GND` extras nos 2
+  headers (modificação fora do dev board original) — isso removeu a
+  restrição de alimentação que forçava o MUX e a tela a ficarem no mesmo
+  header (Fase L). Pedido do Rodrigo: reorganizar por FUNÇÃO — encoder +
+  tela de um lado, MUX (sensing) do outro, sempre mantendo blocos de
+  pinos fisicamente contíguos.
+- **Novo pinout**: header ESQUERDO = encoder (`GPIO4,5,6`) + tela
+  (`GPIO7,15,16,17,18,8`), um bloco contíguo de 9 pinos. Header DIREITO =
+  2x CD4067 (`GPIO42,41,40,39` pras linhas de seleção S0-S3, `GPIO1,2`
+  pros 2 pinos SIG — os únicos 2 ADC desse bloco, agora ADC1 em vez de
+  ADC2). Teste temporário do sensor hall (`TEST_DIRECT_HEAD_PIN`) migrado
+  de GPIO17 (virou sinal permanente da tela) pra GPIO9 (livre).
+- **Ajuste (2026-09-06)**: os 6 GPIOs da tela, dentro desse mesmo bloco,
+  foram reordenados pra bater com a ordem física do conector dela (`GND
+  VDD SCL SDA RES DC CS BLK`) — `SCL(7) → SDA(15) → RES(16) → DC(17) →
+  CS(18) → BLK(8)`, a pedido do Rodrigo.
+- De quebra, corrigida uma nota antiga: `GPIO43`/`GPIO44` nunca estiveram
+  livres — são o UART físico usado pelo `Serial` (protocolo NDJSON), não
+  "sem uso previsto" como o doc dizia.
+- Atualizados `firmware/src/main.cpp`, `docs/02-hardware.md`,
+  `docs/assets/esquematico-hellodrum.html` (e a cópia em `site/`). Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase Z)
+  pro racional completo.
+- **Validado em hardware real (2026-09-06)**: Rodrigo religou o encoder e
+  a tela nesse pinout novo — os dois confirmados funcionando (navegação e
+  imagem na tela). O MUX ainda não foi conectado nesse layout.
+- **Pendente** (resolvido no dia seguinte — ver entrada 2026-09-06 acima):
+  `hardware/mainboard/*.kicad_sch`/`.kicad_pcb` ainda não tinham sido
+  atualizados pra esse pinout novo nem pra 1 encoder só (Fase Y). A
+  fiação do MUX também ainda precisa ser feita.
+
+## 2026-09-04 — Fase Y: navegação reduzida de 2 encoders pra 1 (rotate/click/hold)
+
+- **Motivação**: o ENC1 (página/pad em foco) tinha poucas responsabilidades
+  na prática, enquanto o ENC2 concentrava quase toda a navegação. Decisão:
+  1 encoder só, cobrindo tudo via hierarquia de profundidade — girar
+  navega no nível atual, clicar desce um nível (ou confirma/dispara uma
+  ação), segurar sempre volta um nível (em PADS/GLOBAL, volta direto pra
+  LIVE).
+- Item novo "SINAL" na lista de campos do PAD_EDIT — antes, alternar
+  PAD_EDIT↔SIGNAL era o click do ENC1 (uma ação lateral que não cabia no
+  modelo de profundidade linear); virou uma linha clicável, igual o
+  CALIBRAR.
+- Rodapés de instrução (ex: "ENC2 GIRA VALOR") removidos das telas
+  PAD_EDIT/AUTOTUNE — interface considerada simples o bastante sem eles.
+- **Simulador do LCD + encoders removido do app desktop**
+  (`HardwareSimulator.tsx`, `EncoderRemote.tsx`,
+  `docs/06-simulador-hardware.md`, ~400 linhas de CSS) — não fazia mais
+  sentido simular 2 encoders físicos que deixaram de existir. A
+  configuração de pads (`PadEditor.tsx`/`PadGrid.tsx`) e o modo demo
+  (`mockDevice.ts`) continuam intactos.
+- Protocolo `enc_input` continua aceitando `enc: 1` ou `2` (compatibilidade
+  com o app existente) — os dois caem no mesmo handler físico agora. Ver
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase Y)
+  pro mapeamento completo.
+
+## 2026-09-04 — Jackboard: pinos T/R corrigidos + rede de proteção por canal
+
+- Esquemático da jackboard (`hardware/jackboard/`): jacks usavam TN/RN
+  (contato normal/switched) como sinal por engano — corrigido pra T/R de
+  verdade (Tip = canal par, Ring = canal ímpar), com TN/RN/S/SN todos em
+  GND.
+- Rede de proteção por canal adicionada (16x): resistor série 100Ω +
+  resistor paralelo 100kΩ + diodo BAT85, mesma topologia do esquema de
+  referência da HelloDrum-arduino-Library pro MUX.
+- PCB: os 8 jacks recriados com a netlist corrigida e realinhados no
+  passo físico de 22.5mm; os 48 componentes de proteção posicionados no
+  espaço livre entre as duas colunas de pads de cada jack; cluster do MUX
+  recentralizado sobre a fileira de jacks. Roteamento das trilhas fica
+  pra uma próxima etapa — placa ainda não fabricada nem testada.
+- Firmware: novo ambiente de teste isolado `test_hall`
+  (`firmware/src/test_hall.cpp`) — mostra a leitura bruta do sensor hall
+  (SS49E) na tela + Serial, sem MUX/encoders/USB-MIDI/BLE/EEPROM.
+
 ## 2026-09-02 — Fase X: calibração do controlador de pedal (HHC) — range + inversão
 
 - **Novo assistente de captura de range** (`PAD_HIHAT_PEDAL`/
@@ -620,8 +761,8 @@ Registro cronológico do que foi feito no projeto (mais recente no topo).
   configuração via hardware antes da tela/encoders físicos chegarem.
   Reproduz fielmente a máquina de estados do firmware (navegação de pad/item,
   modo de edição, encoder 2 desabilitado durante edição, mensagem "Canal
-  ocupado") - ver [06-simulador-hardware.md](06-simulador-hardware.md) pro
-  detalhamento do que é fiel e o que é só aproximação visual.
+  ocupado") - removido do app desktop em 2026-09-04 (Fase Y, ver mais abaixo),
+  quando o hardware passou a ter 1 encoder só.
 - Controle por scroll do mouse nos "encoders" na tela, ou por teclado
   (setas + Enter/Espaço) - dataset de 32 pads local com uma mistura de
   tipos pra dar um "tour" pelas telas possíveis sem precisar configurar

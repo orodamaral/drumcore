@@ -14,15 +14,13 @@ import {
 } from './protocol'
 import PadGrid from './components/PadGrid'
 import PadEditor from './components/PadEditor'
-import HardwareSimulator from './components/HardwareSimulator'
-import EncoderRemote from './components/EncoderRemote'
 import type { PortInfo } from './env'
 
 const PAD_COUNT = 32
 
 const DEFAULT_GLOBAL: GlobalConfig = { midi_channel: 10, midi_output: 2 }
 
-type Tab = 'config' | 'global' | 'simulator'
+type Tab = 'config' | 'global'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('config')
@@ -265,16 +263,9 @@ export default function App() {
         <button className={tab === 'global' ? 'active' : ''} onClick={() => setTab('global')}>
           Global
         </button>
-        <button className={tab === 'simulator' ? 'active' : ''} onClick={() => setTab('simulator')}>
-          Simulador do módulo (LCD + encoders)
-        </button>
       </nav>
 
-      {connected && !demoMode && <EncoderRemote send={send} />}
-
-      {tab === 'simulator' ? (
-        <HardwareSimulator />
-      ) : !connected ? (
+      {!connected ? (
         <main className="content empty-state">
           <p>Conecte o módulo (ou ative o modo demo) para começar.</p>
         </main>
@@ -341,13 +332,11 @@ export default function App() {
         </main>
       )}
 
-      {tab !== 'simulator' && (
-        <footer className="log">
-          {log.map((entry, i) => (
-            <div key={i}>{entry}</div>
-          ))}
-        </footer>
-      )}
+      <footer className="log">
+        {log.map((entry, i) => (
+          <div key={i}>{entry}</div>
+        ))}
+      </footer>
     </div>
   )
 }

@@ -1,5 +1,5 @@
 /*
-  Teste isolado do sensor hall (SS49E) no GPIO17 - mostra a leitura bruta do
+  Teste isolado do sensor hall (SS49E) no GPIO9 - mostra a leitura bruta do
   ADC (0-4095) na tela TFT e no Serial, ao vivo. Sem MUX/encoders/USB-MIDI/
   BLE/EEPROM do firmware principal - so' pra confirmar que o sensor esta'
   ligado certo e respondendo (valor sobe/desce ao aproximar um ima).
@@ -8,9 +8,10 @@
   (ver [env:test_hall] em platformio.ini - so compila este arquivo, main.cpp
   fica de fora dessa build).
 
-  Mesmos pinos de tela do main.cpp (ver docs/02-hardware.md):
-  SCL=14, SDA=13, RES=12, DC=11, CS=10, BLK=9.
-  Sensor hall: sinal no GPIO17, alimentado em 3V3 (nao 5V) e GND.
+  Mesmos pinos de tela do main.cpp (Fase Z + ajuste 2026-09-06, ver
+  docs/02-hardware.md): SCL=7, SDA=15, RES=16, DC=17, CS=18, BLK=8.
+  Sensor hall: sinal no GPIO9 (era GPIO17 antes da Fase Z - migrou porque
+  GPIO17 virou sinal permanente da tela), alimentado em 3V3 (nao 5V) e GND.
 */
 
 #include <Arduino.h>
@@ -18,14 +19,14 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 
-#define TFT_BLK 9
-#define TFT_CS 10
-#define TFT_DC 11
-#define TFT_RST 12
-#define TFT_MOSI 13
-#define TFT_SCLK 14
+#define TFT_SCLK 7
+#define TFT_MOSI 15
+#define TFT_RST 16
+#define TFT_DC 17
+#define TFT_CS 18
+#define TFT_BLK 8
 
-#define HALL_PIN 17
+#define HALL_PIN 9
 
 // Mesma paleta do main.cpp (design/SPEC.md) - RGB565.
 #define COL_BG 0x10A3
@@ -52,7 +53,7 @@ void setup()
     tft.setCursor(14, 20);
     tft.print("TESTE SENSOR HALL");
     tft.setCursor(30, 34);
-    tft.print("GPIO17 - raw ADC");
+    tft.print("GPIO9 - raw ADC");
 }
 
 void loop()

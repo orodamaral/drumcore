@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hardware e esquemático — DrumCore</title>
+<meta name="description" content="Esquemático de ligação do DrumCore: ESP32-S3, 2x CD4067, tela TFT, encoder rotativo, e a jackboard com rede de proteção por canal." />
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="dot"></span>DRUMCORE</a>
+    <ul class="navlinks">
+      <li><a href="index.html">Visão geral</a></li>
+      <li><a href="flash.html">Gravar firmware</a></li>
+      <li><a class="active" href="hardware.html">Hardware</a></li>
+      <li><a class="nav-gh" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">GitHub ↗</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero" style="padding: 52px 0 40px;">
+  <div class="wrap">
+    <p class="eyebrow">Hardware</p>
+    <h1 style="font-size: clamp(28px, 4.5vw, 40px);">Como tudo se conecta</h1>
+    <p class="lede">
+      Um ESP32-S3 no centro, 2x multiplexador CD4067 (32 canais de pad), tela TFT ST7735
+      via SPI, e 1 encoder rotativo com chave pra navegação. Cada subsistema sai de um
+      único header físico da placa, por conveniência de montagem.
+    </p>
+    <div class="status-pill"><span class="dot"></span>Encoder e tela validados em hardware real — MUX ainda não conectado nesse layout</div>
+  </div>
+</header>
+
+<section class="block">
+  <div class="wrap">
+    <h2>Esquemático interativo</h2>
+    <p class="block-sub">
+      Diagrama completo com todos os GPIOs, gerado a partir do pinout real usado em
+      <code>firmware/src/main.cpp</code>. Role dentro do quadro pra ver o diagrama inteiro,
+      ou abra em uma aba própria pra tela cheia.
+    </p>
+    <div class="schematic-embed">
+      <div class="embed-bar">
+        <span>assets/schematic.html</span>
+        <a href="assets/schematic.html" target="_blank" rel="noopener">Abrir em tela cheia ↗</a>
+      </div>
+      <iframe src="assets/schematic.html" title="Esquemático de ligação do DrumCore" loading="lazy"></iframe>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <h2>Jackboard — placa de conectores</h2>
+    <p class="block-sub">
+      Projeto KiCad (<code>hardware/jackboard/</code>): 8 conectores TRS 6.35mm
+      (16 canais — Tip e Ring de cada jack), cada canal com uma pequena rede de proteção
+      antes de chegar no multiplexador. O sistema completo usa <strong>2 jackboards
+      idênticas</strong> (uma por CD4067) pra fechar os 32 canais.
+    </p>
+    <div class="grid">
+      <div class="card">
+        <div class="icon">🛡️</div>
+        <h3>Proteção por canal (x16)</h3>
+        <p>Resistor série 100Ω (limita corrente / amortece ringing do piezo) + resistor paralelo 100kΩ pra GND + diodo BAT85 (grampeia excursões negativas de tensão) — mesma topologia usada no esquema de referência da biblioteca de sensing pro MUX.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔊</div>
+        <h3>8 jacks TRS 6.35mm</h3>
+        <p>Tip = canal par, Ring = canal ímpar (pino 1 = Tip, pino 2 = Ring), demais contatos (Sleeve, contatos normais) todos em GND. Espaçamento físico de 22,5mm entre centros, compatível com jacks padrão de painel.</p>
+      </div>
+      <div class="card">
+        <div class="icon">📐</div>
+        <h3>Layout da placa</h3>
+        <p>Os 48 componentes de proteção ficam no espaço livre entre as duas colunas de pinos de cada jack (aproveitando a folga entre o corpo do conector e a placa), mantendo a fiação compacta por canal.</p>
+      </div>
+    </div>
+    <p class="callout">
+      <span class="glyph">✅</span>
+      Roteamento completo e DRC limpo (0 curtos, 0 itens desconectados). Placa com
+      logo "DRUMCORE" na serigrafia e pad de teste de +3V3 no estilo dos resistores.
+      Gerbers gerados em <code>hardware/jackboard/fab/</code> — ainda não fabricada
+      fisicamente/testada em bancada.
+    </p>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <h2>Pinos a evitar, se for adaptar o pinout</h2>
+    <p class="block-sub">Relevante se você usar uma placa ESP32-S3 diferente ou remapear algum sinal.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>GPIO</th><th>Motivo</th></tr></thead>
+        <tbody>
+          <tr><td class="gpio">0, 3, 45, 46</td><td class="wrap-text">Strapping pins — afetam o modo de boot, nunca usar como sinal de periférico.</td></tr>
+          <tr><td class="gpio">19, 20</td><td class="wrap-text">D-/D+ do USB nativo, usados internamente pelo USB-MIDI.</td></tr>
+          <tr><td class="gpio">38</td><td class="wrap-text">Aciona o LED embutido (BUILTIN LED) dessa placa específica.</td></tr>
+          <tr><td class="gpio">47, 48</td><td class="wrap-text">Internos de flash/PSRAM; GPIO48 também é o LED RGB endereçável.</td></tr>
+          <tr><td class="gpio">35, 36, 37</td><td class="wrap-text">Em módulos com PSRAM octal, são pinos internos do barramento de PSRAM — evitar mesmo que apareçam como GPIO livre na serigrafia.</td></tr>
+          <tr><td class="gpio">43, 44</td><td class="wrap-text">Não estão livres apesar de parecerem GPIO genérico: são o UART físico (TXD0/RXD0) usado pelo <code>Serial</code> (protocolo NDJSON com o app desktop).</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    Ver <code>docs/02-hardware.md</code> e <code>docs/01-decisoes-arquiteturais.md</code> no
+    repositório pro racional completo de cada escolha de pinout.
+    <div class="foot-links">
+      <a href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Repositório no GitHub</a>
+      <a href="index.html">Visão geral</a>
+      <a href="flash.html">Gravar o firmware</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

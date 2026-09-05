@@ -15,9 +15,11 @@ cérebro do sistema, capaz de:
    sem necessidade de driver ou software intermediário como Hairless MIDI) e
    também via **BLE-MIDI** (Bluetooth, simultâneo ao USB) — ver
    [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
-3. Prever uma tela (TFT ST7735 128x128, SPI) e 2 encoders rotativos com chave
-   para configuração do módulo diretamente no hardware (sensibilidade,
-   threshold, curva, nota MIDI de cada pad, etc).
+3. Prever uma tela (TFT ST7735 1.8" 128x160, SPI, paisagem) e 1 encoder
+   rotativo com chave (girar navega/ajusta valor, clicar desce um
+   nível/confirma, segurar volta um nível — Fase Y) para configuração do
+   módulo diretamente no hardware (sensibilidade, threshold, curva, nota
+   MIDI de cada pad, etc).
 4. Oferecer uma interface desktop para configuração completa do módulo (todos os
    parâmetros de cada pad, mapeamento de notas, backup/restore de configuração).
 
@@ -28,7 +30,7 @@ cérebro do sistema, capaz de:
 | 1a | Leitura de 32 canais via 2x CD4067/HW-178 (sensing) | Compilado, sem teste em hardware real |
 | 1b | Envio MIDI-USB nativo (Note On/Off) | Compilado, sem teste em hardware real |
 | 1c | Envio BLE-MIDI simultâneo ao USB (Bluetooth) | Compilado, sem teste em hardware real |
-| 2 | Tela TFT (ST7735) + 2 encoders rotativos de configuração | Compilado, sem teste em hardware real |
+| 2 | Tela TFT (ST7735) + 1 encoder rotativo de configuração (rotate/click/hold, Fase Y) | Compilado, sem teste em hardware real |
 | 2b | Persistência EEPROM (config por pad sobrevive a reboot) | Compilado, sem teste em hardware real |
 | 2c | Protocolo serial NDJSON (módulo ↔ app desktop) | Compilado, sem teste em hardware real |
 | 2d | Nome livre por pad (editável só pelo app desktop) | Compilado/build ok, sem teste em hardware real |
@@ -36,7 +38,6 @@ cérebro do sistema, capaz de:
 | 2f | Navegação de 6 telas (BOOT/LIVE/PADS/PAD_EDIT/SIGNAL/GLOBAL, design/SPEC.md) — substitui a tela/grid da Fase I | Compilado/build ok, sem teste em hardware real |
 | 2g | Canal habilitado/desabilitado por pad (evita ruído em slot sem sensor) | Compilado/build ok, sem teste em hardware real |
 | 3 | Interface desktop de configuração (Electron/React), reskin seguindo a paleta/tipografia do módulo | Build/typecheck ok, sem teste com módulo real (só modo demo) |
-| 3b | Simulador do LCD + encoders no app desktop (preview sem hardware) | Implementado e funcional |
 
 Projeto renomeado de "HelloDrum" para "DrumCore" em 2026-08-21 (ver
 [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md), Fase J) — a
@@ -58,15 +59,13 @@ completo e o racional de cada decisão. Resumo:
 - **docs/01-decisoes-arquiteturais.md** — registro de decisões técnicas (estilo ADR),
   com contexto e alternativas consideradas.
 - **docs/02-hardware.md** — esquema de ligação (pinout ESP32-S3 ↔ 2x CD4067
-  (HW-178) ↔ pads, tela TFT, botões).
+  (HW-178) ↔ pads, tela TFT, encoder).
 - **docs/03-biblioteca-hellodrum.md** — notas sobre a API da biblioteca base, o que
   foi entendido do código-fonte, e o que foi/será modificado em relação ao original.
 - **docs/04-protocolo-serial.md** — contrato de comunicação (NDJSON) entre o
   firmware e a interface desktop.
 - **docs/05-tipos-de-sensor.md** — os 9 tipos de sensor suportados, quantos
   canais cada um usa, e como o link pedal↔chimbal funciona.
-- **docs/06-simulador-hardware.md** — a aba do app desktop que simula a tela
-  TFT + encoders, pra testar a UX antes do hardware chegar.
 - **docs/CHANGELOG.md** — o que foi feito, em ordem cronológica.
 
 Sempre que uma decisão relevante for tomada ou algo novo for aprendido sobre a

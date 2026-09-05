@@ -9,8 +9,8 @@
   (ver [env:display_test] em platformio.ini - so compila este arquivo,
   main.cpp fica de fora dessa build).
 
-  Mesmos pinos do main.cpp (ver docs/02-hardware.md):
-  SCL=14, SDA=13, RES=12, DC=11, CS=10, BLK=9.
+  Mesmos pinos do main.cpp (Fase Z + ajuste 2026-09-06, ver
+  docs/02-hardware.md): SCL=7, SDA=15, RES=16, DC=17, CS=18, BLK=8.
 */
 
 #include <Arduino.h>
@@ -18,12 +18,12 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 
-#define TFT_BLK 9
-#define TFT_CS 10
-#define TFT_DC 11
-#define TFT_RST 12
-#define TFT_MOSI 13
-#define TFT_SCLK 14
+#define TFT_SCLK 7
+#define TFT_MOSI 15
+#define TFT_RST 16
+#define TFT_DC 17
+#define TFT_CS 18
+#define TFT_BLK 8
 
 // Mesma paleta do main.cpp (design/SPEC.md) - RGB565.
 #define COL_BG 0x10A3
