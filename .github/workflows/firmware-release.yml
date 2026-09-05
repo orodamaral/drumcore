@@ -58,7 +58,23 @@ jobs:
           done
           ls -la /tmp/ttyFAKE0 /tmp/ttyFAKE1
 
-      # Builda o firmware normalmente e, na mesma chamada, tenta gravar na
+      # Build normal (sem -v) primeiro: instala platform/tools/libs e
+      # compila. Precisa ser separado do passo verboso abaixo porque o
+      # tool-scons que a instalacao do zero traz tem um bug real no modo
+      # verbose (ver patch_scons_verbose_bug.py) - rodar sem -v aqui evita
+      # esbarrar nele antes mesmo de instalar os pacotes que o patch
+      # precisa encontrar.
+      - name: Build firmware (no verbose - avoids the scons bug below)
+        working-directory: firmware
+        env:
+          FW_VERSION: ${{ steps.version.outputs.tag }}
+        run: pio run -e esp32-s3-devkitc-1
+
+      - name: Patch known SCons verbose-mode bug (see script for details)
+        run: python3 .github/scripts/patch_scons_verbose_bug.py
+
+      # Builda de novo (cache do PlatformIO faz isso ser rapido - nada
+      # mudou desde o passo anterior) e, na mesma chamada, tenta gravar na
       # porta fake criada acima - so' precisamos do log verboso que o
       # PlatformIO imprime ANTES/ao tentar a gravacao, com o comando esptool
       # completo (chip, offsets, arquivos). A falha em si e' esperada
