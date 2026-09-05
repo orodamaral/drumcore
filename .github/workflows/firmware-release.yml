@@ -73,6 +73,29 @@ jobs:
           echo "----- upload_log.txt -----"
           cat upload_log.txt
 
+      # Diagnostico temporario (2026-09-06): a extracao abaixo tem falhado
+      # sem dar pra saber por que so' pelos logs do Actions (baixar logs via
+      # API exige token de autenticacao que nao temos numa sessao sem
+      # navegador). Publica o log inteiro num branch dedicado - da' pra ler
+      # via raw.githubusercontent.com sem autenticacao nenhuma, mesmo repo
+      # publico. Clone separado em /tmp pra nao mexer no checkout principal
+      # do job (que os passos seguintes ainda precisam intactos). Remover
+      # assim que o problema for resolvido.
+      - name: Publish upload_log.txt for unauthenticated debugging
+        if: always()
+        run: |
+          rm -rf /tmp/debug-log-repo
+          mkdir -p /tmp/debug-log-repo
+          cd /tmp/debug-log-repo
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -q --orphan ci-debug-logs
+          cp "${{ github.workspace }}/firmware/upload_log.txt" upload_log.txt
+          git add upload_log.txt
+          git commit -q -m "debug: upload_log.txt from run ${{ github.run_id }}"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-debug-logs
+
       - name: Extract real flash parameters from the build
         working-directory: firmware
         run: |
