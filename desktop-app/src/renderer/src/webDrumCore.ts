@@ -23,6 +23,7 @@ class WebSerialDrumCore implements DrumCoreApi {
   private port: SerialPort | null = null
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null
   private reader: ReadableStreamDefaultReader<string> | null = null
+  private readLoopPromise: Promise<void> | null = null
   private readonly encoder = new TextEncoder()
   private readonly messageListeners = new Set<(line: string) => void>()
   private readonly errorListeners = new Set<(message: string) => void>()
@@ -37,9 +38,7 @@ class WebSerialDrumCore implements DrumCoreApi {
     await port.open({ baudRate: BAUD_RATE })
     this.port = port
     this.writer = port.writable!.getWriter()
-    // Nao usa await de proposito - o loop roda em paralelo, entregando
-    // linhas via onMessage() ate' disconnect() cancelar o reader.
-    void this.readLoop(port)
+    this.readLoopPromise = this.readLoop(port)
   }
 
   private async readLoop(port: SerialPort): Promise<void> {
@@ -86,6 +85,22 @@ class WebSerialDrumCore implements DrumCoreApi {
       // Ignora - a porta pode ja ter sido desconectada fisicamente.
     }
     this.reader = null
+
+    // Cancelar o reader so' inicia o destravamento de port.readable (via
+    // o pipeTo dentro de readLoop) - sem esperar essa promise ate' o fim,
+    // port.close() logo abaixo pode disparar antes do navegador terminar
+    // de soltar o lock, e falhar com "The port is already open" numa
+    // proxima tentativa de abrir a MESMA porta (ex: a aba Firmware
+    // chamando isso antes de flashar). Bug real, encontrado testando com
+    // hardware de verdade (2026-09-06).
+    if (this.readLoopPromise) {
+      try {
+        await this.readLoopPromise
+      } catch {
+        // Ignora.
+      }
+      this.readLoopPromise = null
+    }
 
     if (this.writer) {
       try {
