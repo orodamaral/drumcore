@@ -14,13 +14,14 @@ import {
 } from './protocol'
 import PadGrid from './components/PadGrid'
 import PadEditor from './components/PadEditor'
+import FirmwareManager from './components/FirmwareManager'
 import type { PortInfo } from './env'
 
 const PAD_COUNT = 32
 
 const DEFAULT_GLOBAL: GlobalConfig = { midi_channel: 10, midi_output: 2 }
 
-type Tab = 'config' | 'global'
+type Tab = 'config' | 'global' | 'firmware'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('config')
@@ -35,6 +36,7 @@ export default function App() {
   const [bleConnected, setBleConnected] = useState(false)
   const [global, setGlobal] = useState<GlobalConfig>(DEFAULT_GLOBAL)
   const [autoTune, setAutoTune] = useState<AutoTuneStatus | null>(null)
+  const [firmwareVersion, setFirmwareVersion] = useState<string | undefined>(undefined)
 
   const mockDeviceRef = useRef<MockDevice | null>(null)
 
@@ -49,6 +51,7 @@ export default function App() {
     switch (message.type) {
       case 'device_info':
         setBleConnected(message.ble_connected)
+        setFirmwareVersion(message.firmware_version)
         setGlobal({
           midi_channel: message.midi_channel,
           midi_output: message.midi_output
@@ -147,6 +150,7 @@ export default function App() {
     setBleConnected(false)
     setGlobal(DEFAULT_GLOBAL)
     setAutoTune(null)
+    setFirmwareVersion(undefined)
   }
 
   function updatePadField(pad: number, field: PadField, value: number): void {
@@ -263,9 +267,20 @@ export default function App() {
         <button className={tab === 'global' ? 'active' : ''} onClick={() => setTab('global')}>
           Global
         </button>
+        <button className={tab === 'firmware' ? 'active' : ''} onClick={() => setTab('firmware')}>
+          Firmware
+        </button>
       </nav>
 
-      {!connected ? (
+      {tab === 'firmware' ? (
+        <main className="content">
+          <FirmwareManager
+            appConnected={connected}
+            connectedFirmwareVersion={connected ? firmwareVersion : undefined}
+            onDisconnectApp={disconnect}
+          />
+        </main>
+      ) : !connected ? (
         <main className="content empty-state">
           <p>Conecte o módulo (ou ative o modo demo) para começar.</p>
         </main>

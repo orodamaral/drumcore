@@ -82,6 +82,7 @@ export class MockDevice {
       muxes: 2, // 2x CD4067/HW-178 (16 canais cada) desde a Fase K
       ble_connected: this.bleConnected,
       firmware_phase: 'K (demo)',
+      firmware_version: 'demo',
       ...this.global
     }
   }

@@ -261,10 +261,38 @@ button:disabled {
 }
 
 .pad-editor,
-.global-panel {
+.global-panel,
+.firmware-manager {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
+}
+
+.firmware-manager {
+  max-width: 640px;
+}
+
+.firmware-intro h2 {
+  margin: 0 0 6px;
+  font-family: 'Silkscreen', monospace;
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.firmware-port-guide {
+  margin: 16px 0;
+  padding: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.firmware-port-guide img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin-bottom: 10px;
 }
 
 .pad-editor.empty {
@@ -368,6 +396,10 @@ button:disabled {
 
 .autotune-start:not(:disabled):hover {
   background: color-mix(in srgb, var(--edit) 15%, var(--surface));
+}
+
+.autotune-panel > .pad-hint {
+  margin-top: 10px;
 }
 
 .autotune-tier {

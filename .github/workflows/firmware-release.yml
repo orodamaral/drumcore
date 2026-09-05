@@ -1,0 +1,101 @@
+name: Build and release firmware
+
+on:
+  push:
+    tags:
+      - "fw-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag da versao (ex: fw-v1.0.0-teste) - so usada em disparo manual'
+        required: true
+        default: "fw-v0.0.0-teste"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.version }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO and esptool
+        run: pip install platformio esptool
+
+      # Builda o firmware normalmente e, na mesma chamada, tenta gravar numa
+      # porta serial que nao existe de proposito (nao ha placa conectada
+      # neste runner) - so' precisamos do log verboso que o PlatformIO
+      # imprime ANTES de tentar abrir a porta, com o comando esptool
+      # completo (chip, offsets, arquivos). A falha em si e' esperada
+      # (`|| true`); o que importa e' o upload_log.txt gerado.
+      - name: Build firmware and capture verbose upload command
+        working-directory: firmware
+        env:
+          FW_VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          pio run -e esp32-s3-devkitc-1 -t upload -v --upload-port /dev/ttyUSB99 > upload_log.txt 2>&1 || true
+          echo "----- upload_log.txt -----"
+          cat upload_log.txt
+
+      - name: Extract real flash offsets from the build
+        working-directory: firmware
+        run: |
+          python3 ../.github/scripts/extract_flash_args.py upload_log.txt > flash_args.txt
+          echo "----- flash_args.txt -----"
+          cat flash_args.txt
+
+      - name: Merge into a single flashable binary
+        working-directory: firmware
+        run: |
+          MERGED_NAME="drumcore-firmware-${{ steps.version.outputs.tag }}.bin"
+          echo "MERGED_NAME=$MERGED_NAME" >> "$GITHUB_ENV"
+          ARGS=$(awk '{printf "%s %s ", $1, $2}' flash_args.txt)
+          esptool --chip esp32s3 merge_bin -o "$MERGED_NAME" \
+            --flash_mode qio --flash_size 16MB $ARGS
+
+      - name: Write manifest.json
+        working-directory: firmware
+        run: |
+          cat > manifest.json << JSON
+          {
+            "version": "${{ steps.version.outputs.tag }}",
+            "chip": "esp32s3",
+            "flash_size": "16MB",
+            "flash_mode": "qio",
+            "offset": "0x0",
+            "file": "${{ env.MERGED_NAME }}"
+          }
+          JSON
+          cat manifest.json
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Firmware ${{ steps.version.outputs.tag }}"
+          body: |
+            Firmware DrumCore (ESP32-S3), gerado automaticamente a partir
+            desta tag. `${{ env.MERGED_NAME }}` e' um binario unico
+            (bootloader + partition table + app mesclados) - grava tudo de
+            uma vez no offset 0x0. Ver `manifest.json` pros parametros de
+            flash.
+          files: |
+            firmware/${{ env.MERGED_NAME }}
+            firmware/manifest.json

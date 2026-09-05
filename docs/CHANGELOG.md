@@ -2,6 +2,42 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-06 — Aba de Firmware no app desktop + instalador do app
+
+- **Objetivo**: montar/atualizar um DrumCore sem saber programar — hoje
+  exigia PlatformIO CLI (firmware) e `npm run dev` (app desktop).
+- **Nova aba "Firmware"** no app (`desktop-app/src/renderer/src/components/
+  FirmwareManager.tsx`): busca a release de firmware mais recente no
+  GitHub (tag `fw-v*`), baixa o binário e grava no ESP32-S3 via Web Serial
+  + `esptool-js` (port oficial da Espressif do protocolo esptool, sem
+  precisar de Python/esptool.py instalado). Cobre primeira gravação e
+  atualização com o mesmo fluxo. Inclui a foto da placa com a porta
+  USB-UART marcada (a que faz auto-reset pro bootloader, confirmada pelo
+  Rodrigo) como guia visual.
+- **Pipeline de release do firmware** (`.github/workflows/
+  firmware-release.yml`, tag `fw-v*`): builda com PlatformIO, mescla
+  bootloader+partition table+app num único `.bin` (offset `0x0`, via
+  `esptool merge_bin` — offsets extraídos do log verboso do próprio build
+  em vez de hardcoded, `.github/scripts/extract_flash_args.py`), publica
+  junto com um `manifest.json`.
+- **Versão do firmware**: era só o literal `"v0.1"` sem fonte única —
+  agora `FW_VERSION` é injetado via `build_flags` a partir da tag git
+  (`firmware/version_flag.py`), usado na tela BOOT e no campo
+  `firmware_version` de `device_info` (permite o app comparar "versão
+  conectada" vs "última release").
+- **Instalador do próprio app desktop**: `electron-builder` (NSIS,
+  Windows) + pipeline própria (`.github/workflows/app-release.yml`, tag
+  `app-v*`) — sem isso, ter uma aba de firmware no app não ajudava quem
+  não sabe rodar `npm run dev`. Sem assinatura de código por enquanto
+  (SmartScreen vai avisar).
+- Testado localmente nesta máquina: `npm run dist` gerou um instalador
+  `.exe` funcional (~107MB) com o módulo nativo do `serialport`
+  recompilado certo pro Electron. O fluxo de flash em si (esptool-js +
+  Web Serial) só é validável com hardware real — ver
+  `desktop-app/src/main/index.ts` (handler `select-serial-port`, escolhe a
+  primeira porta da lista por simplicidade, revisar se aparecer mais de
+  uma porta serial disponível na prática).
+
 ## 2026-09-06 — Jackboard: roteamento completo, silk final, logo e ajuste de placa
 
 - **Roteamento completo** (via Konnect MCP): as 16 trilhas de canal (U1 →

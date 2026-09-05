@@ -1,0 +1,58 @@
+name: Build and release desktop app
+
+on:
+  push:
+    tags:
+      - "app-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag da versao (ex: app-v1.0.0-teste) - so usada em disparo manual'
+        required: true
+        default: "app-v0.0.0-teste"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version tag
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.version }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: desktop-app
+        run: npm ci
+
+      - name: Build installer (Windows)
+        working-directory: desktop-app
+        run: npm run dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "DrumCore desktop app ${{ steps.version.outputs.tag }}"
+          body: |
+            Instalador do app desktop de configuracao do DrumCore (Windows).
+            Baixe o `.exe`, rode e siga o instalador. Nenhuma dependencia
+            extra (Node.js, Python etc.) e' necessaria pra usar o app.
+          files: |
+            desktop-app/dist/*.exe

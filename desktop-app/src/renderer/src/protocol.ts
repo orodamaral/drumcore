@@ -310,6 +310,7 @@ export type IncomingMessage =
       midi_output: MidiOutput
       ble_connected: boolean
       firmware_phase: string
+      firmware_version?: string
     })
   | ({ type: 'pad_config' } & PadConfig)
   | ({ type: 'hit' } & { pad: number; zone: string; note: number; velocity: number })

@@ -18,6 +18,13 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 
+// Este env de teste nao carrega firmware/version_flag.py (so' o env
+// principal usa), entao FW_VERSION nunca vem definida por build_flags aqui
+// - fallback fixo, ver main.cpp pro racional completo.
+#ifndef FW_VERSION
+#define FW_VERSION "dev"
+#endif
+
 #define TFT_SCLK 7
 #define TFT_MOSI 15
 #define TFT_RST 16
@@ -61,7 +68,7 @@ void setup()
 
     tft.setTextColor(COL_LINE);
     tft.setCursor(24, 110);
-    tft.print("v0.1  ESP32-S3");
+    tft.print(FW_VERSION "  ESP32-S3");
 
     Serial.println("DEBUG: logo desenhado");
 }

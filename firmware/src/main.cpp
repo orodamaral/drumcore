@@ -42,6 +42,17 @@
 #include <hardware/BLEMIDI_ESP32.h>
 #include <math.h>
 
+// Versao do firmware - injetada em build_flags via firmware/version_flag.py
+// (le a env var FW_VERSION, setada pelo workflow de release a partir da tag
+// git) a partir da tag git da release. Fallback "dev" cobre builds locais
+// fora da CI, e os envs de teste isolado (test_display.cpp etc.), que nao
+// carregam esse extra_scripts. Usado na tela BOOT e no campo
+// "firmware_version" de device_info (ver sendDeviceInfo()) - e' o que
+// permite o app desktop comparar contra a ultima release no GitHub.
+#ifndef FW_VERSION
+#define FW_VERSION "dev"
+#endif
+
 // Religamento manual do hardware USB nativo (Fase Q, 2026-09-01) - ver
 // docs/01-decisoes-arquiteturais.md pro relato completo da investigacao.
 // No ESP32/Adafruit TinyUSB Arduino, Adafruit_USBD_Device::begin() NAO liga
@@ -874,6 +885,7 @@ void sendDeviceInfo()
     doc["midi_output"] = midiOutput;
     doc["ble_connected"] = bleMidiConnected;
     doc["firmware_phase"] = "J";
+    doc["firmware_version"] = FW_VERSION;
     sendJsonLine(doc);
 }
 
@@ -3103,7 +3115,9 @@ void renderBoot()
     tft.fillRect(BOOT_BAR_X, BOOT_BAR_Y, BOOT_BAR_W, 4, COL_SURFACE);
 
     tft.setTextColor(COL_LINE);
-    printCentered("v0.1  ESP32-S3", 110);
+    char versionLine[32];
+    snprintf(versionLine, sizeof(versionLine), "%s  ESP32-S3", FW_VERSION);
+    printCentered(versionLine, 110);
 }
 
 // Grade 8x4 ocupando a largura/altura inteiras da tela em paisagem (2026-
