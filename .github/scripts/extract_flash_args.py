@@ -56,10 +56,17 @@ def main() -> int:
     tail = match.group(0)
 
     def find_flag(name: str) -> str:
-        m = re.search(rf"--{name}\s+(\S+)", tail)
+        # Aceita tanto "--flag valor" quanto "--flag=valor" (versoes
+        # diferentes do esptool/PlatformIO usam formatos diferentes) e
+        # tanto "_" quanto "-" no nome da flag (esptool >=5 deprecia
+        # underscore em favor de hifen, mas o PlatformIO pode continuar
+        # construindo com underscore internamente).
+        alt_name = name.replace("_", "-")
+        m = re.search(rf"--(?:{name}|{alt_name})[=\s]+(\S+)", tail)
         if not m:
             print(
-                f"ERRO: nao encontrei --{name} na linha write_flash:\n{tail}",
+                f"ERRO: nao encontrei --{name}/--{alt_name} na linha "
+                f"write_flash. Trecho capturado:\n{tail}",
                 file=sys.stderr,
             )
             raise SystemExit(1)
