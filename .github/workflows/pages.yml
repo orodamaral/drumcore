@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -34,29 +34,25 @@ jobs:
         with:
           node-version: "20"
 
+      # web-app/ importa os componentes React direto de
+      # desktop-app/src/renderer/src/ (sem duplicar codigo - ver
+      # web-app/vite.config.ts), mas a resolucao de modulos do
+      # TypeScript/Node sobe a partir do ARQUIVO que importa, nao da raiz
+      # do projeto que chamou o tsc - como esses arquivos fisicamente
+      # moram em desktop-app/, precisam do desktop-app/node_modules
+      # instalado (react, react-dom, esptool-js e os @types/* deles) pra
+      # resolver. Sem isso, o typecheck falha com "Cannot find module
+      # 'react'" (build completo, com devDependencies - so' as prod deps
+      # nao bastam, os @types/* ficam em devDependencies).
+      - name: Install desktop-app dependencies (usadas pelos componentes reaproveitados)
+        working-directory: desktop-app
+        run: npm ci
+
       - name: Install and build web-app (versão web do app desktop)
         working-directory: web-app
         run: |
-          (npm ci && npm run build) > /tmp/webapp_build_log.txt 2>&1
-          cat /tmp/webapp_build_log.txt
-
-      # Diagnostico temporario (2026-09-06): esse passo esta falhando na CI
-      # mas nao localmente - publica o log num branch dedicado pra ler sem
-      # precisar de token de autenticacao. Remover assim que resolvido.
-      - name: Publish build log for unauthenticated debugging
-        if: always()
-        run: |
-          rm -rf /tmp/debug-log-repo
-          mkdir -p /tmp/debug-log-repo
-          cd /tmp/debug-log-repo
-          git init -q
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -q --orphan ci-debug-logs
-          cp /tmp/webapp_build_log.txt webapp_build_log.txt
-          git add webapp_build_log.txt
-          git commit -q -m "debug: webapp build log from run ${{ github.run_id }}"
-          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-debug-logs
+          npm ci
+          npm run build
 
       # Junta o site estatico com o build do app web num diretorio unico
       # antes de publicar - app fica acessivel em /app/ dentro do site.
