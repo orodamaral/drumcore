@@ -33,9 +33,35 @@ interface GithubRelease {
   assets: GithubReleaseAsset[]
 }
 
-export async function getLatestFirmware(): Promise<LatestFirmware> {
-  const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases`)
+// A aba Firmware busca de novo toda vez que o usuario troca de aba (o
+// componente remonta) - sem cache, isso pode facilmente estourar o limite
+// de requisicoes sem autenticacao da API do GitHub (60/hora por IP, bem
+// baixo) so' de alternar entre abas algumas vezes. Cache simples em
+// memoria do processo main, valido por alguns minutos.
+const CACHE_TTL_MS = 5 * 60 * 1000
+let cache: { result: LatestFirmware; fetchedAt: number } | null = null
+
+async function githubFetch(url: string): Promise<Response> {
+  const res = await fetch(url)
+  if (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0') {
+    const resetHeader = res.headers.get('x-ratelimit-reset')
+    const resetAt = resetHeader
+      ? new Date(Number(resetHeader) * 1000).toLocaleTimeString('pt-BR')
+      : 'em alguns minutos'
+    throw new Error(
+      `Limite de requisições sem login da API do GitHub atingido (60/hora por IP) - tenta de novo depois de ${resetAt}.`
+    )
+  }
   if (!res.ok) throw new Error(`GitHub respondeu ${res.status}`)
+  return res
+}
+
+export async function getLatestFirmware(): Promise<LatestFirmware> {
+  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
+    return cache.result
+  }
+
+  const res = await githubFetch(`https://api.github.com/repos/${GITHUB_REPO}/releases`)
   const releases = (await res.json()) as GithubRelease[]
 
   // Tags de firmware ("fw-v*") ordenam certo por string porque seguem
@@ -54,11 +80,12 @@ export async function getLatestFirmware(): Promise<LatestFirmware> {
     throw new Error('Release encontrada, mas faltam os arquivos esperados (manifest.json / .bin).')
   }
 
-  const manifestRes = await fetch(manifestAsset.browser_download_url)
-  if (!manifestRes.ok) throw new Error(`Falha ao baixar manifest.json (${manifestRes.status})`)
+  const manifestRes = await githubFetch(manifestAsset.browser_download_url)
   const manifest = (await manifestRes.json()) as FirmwareManifest
 
-  return { manifest, downloadUrl: binAsset.browser_download_url }
+  const result: LatestFirmware = { manifest, downloadUrl: binAsset.browser_download_url }
+  cache = { result, fetchedAt: Date.now() }
+  return result
 }
 
 export async function downloadFirmwareBinary(url: string): Promise<Uint8Array> {
