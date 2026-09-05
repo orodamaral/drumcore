@@ -1,30 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ESPLoader, Transport } from 'esptool-js'
 import esp32UartImage from '../assets/esp32-uart.png'
+import type { FirmwareManifest } from '../env'
 
-// Repositorio publico de onde as releases de firmware (tag "fw-v*") sao
-// baixadas - ver .github/workflows/firmware-release.yml.
-const GITHUB_REPO = 'orodamaral/drumcore'
 const FLASH_BAUD_RATE = 115200
-
-interface FirmwareManifest {
-  version: string
-  chip: string
-  flash_size: string
-  flash_mode: string
-  offset: string
-  file: string
-}
-
-interface GithubReleaseAsset {
-  name: string
-  browser_download_url: string
-}
-
-interface GithubRelease {
-  tag_name: string
-  assets: GithubReleaseAsset[]
-}
 
 type FlashStatus =
   | { phase: 'idle' }
@@ -54,31 +33,11 @@ export default function FirmwareManager({
     setStatus({ phase: 'checking' })
     setCheckError(null)
     try {
-      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases`)
-      if (!res.ok) throw new Error(`GitHub respondeu ${res.status}`)
-      const releases = (await res.json()) as GithubRelease[]
-
-      // Tags de firmware ("fw-v*") ordenam certo por string porque seguem
-      // sempre o mesmo formato fw-vMAJOR.MINOR.PATCH com mesma contagem de
-      // digitos na pratica deste projeto - se isso mudar, trocar por
-      // comparacao semver de verdade.
-      const firmwareReleases = releases
-        .filter((release) => release.tag_name.startsWith('fw-v'))
-        .sort((a, b) => (a.tag_name < b.tag_name ? 1 : -1))
-      const latest = firmwareReleases[0]
-      if (!latest) throw new Error('Nenhuma release de firmware encontrada no GitHub ainda.')
-
-      const manifestAsset = latest.assets.find((asset) => asset.name === 'manifest.json')
-      const binAsset = latest.assets.find((asset) => asset.name.endsWith('.bin'))
-      if (!manifestAsset || !binAsset) {
-        throw new Error('Release encontrada, mas faltam os arquivos esperados (manifest.json / .bin).')
-      }
-
-      const manifestRes = await fetch(manifestAsset.browser_download_url)
-      if (!manifestRes.ok) throw new Error(`Falha ao baixar manifest.json (${manifestRes.status})`)
-      const manifest = (await manifestRes.json()) as FirmwareManifest
-
-      setStatus({ phase: 'ready', manifest, downloadUrl: binAsset.browser_download_url })
+      // Roda no processo main (window.drumCore.getLatestFirmware) - os
+      // links de asset do GitHub nao mandam CORS liberado pro renderer, um
+      // fetch direto daqui falha. Ver src/main/firmwareRelease.ts.
+      const { manifest, downloadUrl } = await window.drumCore.getLatestFirmware()
+      setStatus({ phase: 'ready', manifest, downloadUrl })
     } catch (err) {
       setCheckError(err instanceof Error ? err.message : String(err))
       setStatus({ phase: 'idle' })
@@ -108,9 +67,9 @@ export default function FirmwareManager({
       await loader.main()
 
       setStatus({ phase: 'downloading' })
-      const binRes = await fetch(downloadUrl)
-      if (!binRes.ok) throw new Error(`Falha ao baixar o firmware (${binRes.status})`)
-      const firmwareBytes = new Uint8Array(await binRes.arrayBuffer())
+      // Mesmo motivo do getLatestFirmware() acima - o link de asset nao tem
+      // CORS liberado, o download roda no processo main.
+      const firmwareBytes = await window.drumCore.downloadFirmwareBinary(downloadUrl)
 
       setStatus({ phase: 'writing', percent: 0 })
       await loader.writeFlash({

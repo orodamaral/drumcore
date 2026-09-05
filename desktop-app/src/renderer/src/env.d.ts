@@ -7,6 +7,20 @@ export interface PortInfo {
   manufacturer?: string
 }
 
+export interface FirmwareManifest {
+  version: string
+  chip: string
+  flash_size: string
+  flash_mode: string
+  offset: string
+  file: string
+}
+
+export interface LatestFirmware {
+  manifest: FirmwareManifest
+  downloadUrl: string
+}
+
 export interface DrumCoreApi {
   listPorts: () => Promise<PortInfo[]>
   connect: (path: string) => Promise<void>
@@ -15,6 +29,8 @@ export interface DrumCoreApi {
   isConnected: () => Promise<boolean>
   onMessage: (callback: (line: string) => void) => () => void
   onError: (callback: (message: string) => void) => () => void
+  getLatestFirmware: () => Promise<LatestFirmware>
+  downloadFirmwareBinary: (url: string) => Promise<Uint8Array>
 }
 
 declare global {

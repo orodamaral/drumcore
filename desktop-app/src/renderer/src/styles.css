@@ -268,10 +268,6 @@ button:disabled {
   overflow-y: auto;
 }
 
-.firmware-manager {
-  max-width: 640px;
-}
-
 .firmware-intro h2 {
   margin: 0 0 6px;
   font-family: 'Silkscreen', monospace;
@@ -289,7 +285,7 @@ button:disabled {
 
 .firmware-port-guide img {
   display: block;
-  max-width: 100%;
+  max-width: 20%;
   height: auto;
   border-radius: 4px;
   margin-bottom: 10px;

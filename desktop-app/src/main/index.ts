@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, session } from 'electron'
 import { join } from 'path'
 import { SerialConnection } from './serial'
+import { downloadFirmwareBinary, getLatestFirmware } from './firmwareRelease'
 
 const serial = new SerialConnection()
 let mainWindow: BrowserWindow | null = null
@@ -62,6 +63,9 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('serial:is-connected', () => serial.isConnected())
+
+  ipcMain.handle('firmware:get-latest', () => getLatestFirmware())
+  ipcMain.handle('firmware:download-binary', (_event, url: string) => downloadFirmwareBinary(url))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

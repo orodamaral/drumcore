@@ -54,7 +54,7 @@ jobs:
           echo "----- upload_log.txt -----"
           cat upload_log.txt
 
-      - name: Extract real flash offsets from the build
+      - name: Extract real flash parameters from the build
         working-directory: firmware
         run: |
           python3 ../.github/scripts/extract_flash_args.py upload_log.txt > flash_args.txt
@@ -66,9 +66,20 @@ jobs:
         run: |
           MERGED_NAME="drumcore-firmware-${{ steps.version.outputs.tag }}.bin"
           echo "MERGED_NAME=$MERGED_NAME" >> "$GITHUB_ENV"
-          ARGS=$(awk '{printf "%s %s ", $1, $2}' flash_args.txt)
+
+          FLASH_MODE=$(awk '$1=="flash_mode"{print $2}' flash_args.txt)
+          FLASH_FREQ=$(awk '$1=="flash_freq"{print $2}' flash_args.txt)
+          FLASH_SIZE=$(awk '$1=="flash_size"{print $2}' flash_args.txt)
+          echo "FLASH_MODE=$FLASH_MODE" >> "$GITHUB_ENV"
+          echo "FLASH_FREQ=$FLASH_FREQ" >> "$GITHUB_ENV"
+          echo "FLASH_SIZE=$FLASH_SIZE" >> "$GITHUB_ENV"
+
+          # So as linhas "0x... arquivo.bin" (pula as 3 primeiras linhas de
+          # metadados flash_mode/flash_freq/flash_size).
+          ARGS=$(awk '$1 ~ /^0x/{printf "%s %s ", $1, $2}' flash_args.txt)
+
           esptool --chip esp32s3 merge_bin -o "$MERGED_NAME" \
-            --flash_mode qio --flash_size 16MB $ARGS
+            --flash_mode "$FLASH_MODE" --flash_freq "$FLASH_FREQ" --flash_size "$FLASH_SIZE" $ARGS
 
       - name: Write manifest.json
         working-directory: firmware
@@ -77,8 +88,9 @@ jobs:
           {
             "version": "${{ steps.version.outputs.tag }}",
             "chip": "esp32s3",
-            "flash_size": "16MB",
-            "flash_mode": "qio",
+            "flash_size": "${{ env.FLASH_SIZE }}",
+            "flash_mode": "${{ env.FLASH_MODE }}",
+            "flash_freq": "${{ env.FLASH_FREQ }}",
             "offset": "0x0",
             "file": "${{ env.MERGED_NAME }}"
           }
