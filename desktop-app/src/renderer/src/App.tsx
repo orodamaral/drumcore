@@ -130,7 +130,12 @@ export default function App() {
       return
     }
 
-    if (!selectedPort) return
+    // No build web (Web Serial), nunca existe uma porta pre-selecionada -
+    // listPorts() sempre retorna [] (ver App.tsx, botao Conectar) e
+    // connect() abre o seletor nativo do navegador direto. So' exige porta
+    // selecionada quando ha' uma lista de verdade pra escolher (build
+    // Electron/serialport).
+    if (ports.length > 0 && !selectedPort) return
     await window.drumCore.connect(selectedPort)
     setConnected(true)
     send({ cmd: 'get_all_pads' })
