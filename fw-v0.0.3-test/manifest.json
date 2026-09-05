@@ -1,0 +1,9 @@
+{
+  "version": "fw-v0.0.3-test",
+  "chip": "esp32s3",
+  "flash_size": "16MB",
+  "flash_mode": "dio",
+  "flash_freq": "80m",
+  "offset": "0x0",
+  "file": "drumcore-firmware-fw-v0.0.3-test.bin"
+}
