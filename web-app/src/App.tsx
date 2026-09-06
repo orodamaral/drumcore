@@ -15,6 +15,7 @@ import {
 import PadGrid from './components/PadGrid'
 import PadEditor from './components/PadEditor'
 import FirmwareManager from './components/FirmwareManager'
+import MidiMonitor from './components/MidiMonitor'
 import Logo from './components/Logo'
 import type { PortInfo } from './env'
 
@@ -22,7 +23,7 @@ const PAD_COUNT = 32
 
 const DEFAULT_GLOBAL: GlobalConfig = { midi_channel: 10, midi_output: 2 }
 
-type Tab = 'config' | 'global' | 'firmware'
+type Tab = 'config' | 'global' | 'midi' | 'firmware'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('config')
@@ -295,6 +296,9 @@ export default function App() {
           <button className={tab === 'global' ? 'active' : ''} onClick={() => setTab('global')}>
             Global
           </button>
+          <button className={tab === 'midi' ? 'active' : ''} onClick={() => setTab('midi')}>
+            MIDI Monitor
+          </button>
           <button className={tab === 'firmware' ? 'active' : ''} onClick={() => setTab('firmware')}>
             Firmware
           </button>
@@ -307,6 +311,10 @@ export default function App() {
               connectedFirmwareVersion={connected ? firmwareVersion : undefined}
               onDisconnectApp={disconnect}
             />
+          </main>
+        ) : tab === 'midi' ? (
+          <main className="content">
+            <MidiMonitor />
           </main>
         ) : !connected ? (
           <main className="content empty-state">

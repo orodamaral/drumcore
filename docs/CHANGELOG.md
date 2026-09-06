@@ -2,6 +2,26 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-06 — Aba MIDI Monitor no ConfigTool
+
+- **Nova aba "MIDI Monitor"** (`web-app/src/components/MidiMonitor.tsx`),
+  entre Global e Firmware — independente da conexão Web Serial (protocolo
+  NDJSON), usa a **Web MIDI API** (`navigator.requestMIDIAccess()`)
+  direto do navegador.
+- Enxerga tanto a porta USB-MIDI nativa do módulo (descriptor "DRUMCORE",
+  ver `TinyUSBDevice.setProductDescriptor()` em `firmware/src/main.cpp`)
+  quanto qualquer porta BLE-MIDI já pareada no SO — um único seletor
+  cobre os dois transportes, com auto-seleção de qualquer porta cujo
+  nome contenha "drumcore".
+- Log em tempo real decodificando Note On/Off (com nome da nota),
+  Control Change, Program Change, Aftertouch e Pitch Bend, com
+  pausar/limpar. Tipos da Web MIDI API já vêm no `lib.dom.d.ts` do
+  TypeScript 5.9 — nenhuma dependência nova precisou ser adicionada.
+- Só funciona em Chrome/Edge (mesma limitação do Web Serial já usado no
+  resto do app) e em contexto seguro (HTTPS/localhost) — GitHub Pages já
+  atende. Validado via `tsc --noEmit`/`vite build`; teste com hardware
+  real ainda pendente.
+
 ## 2026-09-06 — Menu do site reorganizado; página de gravação manual removida
 
 - **Nav padronizado** em `site/index.html`, `site/hardware.html` e no
