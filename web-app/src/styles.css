@@ -1,23 +1,27 @@
 /*
-  Paleta e tipografia seguem design/SPEC.md (tokens da tela do módulo) -
-  ver docs/01-decisoes-arquiteturais.md pro racional do reskin. Silkscreen
-  (pixel) pra títulos, Space Grotesk pro resto da UI.
+  Paleta e tipografia seguem site/assets/style.css - o app adota o design
+  system do site (ver docs/01-decisoes-arquiteturais.md pro racional da
+  unificacao). Silkscreen (pixel) fica só pra marca "DRUMCORE" (brand.tsx /
+  Logo.tsx); o resto da UI usa a mesma familia do site.
 */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Silkscreen:wght@400;700&display=swap');
 
 :root {
   color-scheme: dark;
 
-  --bg: #101418;
-  --surface: #1e252b;
-  --line: #38434d;
-  --txt-dim: #7a8894;
-  --txt: #e6edf3;
-  --accent: #00d2ff;
-  --edit: #ffb020;
-  --hit: #ff7a1a;
-  --ok: #35d07f;
+  --bg: #10141a;
+  --surface: #171c24;
+  --surface-2: #1d232d;
+  --line: #2a3240;
+  --txt: #e9e4d8;
+  --txt-dim: #8b93a3;
+  --accent: #5fd3c4;
+  --edit: #e3b34f;
+  --hit: #ef6f6f;
+  --ok: #7bcf8e;
+  --radius: 10px;
 
-  font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
 }
 
 * {
@@ -30,27 +34,107 @@ body {
   color: var(--txt);
 }
 
+/* ---------------------------------------------------------------- nav (mesma marcação/CSS do site) */
+
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+.topnav .wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  gap: 20px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Silkscreen', 'IBM Plex Mono', monospace;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: var(--txt);
+  text-decoration: none;
+}
+
+.brand-logo {
+  flex: none;
+}
+
+.navlinks {
+  display: flex;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+}
+
+.navlinks a {
+  display: block;
+  padding: 8px 14px;
+  border-radius: 7px;
+  color: var(--txt-dim);
+  text-decoration: none;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.navlinks a:hover {
+  color: var(--txt);
+  background: var(--surface);
+}
+
+.navlinks a.active {
+  color: var(--txt);
+  background: var(--surface-2);
+}
+
+.nav-gh {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 13px !important;
+  color: var(--txt) !important;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px !important;
+}
+
+.nav-gh:hover {
+  border-color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .navlinks {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- app shell */
+
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: calc(100vh - 64px);
 }
 
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 12px 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
-}
-
-.topbar h1 {
-  font-family: 'Silkscreen', 'Space Grotesk', monospace;
-  font-size: 18px;
-  margin: 0;
-  letter-spacing: 2px;
-  color: var(--accent);
 }
 
 .connection-controls {
@@ -72,7 +156,7 @@ button {
   background: var(--surface);
   color: var(--txt);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 7px;
   padding: 6px 10px;
   font-size: 13px;
   font-family: inherit;
@@ -112,7 +196,7 @@ button:disabled {
 }
 
 .ble-badge {
-  font-family: 'Silkscreen', monospace;
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   padding: 3px 8px;
   border-radius: 999px;
@@ -186,7 +270,7 @@ button:disabled {
   padding: 6px 10px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 7px;
   text-align: left;
   transition: background-color 120ms, border-color 120ms;
 }
@@ -270,7 +354,6 @@ button:disabled {
 
 .firmware-intro h2 {
   margin: 0 0 6px;
-  font-family: 'Silkscreen', monospace;
   font-size: 16px;
   color: var(--accent);
 }
@@ -278,7 +361,7 @@ button:disabled {
 .firmware-port-guide {
   margin: 16px 0;
   padding: 14px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   background: var(--surface);
 }
@@ -287,7 +370,7 @@ button:disabled {
   display: block;
   max-width: 20%;
   height: auto;
-  border-radius: 4px;
+  border-radius: 6px;
   margin-bottom: 10px;
 }
 
@@ -309,7 +392,7 @@ button:disabled {
   min-width: 28px;
   height: 28px;
   padding: 0 6px;
-  border-radius: 4px;
+  border-radius: 7px;
   background: var(--surface);
   border: 1px solid var(--line);
   font-size: 13px;
@@ -322,7 +405,7 @@ button:disabled {
   background: var(--surface);
   color: var(--txt);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 7px;
   padding: 6px 10px;
   font-size: 15px;
   font-weight: 600;
@@ -367,7 +450,7 @@ button:disabled {
 .autotune-panel {
   margin-top: 18px;
   padding: 14px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   background: var(--surface);
 }
@@ -495,9 +578,9 @@ button:disabled {
   height: 120px;
   overflow-y: auto;
   padding: 8px 20px;
-  background: #0b0d0f;
+  background: #0c0e12;
   border-top: 1px solid var(--line);
-  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 12px;
   color: var(--txt-dim);
 }

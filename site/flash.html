@@ -11,7 +11,7 @@
 
 <nav class="topnav">
   <div class="wrap">
-    <a class="brand" href="index.html"><span class="dot"></span>DRUMCORE</a>
+    <a class="brand" href="index.html"><svg class="brand-logo" viewBox="0 0 94 46" width="30" height="15" aria-hidden="true" focusable="false"><rect x="0" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="36" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="48" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="60" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="72" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="0" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="12" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="36" y="12" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="48" y="12" width="10" height="10" rx="2" fill="var(--mux)"/><rect x="60" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="72" y="12" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="0" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="36" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="48" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="60" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="72" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="0" y="36" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="36" y="36" width="10" height="10" rx="2" fill="var(--line)"/><rect x="48" y="36" width="10" height="10" rx="2" fill="var(--line)"/><rect x="60" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="72" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="36" width="10" height="10" rx="2" fill="var(--line)"/></svg>DRUMCORE</a>
     <ul class="navlinks">
       <li><a href="index.html">Visão geral</a></li>
       <li><a class="active" href="flash.html">Gravar firmware</a></li>
@@ -58,7 +58,7 @@
     <ol class="steps">
       <li>
         <h3>Clone o repositório</h3>
-        <p>Pega o código-fonte completo (firmware, app desktop, hardware, documentação).</p>
+        <p>Pega o código-fonte completo (firmware, app de configuração, hardware, documentação).</p>
         <pre><code>git clone https://github.com/orodamaral/drumcore.git
 cd drumcore/firmware</code></pre>
       </li>
@@ -87,7 +87,7 @@ cd drumcore/firmware</code></pre>
       </li>
       <li>
         <h3>Acompanhe pelo monitor serial (opcional)</h3>
-        <p>O firmware fala NDJSON a 115200 baud com o app desktop, mas também dá pra ver os logs direto:</p>
+        <p>O firmware fala NDJSON a 115200 baud com o app, mas também dá pra ver os logs direto:</p>
         <pre><code>pio device monitor -b 115200</code></pre>
       </li>
     </ol>

@@ -11,5 +11,5 @@
     "noUnusedLocals": true,
     "types": ["vite/client", "w3c-web-serial"]
   },
-  "include": ["src/**/*", "../desktop-app/src/renderer/src/**/*"]
+  "include": ["src/**/*"]
 }

@@ -154,7 +154,7 @@ nunca tinha um `case PAD_DUAL:` — desde a Fase G, um pad configurado como
 tipo 1 (Aro/Dual, o caso mais comum pra uma caixa) simplesmente não emitia
 `hit` nem MIDI nenhum quando batido, apesar do protocolo
 ([04-protocolo-serial.md](04-protocolo-serial.md)) e o modo demo do app
-desktop (`mockDevice.ts`) já preverem as zonas `"head"`/`"rim"` pra esse
+(`mockDevice.ts`) já preverem as zonas `"head"`/`"rim"` pra esse
 tipo. Corrigido em `firmware/src/main.cpp` — ver
 [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md).
 

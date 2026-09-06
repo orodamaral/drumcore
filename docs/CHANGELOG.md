@@ -2,6 +2,44 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-06 — Desktop (Electron) aposentado; app web unificado visualmente com o site
+
+- **Decisão**: só o app web (`web-app/`) segue como forma de configurar o
+  módulo — o build Electron nunca chegou a ser usado de fato fora de teste
+  local, e mantê-lo vivo só duplicava trabalho toda vez que algo mudava em
+  `App.tsx`/`protocol.ts`/etc (ver entrada de 2026-09-06 acima, que já
+  descrevia o problema da dependência cruzada `web-app/` → `desktop-app/`).
+- **`desktop-app/` removido por completo**: processo principal Electron,
+  preload/`contextBridge`, `serialport`, `electron-builder`/NSIS e a
+  pipeline `.github/workflows/app-release.yml` que gerava o instalador
+  Windows — tudo apagado, sem deixar código morto.
+- **Arquivos migrados, não duplicados**: `App.tsx`, `components/`
+  (`FirmwareManager.tsx`/`PadEditor.tsx`/`PadGrid.tsx`), `env.d.ts`,
+  `firmwareCheck.ts`, `mockDevice.ts`, `protocol.ts`, `styles.css`,
+  `webDrumCore.ts` e o asset `esp32-uart.png` foram movidos (`git mv`) de
+  `desktop-app/src/renderer/src/` pra `web-app/src/` — `web-app` deixa de
+  importar arquivos de fora da própria pasta, e o `resolve.alias` +
+  `server.fs.allow` do `vite.config.ts` (workarounds pra resolução
+  cross-package do Node/TS) saem de cena.
+- **Visual unificado**: `web-app/src/styles.css` reescrito pra usar a
+  mesma paleta/tipografia do site (`site/assets/style.css` — IBM Plex
+  Sans/Mono no lugar de Space Grotesk, tokens de cor do site no lugar dos
+  antigos `--accent`/`--edit`/`--hit`). App ganhou o mesmo `<nav
+  class="topnav">` do site no topo, com os mesmos links (Visão geral,
+  Configurar (web), Gravar firmware, Hardware, GitHub).
+- **Logo novo**: a marca "DRUMCORE" (grade de pixels 8x4, direção 1A de
+  `design/LOGOS.md` — mesmo bitmap usado no silkscreen da jackboard) virou
+  um SVG inline (`web-app/src/components/Logo.tsx`), reusado no nav do
+  site (`site/index.html`/`hardware.html`/`flash.html`, substituindo o
+  antigo `.dot`) e no nav do app.
+- Textos que ainda descreviam o app como "desktop"/Electron atualizados em
+  `README.md`, `site/index.html`, `docs/00-visao-geral.md`,
+  `docs/02-hardware.md`, `docs/04-protocolo-serial.md`,
+  `docs/05-tipos-de-sensor.md` e nos comentários do firmware
+  (`firmware/src/main.cpp`) — entradas antigas deste changelog e de
+  `docs/01-decisoes-arquiteturais.md` continuam descrevendo o que era
+  verdade em cada data, sem reescrita retroativa.
+
 ## 2026-09-06 — App de configuração também como página web (`web-app/`)
 
 - **Motivação**: a aba Firmware já usava Web Serial (funciona em qualquer

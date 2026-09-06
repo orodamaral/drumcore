@@ -171,7 +171,7 @@ export interface PadConfigPrimary {
   uses_second_channel: boolean
   /** Nome pronto pra exibir: "N - label", ou "Pad N" enquanto sem label. */
   name: string
-  /** Texto livre "crú" (sem o prefixo do número) - editável só pelo app desktop. */
+  /** Texto livre "crú" (sem o prefixo do número) - editável só pelo app. */
   label: string
   sensitivity: number
   threshold: number

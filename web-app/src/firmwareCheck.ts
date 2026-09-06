@@ -1,6 +1,5 @@
 // Busca/baixa a release de firmware mais recente (tag "fw-v*") direto do
-// renderer - funciona tanto no build Electron quanto numa pagina web pura
-// (web-app/), sem precisar de nenhum processo Node/main como
+// navegador, sem precisar de nenhum processo Node/main como
 // intermediario. Os arquivos (manifest.json + binario mesclado) sao lidos
 // via raw.githubusercontent.com, que manda Access-Control-Allow-Origin: *
 // pra qualquer arquivo do repo - diferente dos assets de Release

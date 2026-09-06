@@ -1,19 +1,12 @@
-// Implementacao de DrumCoreApi (ver env.d.ts) baseada em Web Serial, pra
-// rodar a mesma UI (App.tsx e' identico nos dois builds) numa pagina web
-// pura, sem Electron - ver web-app/. Equivalente ao par
-// src/main/serial.ts (processo Node/Electron) + src/preload/index.ts
-// (contextBridge), so' que tudo roda no proprio navegador, sem IPC
-// nenhum (os listeners de mensagem/erro sao so' um Set de callbacks
-// locais).
+// Implementacao de DrumCoreApi (ver env.d.ts) baseada em Web Serial, roda
+// direto no navegador sem processo nativo nenhum - os listeners de
+// mensagem/erro sao so' um Set de callbacks locais.
 //
-// Diferencas em relacao ao build Electron:
 // - listPorts() sempre retorna [] - Web Serial nao expoe nome/caminho de
 //   porta (COM3, /dev/ttyUSB0 etc) por privacidade. A selecao de
 //   dispositivo acontece dentro de connect(), via
 //   navigator.serial.requestPort() - o proprio navegador mostra o
-//   seletor nativo (mais simples que o Electron, que precisa de um
-//   handler manual pro evento 'select-serial-port' - ver
-//   src/main/index.ts).
+//   seletor nativo de dispositivo.
 // - connect() ignora o argumento `path` (nao existe no mundo Web Serial).
 import type { DrumCoreApi, PortInfo } from './env'
 

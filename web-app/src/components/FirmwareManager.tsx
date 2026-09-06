@@ -54,10 +54,8 @@ export default function FirmwareManager({
     try {
       setStatus({ phase: 'connecting' })
 
-      // Web Serial (API do navegador, WICG) - no build Electron, o picker
-      // de dispositivo e' resolvido no processo main (ver main/index.ts,
-      // handler 'select-serial-port'); numa pagina web pura o proprio
-      // navegador mostra o seletor nativo, sem nada extra necessario.
+      // Web Serial (API do navegador, WICG) - o proprio navegador mostra
+      // o seletor nativo de dispositivo, sem nada extra necessario.
       const port = await navigator.serial.requestPort()
       const transport = new Transport(port)
       const loader = new ESPLoader({ transport, baudrate: FLASH_BAUD_RATE })

@@ -1,7 +1,7 @@
-# Protocolo Serial (módulo ↔ app desktop)
+# Protocolo Serial (módulo ↔ app)
 
 Contrato de comunicação entre o firmware (ESP32-S3, via USB-CDC — a mesma
-porta serial já usada pra debug desde a Fase B) e a interface desktop.
+porta serial já usada pra debug desde a Fase B) e o app de configuração.
 
 ## Formato
 
@@ -43,7 +43,7 @@ Cada linha enviada pelo app é um objeto com um campo `cmd`.
 | `start_autotune` | `pad` (0-31) | Inicia o assistente de auto-calibração (Fase O) pra esse pad — ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md). `error` (`invalid_pad`) se o pad não existir/não for `primary`, ou (`channel_disabled`) se o canal estiver desligado (`enabled: false`, Fase N). Resposta: uma série de `autotune_status` conforme o assistente avança (não é só uma resposta única — ver abaixo). |
 | `cancel_autotune` | — | Cancela o assistente em qualquer fase (mesmo no meio da coleta de golpes). Resposta: `autotune_status` com `"state": "idle"`. |
 | `apply_autotune` | — | Aplica o resultado calculado (`sensitivity`/`threshold`/`scan_time`/`mask_time`) no pad e persiste em EEPROM. Só funciona depois de um `autotune_status` com `"state": "done"` — `error` (`not_ready`) caso contrário. Resposta: `autotune_status` (`idle`) + `pad_config` com os novos valores. |
-| `enc_input` | `enc` (1 ou 2), `action` (`rotate`\|`click`\|`hold`), `delta` (só em `rotate`, padrão `1`) | Encoder virtual — Fase Q, criado pra navegar/testar a tela do módulo pelo app desktop antes dos encoders físicos estarem conectados. Chama exatamente o mesmo handler do encoder físico único (`onEncRotate`/`onEncClick`/`onEncHold`, ver `firmware/src/main.cpp`), então tem efeito idêntico ao giro/clique/hold real. **Fase Y (2026-09-04)**: o hardware passou a ter 1 encoder só, mas `enc` continua aceitando `1` ou `2` por compatibilidade com o app desktop existente — os dois valores caem no mesmo handler. Sem resposta dedicada — o resultado aparece na tela física do módulo, que é a única fonte da verdade de navegação (o app não espelha `currentPage`/item selecionado/etc). `error` (`invalid_enc`, `invalid_action` ou `invalid_delta`) em caso de parâmetro inválido. |
+| `enc_input` | `enc` (1 ou 2), `action` (`rotate`\|`click`\|`hold`), `delta` (só em `rotate`, padrão `1`) | Encoder virtual — Fase Q, criado pra navegar/testar a tela do módulo pelo app antes dos encoders físicos estarem conectados. Chama exatamente o mesmo handler do encoder físico único (`onEncRotate`/`onEncClick`/`onEncHold`, ver `firmware/src/main.cpp`), então tem efeito idêntico ao giro/clique/hold real. **Fase Y (2026-09-04)**: o hardware passou a ter 1 encoder só, mas `enc` continua aceitando `1` ou `2` por compatibilidade com o app existente — os dois valores caem no mesmo handler. Sem resposta dedicada — o resultado aparece na tela física do módulo, que é a única fonte da verdade de navegação (o app não espelha `currentPage`/item selecionado/etc). `error` (`invalid_enc`, `invalid_action` ou `invalid_delta`) em caso de parâmetro inválido. |
 
 `field` aceito em `set_global`:
 
@@ -252,8 +252,8 @@ Invertendo o CC de um controlador de pedal (`pad_type` 6/7):
   bloqueante (acumula caracteres até `\n`, sem travar o `loop()` — não
   podíamos usar algo como `Serial.readStringUntil()` com timeout, que
   pausaria o sensing/MIDI).
-- **App desktop**: `desktop-app/`, processo principal Electron abre a porta
-  serial (pacote `serialport`) e repassa as linhas pro renderer via IPC.
+- **App**: `web-app/`, direto pelo navegador via **Web Serial API**
+  (`navigator.serial`) — sem processo nativo/instalação, roda como página web.
 
 ## Em aberto / não coberto ainda
 

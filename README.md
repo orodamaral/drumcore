@@ -3,9 +3,8 @@
 Módulo de disparo MIDI para bateria eletrônica, baseado em ESP32-S3, com suporte a
 32 canais analógicos (via 2x multiplexador CD4067, uma "jackboard" de 16 canais
 cada — ver [hardware/jackboard/](hardware/jackboard/)), tela TFT ST7735 (SPI) e
-1 encoder rotativo com chave para navegação, e uma interface de configuração em
-React — direto pelo navegador (Web Serial, sem instalar nada) ou como app
-desktop (Electron), mesma UI e mesmo protocolo nos dois.
+1 encoder rotativo com chave para navegação, e um app de configuração em React,
+direto pelo navegador via Web Serial — sem instalar nada.
 
 Projeto construído sobre a biblioteca [HelloDrum-arduino-Library](https://github.com/RyoKosaka/HelloDrum-arduino-Library)
 de Ryo Kosaka (vendorizada e adaptada em [firmware/lib/HelloDrum-arduino-Library](firmware/lib/HelloDrum-arduino-Library)).
@@ -23,9 +22,8 @@ DrumCore/
 │   └── lib/
 │       └── HelloDrum-arduino-Library/   Biblioteca base, vendorizada e modificada
 ├── hardware/             Projetos KiCad (jackboard — placa de conectores TRS + rede de proteção)
-├── desktop-app/          Interface de configuração do módulo (Electron + React/TS)
-├── web-app/              Mesma interface, rodando pura no navegador via Web Serial
-│                         (reusa os componentes de desktop-app/src/renderer/src, sem duplicar)
+├── web-app/              App de configuração do módulo (React/TS), direto no navegador via
+│                         Web Serial, sem instalar nada
 └── site/                 Site estático de apresentação do projeto (GitHub Pages) — publica
                           o web-app/ em site/app/, ver .github/workflows/pages.yml
 ```

@@ -1,7 +1,7 @@
 {
   "name": "drumcore-web",
   "version": "0.1.0",
-  "description": "Versao web (Web Serial) do app de configuracao do DrumCore - reusa os componentes de ../desktop-app/src/renderer/src, sem duplicar",
+  "description": "App de configuracao do DrumCore, direto pelo navegador via Web Serial",
   "private": true,
   "type": "module",
   "scripts": {

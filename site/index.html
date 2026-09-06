@@ -4,14 +4,14 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>DrumCore — módulo MIDI-USB/BLE para bateria eletrônica</title>
-<meta name="description" content="DrumCore: módulo de disparo MIDI para bateria eletrônica baseado em ESP32-S3, com 32 canais analógicos, USB-MIDI nativo, BLE-MIDI e app desktop de configuração." />
+<meta name="description" content="DrumCore: módulo de disparo MIDI para bateria eletrônica baseado em ESP32-S3, com 32 canais analógicos, USB-MIDI nativo, BLE-MIDI e app de configuração direto pelo navegador." />
 <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
 
 <nav class="topnav">
   <div class="wrap">
-    <a class="brand" href="index.html"><span class="dot"></span>DRUMCORE</a>
+    <a class="brand" href="index.html"><svg class="brand-logo" viewBox="0 0 94 46" width="30" height="15" aria-hidden="true" focusable="false"><rect x="0" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="36" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="48" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="60" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="72" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="0" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="12" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="36" y="12" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="48" y="12" width="10" height="10" rx="2" fill="var(--mux)"/><rect x="60" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="72" y="12" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="0" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="36" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="48" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="60" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="72" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="0" y="36" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="36" y="36" width="10" height="10" rx="2" fill="var(--line)"/><rect x="48" y="36" width="10" height="10" rx="2" fill="var(--line)"/><rect x="60" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="72" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="36" width="10" height="10" rx="2" fill="var(--line)"/></svg>DRUMCORE</a>
     <ul class="navlinks">
       <li><a class="active" href="index.html">Visão geral</a></li>
       <li><a href="app/">Configurar (web)</a></li>
@@ -31,7 +31,7 @@
       analógicos de pads/pratos/chimbal, converte em notas e Control Change, e manda
       via <strong>USB-MIDI nativo</strong> (plug-and-play) e <strong>BLE-MIDI</strong>
       simultaneamente. Tela TFT + encoder rotativo pra configurar direto no hardware,
-      e um app desktop pra ajustar tudo com mais conforto.
+      e um app pelo navegador pra ajustar tudo com mais conforto.
     </p>
     <div class="hero-actions">
       <a class="btn btn-primary" href="app/">Configurar pelo navegador ↗</a>
@@ -73,8 +73,8 @@
       </div>
       <div class="card">
         <div class="icon">🧰</div>
-        <h3>App de configuração (web ou desktop)</h3>
-        <p>Direto pelo navegador (<a href="app/">Chrome/Edge, via Web Serial</a>, sem instalar nada) ou como app desktop (Electron) — mesma interface, mesmo protocolo serial NDJSON, edição completa de todos os parâmetros de cada pad, com modo demo pra testar sem hardware.</p>
+        <h3>App de configuração pelo navegador</h3>
+        <p>Direto pelo navegador (<a href="app/">Chrome/Edge, via Web Serial</a>, sem instalar nada) — edição completa de todos os parâmetros de cada pad, mesmo protocolo serial NDJSON do módulo, com modo demo pra testar sem hardware.</p>
       </div>
       <div class="card">
         <div class="icon">🎯</div>
@@ -90,7 +90,7 @@
     <h2>9 tipos de sensor, configuráveis por canal</h2>
     <p class="block-sub">
       Cada um dos 32 canais pode ser configurado independentemente como qualquer um
-      desses tipos, pelo app desktop. Nenhum tipo usa mais de 2 canais físicos.
+      desses tipos, pelo app. Nenhum tipo usa mais de 2 canais físicos.
     </p>
     <div class="table-wrap">
       <table>
@@ -126,7 +126,7 @@
       <div class="card">
         <div class="icon">💻</div>
         <h3>App de configuração</h3>
-        <p><code>desktop-app/</code> — Electron + React/TypeScript, e <code>web-app/</code> — mesma UI/componentes, rodando puro no navegador via Web Serial (publicado em <code>site/app/</code>, sem duplicar código). Os dois falam com o módulo pelo mesmo protocolo serial NDJSON (<code>docs/04-protocolo-serial.md</code>), com modo demo pra configurar sem hardware conectado.</p>
+        <p><code>web-app/</code> — React/TypeScript, roda puro no navegador via Web Serial, sem instalar nada (publicado em <code>site/app/</code>). Fala com o módulo pelo protocolo serial NDJSON (<code>docs/04-protocolo-serial.md</code>), com modo demo pra configurar sem hardware conectado.</p>
       </div>
       <div class="card">
         <div class="icon">🔧</div>

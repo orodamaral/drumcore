@@ -8,7 +8,7 @@ cérebro do sistema, capaz de:
 1. Ler até 32 entradas analógicas (pads piezo simples/aro, pratos 2/3 zonas,
    chimbal simples/2 zonas, pedal de chimbal FSR/óptico) através de 2
    multiplexadores CD4067 (módulo breakout "HW-178", 16 canais cada) — o
-   tipo de cada canal é configurável pelo app desktop, ver
+   tipo de cada canal é configurável pelo app, ver
    [05-tipos-de-sensor.md](05-tipos-de-sensor.md).
 2. Converter os sinais lidos em eventos MIDI (Note On/Off, Control Change) e
    enviá-los via **USB-MIDI nativo** (classe de dispositivo USB, plug-and-play,
@@ -20,8 +20,9 @@ cérebro do sistema, capaz de:
    nível/confirma, segurar volta um nível — Fase Y) para configuração do
    módulo diretamente no hardware (sensibilidade, threshold, curva, nota
    MIDI de cada pad, etc).
-4. Oferecer uma interface desktop para configuração completa do módulo (todos os
-   parâmetros de cada pad, mapeamento de notas, backup/restore de configuração).
+4. Oferecer um app de configuração, direto pelo navegador (Web Serial), para
+   ajustar todos os parâmetros de cada pad, mapeamento de notas e
+   backup/restore de configuração.
 
 ## Escopo funcional (alto nível)
 
@@ -32,12 +33,12 @@ cérebro do sistema, capaz de:
 | 1c | Envio BLE-MIDI simultâneo ao USB (Bluetooth) | Compilado, sem teste em hardware real |
 | 2 | Tela TFT (ST7735) + 1 encoder rotativo de configuração (rotate/click/hold, Fase Y) | Compilado, sem teste em hardware real |
 | 2b | Persistência EEPROM (config por pad sobrevive a reboot) | Compilado, sem teste em hardware real |
-| 2c | Protocolo serial NDJSON (módulo ↔ app desktop) | Compilado, sem teste em hardware real |
-| 2d | Nome livre por pad (editável só pelo app desktop) | Compilado/build ok, sem teste em hardware real |
+| 2c | Protocolo serial NDJSON (módulo ↔ app) | Compilado, sem teste em hardware real |
+| 2d | Nome livre por pad (editável só pelo app) | Compilado/build ok, sem teste em hardware real |
 | 2e | 9 tipos de sensor por pad + topologia de canais configurável pelo app | Compilado/build ok, sem teste em hardware real |
 | 2f | Navegação de 6 telas (BOOT/LIVE/PADS/PAD_EDIT/SIGNAL/GLOBAL, design/SPEC.md) — substitui a tela/grid da Fase I | Compilado/build ok, sem teste em hardware real |
 | 2g | Canal habilitado/desabilitado por pad (evita ruído em slot sem sensor) | Compilado/build ok, sem teste em hardware real |
-| 3 | Interface desktop de configuração (Electron/React), reskin seguindo a paleta/tipografia do módulo | Build/typecheck ok, sem teste com módulo real (só modo demo) |
+| 3 | App de configuração (Web Serial, direto pelo navegador), visual unificado com o site | Build/typecheck ok, sem teste com módulo real (só modo demo) |
 
 Projeto renomeado de "HelloDrum" para "DrumCore" em 2026-08-21 (ver
 [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md), Fase J) — a
@@ -63,7 +64,7 @@ completo e o racional de cada decisão. Resumo:
 - **docs/03-biblioteca-hellodrum.md** — notas sobre a API da biblioteca base, o que
   foi entendido do código-fonte, e o que foi/será modificado em relação ao original.
 - **docs/04-protocolo-serial.md** — contrato de comunicação (NDJSON) entre o
-  firmware e a interface desktop.
+  firmware e o app.
 - **docs/05-tipos-de-sensor.md** — os 9 tipos de sensor suportados, quantos
   canais cada um usa, e como o link pedal↔chimbal funciona.
 - **docs/CHANGELOG.md** — o que foi feito, em ordem cronológica.

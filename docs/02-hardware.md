@@ -266,8 +266,8 @@ mapeamento completo e o racional, e Fase Z pro pinout atual.
   abaixo.
 - `GPIO43`/`GPIO44` (header direito) **não estão livres**, apesar de
   aparecerem como GPIO genérico na serigrafia: são o UART físico
-  (TXD0/RXD0) que o firmware usa pra `Serial` (protocolo NDJSON com o app
-  desktop) quando compilado com `ARDUINO_USB_CDC_ON_BOOT=0` — ver
+  (TXD0/RXD0) que o firmware usa pra `Serial` (protocolo NDJSON com o app)
+  quando compilado com `ARDUINO_USB_CDC_ON_BOOT=0` — ver
   [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase R).
   Corrige uma nota anterior que os listava como "sem uso previsto".
 - **GPIO9 em uso temporário** (teste do sensor hall, ver

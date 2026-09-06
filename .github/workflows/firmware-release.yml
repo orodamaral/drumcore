@@ -152,8 +152,8 @@ jobs:
       # Release (que redirecionam pra release-assets.githubusercontent.com,
       # sem CORS liberado), raw.githubusercontent.com manda
       # Access-Control-Allow-Origin: * pra qualquer arquivo do repo.
-      # E' o que permite o app web (site/app/, sem processo Electron pra
-      # servir de intermediario) baixar o firmware direto do navegador.
+      # E' o que permite o app (site/app/) baixar o firmware direto do
+      # navegador, sem processo nativo nenhum como intermediario.
       # Um commit por release (sem --force, sem recriar o orphan toda vez)
       # - preserva o historico de versoes.
       - name: Publish to raw.githubusercontent.com (firmware-artifacts branch)

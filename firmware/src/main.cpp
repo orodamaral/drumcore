@@ -18,7 +18,7 @@
   ambos com gesto de hold 600ms) e persistência explícita (GLOBAL > SALVAR)
   em vez de auto-save a cada edição pelos encoders. Ver
   docs/01-decisoes-arquiteturais.md pro racional completo e as adaptações
-  feitas (não tínhamos DIN MIDI, o app desktop continua com auto-save).
+  feitas (não tínhamos DIN MIDI, o app continua com auto-save).
 
   Fase K: troca da multiplexação de 4x CD4051 (8 canais cada) para 2x
   CD4067/HW-178 (16 canais cada) - mesmas 32 entradas, só menos placas pra
@@ -48,7 +48,7 @@
 // fora da CI, e os envs de teste isolado (test_display.cpp etc.), que nao
 // carregam esse extra_scripts. Usado na tela BOOT e no campo
 // "firmware_version" de device_info (ver sendDeviceInfo()) - e' o que
-// permite o app desktop comparar contra a ultima release no GitHub.
+// permite o app comparar contra a ultima release no GitHub.
 #ifndef FW_VERSION
 #define FW_VERSION "dev"
 #endif
@@ -242,11 +242,10 @@ void bringUpNativeUsbHardware()
 #define HIHAT_PEDAL_CC 4
 
 // Primeira nota MIDI usada (pad 0) - so para identificar cada canal nos
-// testes iniciais. O usuario pode reatribuir por pad via a tela ou o app
-// desktop.
+// testes iniciais. O usuario pode reatribuir por pad via a tela ou o app.
 #define FIRST_TEST_NOTE 36
 
-// Nome livre por pad (ex: "Caixa"), editavel so pelo app desktop (nao entra
+// Nome livre por pad (ex: "Caixa"), editavel so pelo app (nao entra
 // no fluxo dos encoders/TFT) - ver docs/01-decisoes-arquiteturais.md. O
 // numero do pad nunca e' editavel: o nome exibido e' sempre "N - Label", ou
 // "Pad N" enquanto nao houver label definido.
@@ -485,7 +484,7 @@ byte midiOutput = OUTPUT_USB_BLE;
 
 // true se ha mudancas em RAM ainda nao gravadas via GLOBAL > SALVAR (o
 // design pede persistencia so explicita pelos encoders - ver
-// docs/01-decisoes-arquiteturais.md). O protocolo serial (app desktop)
+// docs/01-decisoes-arquiteturais.md). O protocolo serial (app)
 // continua salvando a cada set_pad, sem depender dessa flag.
 bool unsavedChanges = false;
 
@@ -519,7 +518,7 @@ void rebuildPadName(byte i)
 
 // ---------------------------------------------------------------------------
 // Sistema de campos por pad (Fase J) - equivalente ao PAD_TYPE_META do app
-// desktop (desktop-app/src/renderer/src/protocol.ts), so' que descrevendo
+// (web-app/src/protocol.ts), so' que descrevendo
 // como ler/escrever cada campo diretamente nos membros publicos de
 // HelloDrum (sem passar por HelloDrumButton::readButton()/settingEnable() -
 // aquele fluxo nao dava pra mapear pra essa navegacao nova, ver
@@ -694,7 +693,7 @@ int getFieldValue(byte padIndex, FieldId id)
 // Aplica so' em RAM (o design pede persistencia explicita via GLOBAL >
 // SALVAR pros encoders/tela - ver docs/01-decisoes-arquiteturais.md). O
 // protocolo serial tem seu proprio caminho de escrita (handleSetPad) que
-// continua salvando na hora, pro app desktop.
+// continua salvando na hora, pro app.
 void setFieldValue(byte padIndex, FieldId id, int value)
 {
     HelloDrum &p = pads[padIndex];
@@ -824,7 +823,7 @@ int signalPeak = 0;
 bool signalNeedsRedraw = true;
 
 // ---------------------------------------------------------------------------
-// Protocolo serial (NDJSON) com o app desktop - Fase E-H. Ver
+// Protocolo serial (NDJSON) com o app - Fase E-H. Ver
 // docs/04-protocolo-serial.md pro contrato completo (comandos/eventos).
 // ---------------------------------------------------------------------------
 
@@ -1059,7 +1058,7 @@ void loadAllFromEeprom()
 
 // Aplica um campo de configuracao a um pad via o PROTOCOLO SERIAL. Esse
 // caminho e' independente de setFieldValue() (usado pelos encoders/tela) e
-// continua salvando a cada mudanca - o app desktop nao tem um botao
+// continua salvando a cada mudanca - o app nao tem um botao
 // "salvar" equivalente ao GLOBAL do hardware, ver
 // docs/01-decisoes-arquiteturais.md.
 void handleSetPad(JsonDocument &doc)
@@ -1398,12 +1397,12 @@ void handleSerialCommand(const String &line)
     }
     else if (strcmp(cmd, "enc_input") == 0)
     {
-        // Encoder virtual (app desktop) - mesma semantica do fisico (ver
+        // Encoder virtual (app) - mesma semantica do fisico (ver
         // design/SPEC.md secao 1). Sem resposta dedicada: o resultado ja'
         // aparece na tela fisica do modulo, que e' a fonte da verdade de
         // navegacao (o app nao espelha currentPage/editItemIndex/etc).
         // [Fase Y] O hardware agora tem 1 encoder so', mas o campo "enc"
-        // continua aceitando 1 ou 2 por compatibilidade com o app desktop
+        // continua aceitando 1 ou 2 por compatibilidade com o app
         // existente - os dois valores caem no mesmo handler unico.
         int enc = doc["enc"] | 0;
         const char *action = doc["action"] | "";
@@ -1535,7 +1534,7 @@ void handlePadResult(byte i)
         // Bug encontrado 2026-08-22: faltava esse case desde a Fase G -
         // um pad PAD_DUAL nunca enviava hit/nota nenhuma (nem head nem
         // rim), apesar do protocolo (docs/04-protocolo-serial.md) e o
-        // modo demo do app desktop (mockDevice.ts) ja preverem as zonas
+        // modo demo do app (mockDevice.ts) ja preverem as zonas
         // "head"/"rim" pra esse tipo. Ver docs/01-decisoes-arquiteturais.md.
         if (pad.hit)
         {
@@ -2069,7 +2068,7 @@ int hihatFieldMultiplier(byte padType)
     return padType == PAD_HIHAT_OPTICAL ? 40 : 10;
 }
 
-// Espelha o estado do assistente pro app desktop (Fase O) - emitido a cada
+// Espelha o estado do assistente pro app (Fase O) - emitido a cada
 // mudanca de estado relevante, nao so' em resposta a comando (pra dar
 // progresso em tempo real: contagem regressiva do ruido, golpes capturados
 // etc). Ver docs/04-protocolo-serial.md.

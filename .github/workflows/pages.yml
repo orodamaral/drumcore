@@ -6,7 +6,6 @@ on:
     paths:
       - "site/**"
       - "web-app/**"
-      - "desktop-app/src/renderer/src/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -34,21 +33,7 @@ jobs:
         with:
           node-version: "20"
 
-      # web-app/ importa os componentes React direto de
-      # desktop-app/src/renderer/src/ (sem duplicar codigo - ver
-      # web-app/vite.config.ts), mas a resolucao de modulos do
-      # TypeScript/Node sobe a partir do ARQUIVO que importa, nao da raiz
-      # do projeto que chamou o tsc - como esses arquivos fisicamente
-      # moram em desktop-app/, precisam do desktop-app/node_modules
-      # instalado (react, react-dom, esptool-js e os @types/* deles) pra
-      # resolver. Sem isso, o typecheck falha com "Cannot find module
-      # 'react'" (build completo, com devDependencies - so' as prod deps
-      # nao bastam, os @types/* ficam em devDependencies).
-      - name: Install desktop-app dependencies (usadas pelos componentes reaproveitados)
-        working-directory: desktop-app
-        run: npm ci
-
-      - name: Install and build web-app (versão web do app desktop)
+      - name: Install and build web-app
         working-directory: web-app
         run: |
           npm ci
