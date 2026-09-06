@@ -223,9 +223,8 @@ export default function App() {
           </a>
           <ul className="navlinks">
             <li><a href="../index.html">Visão geral</a></li>
-            <li><a className="active" href="./">Configurar (web)</a></li>
-            <li><a href="../flash.html">Gravar firmware</a></li>
             <li><a href="../hardware.html">Hardware</a></li>
+            <li><a className="active" href="./">ConfigTool</a></li>
             <li>
               <a className="nav-gh" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">
                 GitHub ↗

@@ -2,6 +2,18 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-06 — Menu do site reorganizado; página de gravação manual removida
+
+- **Nav padronizado** em `site/index.html`, `site/hardware.html` e no
+  topnav do app (`web-app/src/App.tsx`): ordem única "Visão geral,
+  Hardware, ConfigTool, GitHub" nas três telas. O item que apontava pro
+  app web foi renomeado de "Configurar (web)" pra **ConfigTool**.
+- **`site/flash.html` removido**: o guia manual de compilar/gravar via
+  PlatformIO ficou redundante — a aba Firmware do ConfigTool já baixa a
+  release mais recente e grava direto do navegador via Web Serial. Todos
+  os links/botões que apontavam pra essa página (nav, hero, cards,
+  rodapé) também saíram.
+
 ## 2026-09-06 — Desktop (Electron) aposentado; app web unificado visualmente com o site
 
 - **Decisão**: só o app web (`web-app/`) segue como forma de configurar o
