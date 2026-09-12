@@ -1,0 +1,55 @@
+DrumCore — Licença
+
+Copyright (c) 2026 Rodrigo Amaral
+
+Este projeto (firmware, hardware/KiCad, app de configuração, site e
+documentação — todo o conteúdo deste repositório, exceto onde indicado
+de outra forma abaixo) está licenciado sob:
+
+    Creative Commons Atribuição-NãoComercial 4.0 Internacional
+    (CC BY-NC 4.0)
+
+Resumo (não substitui o texto legal completo):
+
+  Você tem permissão para:
+  - Compartilhar — copiar e redistribuir o material em qualquer suporte
+    ou formato.
+  - Adaptar — remixar, transformar e criar a partir do material.
+
+  Sob os seguintes termos:
+  - Atribuição — Você deve dar o crédito apropriado ao projeto original
+    (DrumCore, github.com/orodamaral/drumcore) e às fontes de origem que
+    ele próprio credita (ver seção "Fontes de origem" abaixo), fornecer
+    um link para a licença, e indicar se mudanças foram feitas. Você deve
+    fazer isso de forma razoável, mas de nenhuma maneira que sugira que
+    o licenciante endossa você ou o seu uso.
+  - NãoComercial — Você não pode usar o material para fins comerciais.
+
+  Sem restrições adicionais — Você não pode aplicar termos jurídicos ou
+  medidas de caráter tecnológico que restrinjam legalmente outros de
+  fazerem algo que a licença permita.
+
+Texto legal completo (o documento que de fato vale, em caso de conflito
+com o resumo acima):
+https://creativecommons.org/licenses/by-nc/4.0/legalcode.pt
+
+Deed (versão simplificada, em português):
+https://creativecommons.org/licenses/by-nc/4.0/deed.pt_BR
+
+---
+
+Fontes de origem / atribuições de terceiros
+
+O firmware é construído sobre a biblioteca HelloDrum-arduino-Library,
+de Ryo Kosaka (https://github.com/RyoKosaka/HelloDrum-arduino-Library),
+vendorizada e adaptada em firmware/lib/HelloDrum-arduino-Library/. Essa
+biblioteca é distribuída sob licença MIT própria (ver
+firmware/lib/HelloDrum-arduino-Library/LICENSE), que permanece válida e
+não é substituída pela CC BY-NC 4.0 acima — qualquer uso do código
+dessa biblioteca (isolado do resto do projeto DrumCore) segue os termos
+da licença MIT original de Ryo Kosaka, incluindo a manutenção do aviso
+de copyright original.
+
+Ao reutilizar ou redistribuir este projeto (total ou parcialmente),
+cite tanto o DrumCore quanto a HelloDrum-arduino-Library, conforme
+aplicável à parte usada.

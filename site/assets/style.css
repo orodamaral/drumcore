@@ -567,6 +567,10 @@ footer.site .foot-links {
   margin-top: 10px;
 }
 
+footer.site .license-note {
+  margin: 10px 0 0;
+}
+
 @media (max-width: 640px) {
   .navlinks {
     display: none;

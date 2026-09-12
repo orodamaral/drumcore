@@ -2,6 +2,21 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-12 — Licença do projeto: CC BY-NC 4.0
+
+- Adiciona `LICENSE` na raiz do repositório: Creative Commons
+  Atribuição-NãoComercial 4.0 Internacional (CC BY-NC 4.0) — uso e cópia
+  livres, sem fins comerciais, sempre citando a fonte (o próprio DrumCore
+  e, quando aplicável, a HelloDrum-arduino-Library). Deixa explícito que
+  a biblioteca vendorizada em `firmware/lib/HelloDrum-arduino-Library/`
+  mantém sua própria licença MIT original (Ryo Kosaka), não substituída
+  pela CC BY-NC.
+- `README.md` ganha seção "Licença" apontando pro `LICENSE`.
+  `web-app/package.json` ganha o campo `license`.
+- Site (`site/index.html`, `site/hardware.html`,
+  `site/assets/schematic.html`): nota de licença + link no rodapé de
+  todas as páginas.
+
 ## 2026-09-12 — 2 bugs corrigidos na tela SIGNAL (osciloscópio ao vivo)
 
 - **Escala vertical errada**: o gráfico limitava a escala em 0-1023 (ADC de

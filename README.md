@@ -37,3 +37,12 @@ hardware está em [docs/](docs/). Comece por [docs/00-visao-geral.md](docs/00-vi
 
 Veja [docs/CHANGELOG.md](docs/CHANGELOG.md) para o histórico completo do que já
 foi feito.
+
+## Licença
+
+Este projeto é licenciado sob [Creative Commons Atribuição-NãoComercial 4.0
+Internacional (CC BY-NC 4.0)](LICENSE) — uso e cópia livres, **sem fins
+comerciais**, sempre **citando a fonte** (este repositório e a
+HelloDrum-arduino-Library, ver crédito acima). Detalhes completos e a
+atribuição de terceiros (a biblioteca base, sob licença MIT própria) estão em
+[LICENSE](LICENSE).

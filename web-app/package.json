@@ -2,6 +2,7 @@
   "name": "drumcore-web",
   "version": "0.1.0",
   "description": "App de configuracao do DrumCore, direto pelo navegador via Web Serial",
+  "license": "CC-BY-NC-4.0",
   "private": true,
   "type": "module",
   "scripts": {
