@@ -37,7 +37,7 @@
       <a class="btn btn-ghost" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Ver código no GitHub</a>
       <a class="btn btn-ghost" href="hardware.html">Esquemático de ligação</a>
     </div>
-    <div class="status-pill"><span class="dot"></span>Em desenvolvimento — firmware compila e grava, ainda em validação com hardware real</div>
+    <div class="status-pill"><span class="dot"></span>Em desenvolvimento — bring-up em bancada (2 canais de teste validados), jackboard single-layer pronta pra fabricar em casa</div>
   </div>
 </header>
 
@@ -85,7 +85,7 @@
 
 <section class="block">
   <div class="wrap">
-    <h2>9 tipos de sensor, configuráveis por canal</h2>
+    <h2>10 tipos de sensor, configuráveis por canal</h2>
     <p class="block-sub">
       Cada um dos 32 canais pode ser configurado independentemente como qualquer um
       desses tipos, pelo app. Nenhum tipo usa mais de 2 canais físicos.
@@ -105,6 +105,7 @@
           <tr><td>Caixa 3 zonas</td><td class="mono">2</td><td class="wrap-text">Centro da pele + borda da pele (edge) + aro de verdade (rim), mesma técnica do prato 3 zonas.</td></tr>
           <tr><td>Pedal de chimbal (FSR)</td><td class="mono">1</td><td class="wrap-text">Sensor de posição contínua (FSR/VH-10/VH-11) — controla abertura/fechamento via CC.</td></tr>
           <tr><td>Pedal de chimbal (óptico)</td><td class="mono">1</td><td class="wrap-text">Mesmo conceito, sensor óptico TCRT5000.</td></tr>
+          <tr><td>Choke (fita de contato)</td><td class="mono">1</td><td class="wrap-text">Gatilho binário — fita de alumínio ligada direto num pino analógico, sem piezo. Dispara a nota configurada com velocity sempre 127 ao encostar.</td></tr>
         </tbody>
       </table>
     </div>

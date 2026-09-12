@@ -205,14 +205,16 @@ void bringUpNativeUsbHardware()
 #define MUX0_Z 1 // SIG do HW-178 #0 (pads 0-15) - ADC1_0
 #define MUX1_Z 2 // SIG do HW-178 #1 (pads 16-31) - ADC1_1
 
-// TESTE TEMPORARIO (2026-09-02, pino atualizado na Fase Z) - leitura
-// direta de 1 pino, sem MUX, pra testar o sensor hall (SS49E) do
-// controlador de HH, canal 0 ("Pad 1" na UI), enquanto o MUX fisico nao
-// chega. GPIO9: livre, ADC1 - ver docs/02-hardware.md ("Notas" - pinos
-// livres/sobressalentes). Usado em loop() (sobrescreve rawValue[0] depois
-// do scan dos MUX) e em setup() (habilita o pad 0 como PAD_SINGLE).
-// Remover quando o MUX chegar.
-#define TEST_DIRECT_HEAD_PIN 9
+// BRING-UP SEM JACKBOARD (2026-09-11, a pedido do Rodrigo): a jackboard
+// (MUX fisico) ainda nao foi montada, entao os 2 canais de teste (canal 1
+// e 2, "Pad 1"/"Pad 2" na UI) sao lidos direto de 2 pinos do ESP32-S3,
+// sem passar pelo MUX (ver leitura em loop(), sobrescreve rawValue[0]/[1]
+// depois do scan dos MUX, e em setup(), habilita os pads 0/1). GPIO9/10:
+// livres, ambos ADC1 (CH8/CH9) - ver docs/02-hardware.md ("Notas" - pinos
+// livres/sobressalentes). Remover (e voltar a ler pelos pads 0/1 do MUX0)
+// quando a jackboard for montada e conectada de verdade.
+#define TEST_DIRECT_PIN_0 9  // canal 1 ("Pad 1")
+#define TEST_DIRECT_PIN_1 10 // canal 2 ("Pad 2")
 
 #define NUM_MUX 2
 #define PADS_PER_MUX 16
@@ -275,7 +277,14 @@ void bringUpNativeUsbHardware()
 // de tratar qualquer vibracao no aro como uma unica zona. Ver
 // docs/01-decisoes-arquiteturais.md e docs/05-tipos-de-sensor.md.
 #define PAD_SNARE_3ZONE 8
-#define PAD_TYPE_COUNT 9
+// 1 canal - sensor de contato (fita de aluminio ligada direto no pino
+// analogico, sem piezo). Nao usa envelope/threshold de vibracao da lib -
+// e' um gatilho binario: raw acima do threshold configurado = "tocado",
+// dispara nota com velocity fixo em 127 (sem curva/gain/sensibilidade pra
+// calibrar, ver getFieldsForType()). Ver dispatchChoke() e
+// docs/05-tipos-de-sensor.md.
+#define PAD_CHOKE 9
+#define PAD_TYPE_COUNT 10
 
 #define PAD_NO_LINK 255 // valor "nenhum" para hihatPedalChannel[]
 
@@ -316,6 +325,8 @@ const char *padTypeShortName(byte type)
         return "HH-OPT";
     case PAD_SNARE_3ZONE:
         return "SNR-3Z";
+    case PAD_CHOKE:
+        return "CHOKE";
     default:
         return "?";
     }
@@ -461,6 +472,12 @@ byte padXtalkGroup[NUM_PADS];
 // handlePadResult(). Fase X - ver docs/01-decisoes-arquiteturais.md.
 bool padHihatInvert[NUM_PADS];
 
+// chokeTouched[i]: estado atual do sensor de contato (PAD_CHOKE) - so'
+// dispara nota na borda de subida (nao tocado -> tocado), pra segurar a
+// fita encostada nao repetir a nota. Ver dispatchChoke(). Fase Choke -
+// ver docs/05-tipos-de-sensor.md.
+bool chokeTouched[NUM_PADS];
+
 // Forward decls - auto-tune (Fase O). Implementado mais abaixo, perto do
 // resto do fluxo de encoders/telas, mas handleSerialCommand() (que fica
 // antes no arquivo) tambem precisa poder disparar/cancelar/aplicar.
@@ -566,6 +583,21 @@ byte getFieldsForType(byte padType, FieldDef *out)
     byte n = 0;
     out[n++] = {FIELD_SENSOR, "SENSOR", 0, PAD_TYPE_COUNT - 1, false};
     out[n++] = {FIELD_ENABLED, "ATIVO", 0, 1, false};
+
+    if (padType == PAD_CHOKE)
+    {
+        // Sensor de contato (fita de aluminio): binario, sem envelope de
+        // piezo pra calibrar - so' precisa de um nivel pra contar como
+        // "tocado" (THRESH, reusa threshold1 como % do fundo de escala) e
+        // da nota a disparar (velocity sempre 127, ver dispatchChoke()).
+        // Sem sensibilidade/scan/mask/retrigger/gain/curva/xtalk - nao se
+        // aplicam a um gatilho binario.
+        out[n++] = {FIELD_THRESHOLD, "THRESH", 1, 100, true};
+        out[n++] = {FIELD_NOTE, "NOTA", 0, 127, true};
+        out[n++] = {FIELD_VIEW_SIGNAL, "SINAL", 0, 0, false};
+        return n;
+    }
+
     out[n++] = {FIELD_SENSITIVITY, "SENSIB", 1, 100, true};
     out[n++] = {FIELD_THRESHOLD, "THRESH", 1, 100, true};
     out[n++] = {FIELD_SCAN, "SCAN", 1, 100, true};
@@ -1382,6 +1414,15 @@ void handleSerialCommand(const String &line)
             sendError(cmd, "channel_disabled");
             return;
         }
+        if (padTypes[pad] == PAD_CHOKE)
+        {
+            // PAD_CHOKE e' um gatilho binario (fita de aluminio) - nao tem
+            // envelope de piezo pra calibrar, o assistente de auto-tune
+            // (pensado pra impacto/vibracao) nao se aplica. Ver
+            // dispatchChoke()/getFieldsForType().
+            sendError(cmd, "not_applicable_for_choke");
+            return;
+        }
         startAutoTune((byte)pad);
     }
     else if (strcmp(cmd, "cancel_autotune") == 0)
@@ -1670,6 +1711,11 @@ void handlePadResult(byte i)
     }
 }
 
+// Forward decl - PAD_CHOKE nao usa nenhum metodo da lib vendorizada (nao
+// e' um piezo), so' compara rawValue[] direto contra um threshold - ver
+// definicao logo apos ADC_RAW_MAX, mais abaixo (precisa da constante).
+void dispatchChoke(byte i);
+
 // Chama o metodo de sensing certo pra esse pad, de acordo com o pad_type -
 // ver docs/05-tipos-de-sensor.md. So chamado pra canais primarios.
 void dispatchSensing(byte i)
@@ -1703,12 +1749,44 @@ void dispatchSensing(byte i)
     case PAD_HIHAT_OPTICAL:
         pads[i].TCRT5000MUX();
         break;
+    case PAD_CHOKE:
+        dispatchChoke(i);
+        break;
     }
 }
 
 // Resolucao do ADC do ESP32-S3 (12 bits) - mesmo valor usado internamente
 // pela lib pra normalizar rawValue[] (ver comentario de applyPadGain()).
 #define ADC_RAW_MAX 4095
+
+// PAD_CHOKE: gatilho binario (fita de aluminio no pino analogico, sem
+// piezo) - reusa threshold1 (FIELD_THRESHOLD, 1-100) como % do fundo de
+// escala do ADC pra decidir "tocado". So' dispara na borda de subida
+// (chokeTouched[i] false->true), com uma margem de ~10% pra soltar
+// (histerese) - evita repetir nota por ruido bem em cima do threshold
+// enquanto a fita fica encostada. Nota sempre com velocity fixo em 127
+// (pedido do Rodrigo - nao e' um sensor de vibracao, so' contato). Ver
+// docs/05-tipos-de-sensor.md.
+void dispatchChoke(byte i)
+{
+    int touchRaw = (int)((long)pads[i].threshold1 * ADC_RAW_MAX / 100);
+    int releaseRaw = touchRaw - (touchRaw / 10);
+    if (releaseRaw < 0)
+    {
+        releaseRaw = 0;
+    }
+
+    if (!chokeTouched[i] && rawValue[i] >= touchRaw)
+    {
+        chokeTouched[i] = true;
+        sendHitEvent(i, "touch", pads[i].note, 127);
+        fireNote(pads[i].note, 127);
+    }
+    else if (chokeTouched[i] && rawValue[i] <= releaseRaw)
+    {
+        chokeTouched[i] = false;
+    }
+}
 
 // Gain (Fase P, ver docs/01-decisoes-arquiteturais.md) - multiplicador de
 // calibracao por pad (padGain[], 10-200 = 0.10x-2.00x, 100 = neutro).
@@ -3407,7 +3485,11 @@ bool renderSignal()
     canvas.drawLine(4, 91, 124, 91, COL_LINE);
 
     int prevX = -1, prevY = -1;
-    int maxV = 1023;
+    // ADC do ESP32-S3 e' 12 bits (0-4095, ver ADC_RAW_MAX) - a escala aqui
+    // era 0-1023 (herdada de um ADC de 10 bits), cortando/achatando no
+    // topo qualquer leitura real acima de 1/4 do fundo de escala. Corrigido
+    // 2026-09-12 a pedido do Rodrigo.
+    int maxV = ADC_RAW_MAX;
     for (int i = 0; i < SIGNAL_BUFFER_LEN; i++)
     {
         int idx = (signalBufferPos + i) % SIGNAL_BUFFER_LEN;
@@ -3679,6 +3761,13 @@ void renderScreen()
     if (currentPage == PAGE_SIGNAL)
     {
         captureSignalSample();
+        // Sem isso, o grafico so' redesenhava ao entrar na tela ou trocar
+        // de pad (girar o encoder) - o buffer continuava sendo alimentado
+        // em segundo plano, mas a linha ficava "congelada" na tela mesmo
+        // com o pad sendo tocado. Forca redesenho todo loop() enquanto essa
+        // tela estiver aberta, pra ser de fato ao vivo. Corrigido
+        // 2026-09-12 a pedido do Rodrigo.
+        signalNeedsRedraw = true;
     }
 
     // Cada render*() desenha no canvas em RAM (nunca direto na tft - ver
@@ -3873,33 +3962,23 @@ void setup()
         loadAllFromEeprom();
     }
 
-    // CONTORNO TEMPORARIO (ainda necessario em 2026-09-01, mesmo com o bug
-    // do pads[] corrigido - Fase R): sem os 2x CD4067/32 pads fisicos
-    // conectados de verdade ainda, cada canal ADC fica flutuando e capta
-    // ruido, o que disparia "hit" espalhados pelos 32 quadrados na tela
-    // LIVE o tempo todo. Desabilitando todos os canais aqui (so' em RAM,
-    // nao mexe na EEPROM) pra manter a interface legivel ate' o MUX/pads
-    // serem conectados de verdade - ai' sim remover este bloco (ou
-    // habilitar so' os canais com sensor conectado).
+    // BRING-UP SEM JACKBOARD (2026-09-11): so' os canais 1 e 2 ("Pad 1"/
+    // "Pad 2") tem sensor conectado por enquanto, lidos direto de 2 pinos
+    // do ESP32-S3 (ver TEST_DIRECT_PIN_0/1 acima, jackboard ainda nao
+    // montada). Os demais 30 canais ficam desabilitados aqui (so' em RAM,
+    // nao mexe na EEPROM) pra evitar que ruido/flutuacao dos canais sem
+    // sensor dispare "hit" espalhados pela tela LIVE.
     for (byte i = 0; i < NUM_PADS; i++)
     {
         padEnabled[i] = false;
     }
-
-    // TESTE TEMPORARIO (2026-09-02, a pedido do Rodrigo) - o MUX fisico
-    // ainda nao chegou. Habilita so' o pad 0 (canal 0, "Pad 1" na UI
-    // 1-based) como single-channel, lido direto de 1 pino do ESP32-S3 em
-    // vez do MUX (ver leitura em loop(), logo apos o scan dos MUX -
-    // sobrescreve rawValue[0], que os MUX tambem escrevem, com lixo/
-    // flutuando, ja' que o MUX0 nao esta' conectado de verdade ainda) -
-    // pra testar o sensor hall (SS49E) do controlador de HH. Remover esse
-    // bloco (e a leitura em loop()) quando o MUX chegar e a fiacao real
-    // dos 32 canais for feita - ver docs/02-hardware.md pro pino GPIO9
-    // usado aqui (livre, ADC1, sem uso previsto ate' entao).
     padTypes[0] = PAD_SINGLE;
+    padTypes[1] = PAD_SINGLE;
     padEnabled[0] = true;
+    padEnabled[1] = true;
     recomputeChannelPrimary();
     rebuildPadName(0);
+    rebuildPadName(1);
 
     renderBootProgress(80);
 
@@ -3928,12 +4007,12 @@ void loop()
         mux[m].scan();
     }
 
-    // TESTE TEMPORARIO (2026-09-02) - ver define TEST_DIRECT_HEAD_PIN
-    // acima. Sobrescreve de proposito o que mux[0].scan() acabou de
-    // escrever em rawValue[0] (lixo/flutuando, MUX0 nao conectado de
-    // verdade ainda) com a leitura real do pino direto (sensor hall).
-    // Remover quando o MUX chegar.
-    rawValue[0] = analogRead(TEST_DIRECT_HEAD_PIN);
+    // BRING-UP SEM JACKBOARD - ver TEST_DIRECT_PIN_0/1 acima. Sobrescreve
+    // de proposito o que mux[0].scan() acabou de escrever em rawValue[0]/
+    // [1] (lixo/flutuando, MUX0 nao conectado de verdade ainda) com a
+    // leitura real dos 2 pinos diretos. Remover quando a jackboard chegar.
+    rawValue[0] = analogRead(TEST_DIRECT_PIN_0);
+    rawValue[1] = analogRead(TEST_DIRECT_PIN_1);
 
     applyPadGain(); // Fase P - antes do dispatch, pra ja ler o rawValue calibrado
 

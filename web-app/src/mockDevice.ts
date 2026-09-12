@@ -135,8 +135,11 @@ export class MockDevice {
       const candidates = this.pads.filter((p, i) => this.primary[i] && p.enabled)
       if (candidates.length === 0) return
       const pad = candidates[Math.floor(Math.random() * candidates.length)]
-      const velocity = 40 + Math.floor(Math.random() * 87)
       const zone = this.randomZoneFor(pad)
+      // PAD_CHOKE (fita de aluminio): gatilho binario, sempre velocity 127
+      // (nao tem envelope de piezo pra variar) - ver dispatchChoke() no
+      // firmware.
+      const velocity = pad.pad_type === 9 ? 127 : 40 + Math.floor(Math.random() * 87)
       const note = this.noteForZone(pad, zone)
       this.emit({ type: 'hit', pad: pad.pad, zone, note, velocity })
     }, 1800)
@@ -186,6 +189,8 @@ export class MockDevice {
         const r = Math.random()
         return r < 0.6 ? 'head' : r < 0.85 ? 'edge' : 'rim'
       }
+      case 9:
+        return 'touch'
       default:
         return 'bow'
     }
@@ -318,6 +323,12 @@ export class MockDevice {
     }
     if (!pad.enabled) {
       this.emit({ type: 'error', cmd: 'start_autotune', message: 'channel_disabled' })
+      return
+    }
+    if (pad.pad_type === 9) {
+      // PAD_CHOKE (fita de aluminio): gatilho binario, sem envelope de
+      // piezo pra calibrar - espelha a recusa do firmware real.
+      this.emit({ type: 'error', cmd: 'start_autotune', message: 'not_applicable_for_choke' })
       return
     }
 

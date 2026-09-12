@@ -2,6 +2,46 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-12 — 2 bugs corrigidos na tela SIGNAL (osciloscópio ao vivo)
+
+- **Escala vertical errada**: o gráfico limitava a escala em 0-1023 (ADC de
+  10 bits), mas o ADC do ESP32-S3 é de 12 bits (0-4095, `ADC_RAW_MAX`) — o
+  resto do firmware (gain, threshold, etc.) já assumia 0-4095. Qualquer
+  leitura real acima de 1023 aparecia cortada/achatada no topo do gráfico.
+  Corrigido em `renderSignal()` (`firmware/src/main.cpp`).
+- **Gráfico "congelado"**: só redesenhava ao entrar na tela ou trocar de
+  pad (girar o encoder) — o buffer (`captureSignalSample()`) continuava
+  sendo alimentado a cada `loop()` em segundo plano, mas a linha na tela
+  não se mexia sozinha enquanto o pad era tocado. Corrigido forçando
+  redesenho todo `loop()` enquanto a tela SIGNAL estiver aberta.
+
+## 2026-09-11 — Novo tipo de sensor: Choke (fita de contato); bring-up dos canais 1/2 sem jackboard
+
+- **`pad_type` 9 (`PAD_CHOKE`)**: fita de alumínio ligada direto num pino
+  analógico (sem piezo) — gatilho binário, dispara a nota configurada com
+  `velocity` sempre `127` quando o `rawValue[]` cruza um threshold (com
+  histerese pra não repetir enquanto a fita fica encostada). Implementado
+  fora da lib vendorizada (`dispatchChoke()` em `firmware/src/main.cpp`,
+  não usa nenhum método `HelloDrum::...MUX()`). Bem mais simples de
+  configurar que os outros 9 tipos: só `threshold` e `note` (sem
+  sensitivity/scan/mask/retrigger/gain/curva/xtalk, e sem auto-tune — ver
+  [05-tipos-de-sensor.md](05-tipos-de-sensor.md), seção "Tipo 9").
+- Evento `hit` desse tipo usa a zona `"touch"` (não `"choke"` — nome já
+  ocupado pelo gesto de abafar prato/caixa nos tipos 3/5/8, mecanismo
+  diferente baseado em envelope de vibração).
+- `firmware/start_autotune` e o modo demo (`web-app/src/mockDevice.ts`)
+  recusam calibrar um pad desse tipo (`error: "not_applicable_for_choke"`).
+  `web-app` (`protocol.ts`/`PadEditor.tsx`) atualizado em conjunto: novo
+  item na lista de tipos, painel de auto-tune escondido pra esse tipo.
+- **Bring-up sem jackboard ainda montada**: os 2 canais de teste (canal 1
+  e 2, "Pad 1"/"Pad 2") passaram a ser lidos direto de 2 pinos livres do
+  ESP32-S3 (`GPIO9`/`GPIO10`, ambos ADC1), sobrescrevendo `rawValue[0]`/
+  `[1]` depois do `scan()` dos MUX — os outros 30 canais continuam
+  desligados em RAM. Substitui o hack anterior de um único pino
+  (`TEST_DIRECT_HEAD_PIN`, usado só pro teste do sensor hall) — remover
+  (voltar a ler pelo MUX0 de verdade) quando a jackboard for montada e
+  conectada.
+
 ## 2026-09-06 — Aba MIDI Monitor no ConfigTool
 
 - **Nova aba "MIDI Monitor"** (`web-app/src/components/MidiMonitor.tsx`),

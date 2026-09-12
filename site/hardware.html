@@ -30,7 +30,7 @@
       via SPI, e 1 encoder rotativo com chave pra navegação. Cada subsistema sai de um
       único header físico da placa, por conveniência de montagem.
     </p>
-    <div class="status-pill"><span class="dot"></span>Encoder e tela validados em hardware real — MUX ainda não conectado nesse layout</div>
+    <div class="status-pill"><span class="dot"></span>Encoder, tela e 2 canais de teste (leitura direta, sem MUX) validados em hardware real — jackboard ainda não montada/conectada</div>
   </div>
 </header>
 
@@ -84,6 +84,20 @@
       logo "DRUMCORE" na serigrafia e pad de teste de +3V3 no estilo dos resistores.
       Gerbers gerados em <code>hardware/jackboard/fab/</code> — ainda não fabricada
       fisicamente/testada em bancada.
+    </p>
+    <p class="block-sub" style="margin-top: 24px;">
+      <strong>Variante single-layer</strong> (<code>hardware/jackboard_singlelayer/</code>):
+      mesma função, redesenhada pra caber inteira na camada bottom — permite corrosão
+      caseira (transferência térmica) em vez de mandar fabricar. Todos os 16 canais
+      roteados nessa única camada, com malha de terra própria estendida até o limite
+      da placa, e DRC limpo.
+    </p>
+    <p class="callout">
+      <span class="glyph">🖨️</span>
+      PDFs prontos pra impressão em <code>hardware/jackboard_singlelayer/fab/</code>:
+      a placa isolada (P&amp;B, pra transferência térmica) e um layout com 4 placas
+      por folha A4 (retrato, com vãos de corte). Ainda não corroída/montada
+      fisicamente.
     </p>
   </div>
 </section>

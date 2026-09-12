@@ -189,14 +189,19 @@ export default function PadEditor({
         </div>
       ))}
 
-      <AutoTunePanel
-        enabled={activePad.enabled}
-        padType={activePad.pad_type}
-        status={autoTune}
-        onStart={onStartAutoTune}
-        onCancel={onCancelAutoTune}
-        onApply={onApplyAutoTune}
-      />
+      {activePad.pad_type !== 9 && (
+        // PAD_CHOKE (fita de contato): gatilho binario, sem envelope de
+        // piezo pra calibrar - o assistente de auto-tune nao se aplica
+        // (firmware/mockDevice recusam start_autotune pra esse tipo).
+        <AutoTunePanel
+          enabled={activePad.enabled}
+          padType={activePad.pad_type}
+          status={autoTune}
+          onStart={onStartAutoTune}
+          onCancel={onCancelAutoTune}
+          onApply={onApplyAutoTune}
+        />
+      )}
     </div>
   )
 }

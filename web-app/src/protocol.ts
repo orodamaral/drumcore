@@ -23,7 +23,7 @@ export const PAD_LABEL_MAX_LEN = 19
 
 // Tipos de sensor - ver docs/05-tipos-de-sensor.md. Nenhum tipo usa mais de
 // 2 canais (limitação da própria lib base).
-export const PAD_TYPES = [0, 1, 2, 3, 4, 5, 6, 7, 8] as const
+export const PAD_TYPES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const
 export type PadType = (typeof PAD_TYPES)[number]
 
 export interface FieldSpec {
@@ -160,6 +160,21 @@ export const PAD_TYPE_META: Record<PadType, PadTypeMeta> = {
       { field: 'note', label: 'Nota (centro)', min: 0, max: 127 },
       { field: 'note_rim', label: 'Nota (borda)', min: 0, max: 127 },
       { field: 'note_cup', label: 'Nota (aro)', min: 0, max: 127 }
+    ]
+  },
+  9: {
+    label: 'Choke (fita de contato)',
+    channels: 1,
+    isHihatCymbal: false,
+    isHihatPedal: false,
+    // Sensor de contato (fita de alumínio ligada direto no pino analógico,
+    // sem piezo) - gatilho binário, sem envelope pra calibrar. Só precisa
+    // do threshold (nível de contato) e da nota - velocity sempre 127 (ver
+    // dispatchChoke() no firmware). Sem sensitivity/scan/mask/retrigger/
+    // gain/curva/xtalk - não se aplicam.
+    fields: [
+      { field: 'threshold', label: 'Threshold (contato)', min: 1, max: 100 },
+      { field: 'note', label: 'Nota MIDI', min: 0, max: 127 }
     ]
   }
 }

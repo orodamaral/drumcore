@@ -19,7 +19,7 @@ esse único valor contra dois limiares diferentes (`Edge Threshold` e
 `cymbal3zoneMUX()`/`cymbal3zoneSensing()` em `hellodrum.cpp` — só lê
 `pin_1` (piezo do corpo) e `pin_2` (o switch).
 
-## Os 9 tipos
+## Os 10 tipos
 
 | # | Tipo | Canais | Método da lib | Zonas/estados |
 |---|---|---|---|---|
@@ -32,6 +32,43 @@ esse único valor contra dois limiares diferentes (`Edge Threshold` e
 | 6 | Pedal de chimbal (FSR/VH-10/VH-11) | 1 | `hihatControlMUX()` | posição (CC) + "chick" ao fechar rápido |
 | 7 | Pedal de chimbal óptico (TCRT5000) | 1 | `TCRT5000MUX()` | igual ao 6, sensor diferente |
 | 8 | Caixa 3 zonas | 2 | `cymbal3zoneMUX()` | centro (head) + borda (edge) + aro (rim), mesma técnica do tipo 5 |
+| 9 | Choke (fita de contato) | 1 | `dispatchChoke()` (própria, fora da lib) | 1 zona (`"touch"`), gatilho binário, velocity sempre 127 |
+
+### Tipo 9 — Choke (fita de contato)
+
+Pedido do usuário: uma fita de alumínio ligada direto num pino analógico do
+ESP32 (sem piezo, sem circuito de vibração) — quando o baterista encosta a
+mão (ex: pra abafar um prato), o contato faz o `rawValue[]` desse canal
+saltar pra perto do topo da escala do ADC. É um **gatilho binário**, não um
+sensor de impacto: não faz sentido medir "quão forte" foi o toque, então a
+nota sempre sai com `velocity = 127`.
+
+Por isso esse tipo **não usa nenhum método da lib vendorizada**
+(`dispatchChoke()`, implementado direto em `main.cpp`) e não reaproveita o
+pipeline de envelope/threshold dos outros 9 tipos — só compara `rawValue[i]`
+contra um threshold (campo `threshold`, reaproveitado como % do fundo de
+escala do ADC) com uma pequena histerese (~10%) pra soltar, evitando repetir
+a nota por ruído bem em cima do limiar enquanto a fita continua encostada. A
+nota só dispara na borda de subida (não tocado → tocado); segurar o contato
+não repete, soltar e encostar de novo dispara de novo.
+
+Consequência prática: **muito menos campos de configuração** que os outros
+tipos — só `threshold` (nível de contato) e `note` (nota MIDI a disparar).
+Sem `sensitivity`/`scan_time`/`mask_time`/`retrigger`/`gain`/`curve_type`
+(não existe envelope pra moldar) nem `xtalk`/`xtalk_group` (não é vibração
+mecânica correlacionada entre pads). O assistente de auto-calibração
+também não se aplica (foi pensado pra medir pico/ruído de impacto) — tanto
+o firmware quanto o modo demo recusam `start_autotune` pra esse tipo com
+`error: "not_applicable_for_choke"`.
+
+O evento `hit` desse tipo usa a zona `"touch"` (não `"choke"` — esse nome já
+é usado pelo gesto de abafar um prato/caixa detectado via envelope de
+vibração nos tipos 3/5/8, um mecanismo completamente diferente; ver
+[04-protocolo-serial.md](04-protocolo-serial.md)).
+
+**Ainda não testado em hardware real** — o circuito real (pull-up/pull-down
+exato da fita, ruído esperado em repouso) só foi validado por leitura de
+código; o valor default de `threshold` pode precisar de ajuste na bancada.
 
 ### Tipo 8 — Caixa 3 zonas (centro/borda/aro)
 
@@ -75,8 +112,10 @@ comandos (`start_autotune`/`cancel_autotune`/`apply_autotune`).
 
 ## Mais 3 parâmetros universais (Fase P): `retrigger`, `gain`, `xtalk`/`xtalk_group`
 
-Também pesquisados no microDRUM/nanoDRUM, aparecem pra todos os 9 tipos
-(logo depois de `mask_time` e no fim da lista, respectivamente):
+Também pesquisados no microDRUM/nanoDRUM, aparecem pra 9 dos 10 tipos
+(logo depois de `mask_time` e no fim da lista, respectivamente) — a exceção
+é o tipo 9 (Choke), que não tem envelope de piezo nem vibração mecânica pra
+esses 3 parâmetros se aplicarem (ver seção "Tipo 9" acima):
 
 - **`retrigger`** (0-100, `0` = desligado): afrouxa o `mask_time` — uma
   pancada bem mais forte que a anterior pode disparar de novo antes do
@@ -111,7 +150,7 @@ encoders), não uma limitação que criamos:
 |---|---|---|
 | `rim_sensitivity` | `rimSensitivity` | Aro (1): sensibilidade do aro. Prato 2/3 zonas (3/5), chimbal 2 zonas (4), caixa 3 zonas (8): threshold da borda (edge). Pedal (6/7): sensibilidade do pedal. |
 | `rim_threshold` | `rimThreshold` | Aro (1): threshold do aro. Prato 3 zonas (5) e caixa 3 zonas (8): threshold do cup/aro. Não usado nos outros tipos. |
-| `note` | `note` (+ alias `noteOpen`) | Nota principal: bow/head/centro, ou "aberto" nos tipos de chimbal, ou a nota do "pedal chick". |
+| `note` | `note` (+ alias `noteOpen`) | Nota principal: bow/head/centro, ou "aberto" nos tipos de chimbal, ou a nota do "pedal chick". Choke (9): a única nota, disparada a cada toque (`velocity` sempre 127). |
 | `note_rim` | `noteRim` (+ alias `noteEdge`, `noteClose`, `noteOpenEdge`) | Aro (1): nota do rim. Prato 2/3 zonas (3/5), caixa 3 zonas (8): nota da borda. Chimbal (2/4): nota de "fechado" (cobre bow fechado **e** borda, em qualquer estado — ver limitação abaixo). |
 | `note_cup` | `noteCup` (+ alias `noteCloseEdge`, `noteCross`) | Prato 3 zonas (5): nota do cup. Caixa 3 zonas (8): nota do aro (rim). |
 | `hihat_invert` | `padHihatInvert[]` (fora da lib - array próprio em `main.cpp`, Fase X) | Pedal (6/7) só: inverte o CC final (`127 - pedalCC`) pra sensores que mandam a posição invertida. Não usado nos outros tipos. Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md). |
