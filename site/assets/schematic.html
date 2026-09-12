@@ -264,8 +264,8 @@
     <p class="sub">
       ESP32-S3 ↔ 1 encoder rotativo com chave + tela TFT ST7735 (SPI) de um
       lado ↔ 2x multiplexador CD4067/HW-178 (32 canais de pad) do outro.
-      Pinout conforme <code>firmware/src/main.cpp</code> e
-      <code>docs/02-hardware.md</code>.
+      Pinout conforme <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/firmware/src/main.cpp" target="_blank" rel="noopener"><code>firmware/src/main.cpp</code></a> e
+      <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/02-hardware.md" target="_blank" rel="noopener"><code>docs/02-hardware.md</code></a>.
     </p>
     <div class="stamp"><span class="dot"></span>Encoder + tela validados em hardware real (2026-09-06) — MUX ainda proposto, físico não conectado nesse layout</div>
   </header>
@@ -496,7 +496,7 @@
   <section class="notes">
     <div class="note-card">
       <h3>Por que a divisão mudou (Fase Z)</h3>
-      <p>Até a Fase Y, <code>3V3</code> só existia no header esquerdo, então o MUX e a tela (que precisam de VCC) ficavam à força ali. A placa física ganhou pads de <code>3V3</code>/<code>GND</code> extras nos dois headers — isso libera a divisão pra seguir uma lógica de FUNÇÃO em vez de alimentação: encoder + tela (interface) de um lado, MUX (sensing) do outro. Ver <code>docs/01-decisoes-arquiteturais.md</code> (Fase Z).</p>
+      <p>Até a Fase Y, <code>3V3</code> só existia no header esquerdo, então o MUX e a tela (que precisam de VCC) ficavam à força ali. A placa física ganhou pads de <code>3V3</code>/<code>GND</code> extras nos dois headers — isso libera a divisão pra seguir uma lógica de FUNÇÃO em vez de alimentação: encoder + tela (interface) de um lado, MUX (sensing) do outro. Ver <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/01-decisoes-arquiteturais.md" target="_blank" rel="noopener"><code>docs/01-decisoes-arquiteturais.md</code></a> (Fase Z).</p>
     </div>
     <div class="note-card">
       <h3>MUX: ADC1 em vez de ADC2</h3>
@@ -522,7 +522,7 @@
     </div>
     <div class="note-card">
       <h3>Encoder — sem resistor externo</h3>
-      <p>A/B/SW usam <code>INPUT_PULLUP</code> interno do ESP32-S3 (ver <code>firmware/src/main.cpp</code>) — não precisa de resistor de pull-up na placa. O módulo físico que chegou também tem pull-ups próprios (VCC no 3V3) — os dois ativos ao mesmo tempo não causam problema elétrico.</p>
+      <p>A/B/SW usam <code>INPUT_PULLUP</code> interno do ESP32-S3 (ver <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/firmware/src/main.cpp" target="_blank" rel="noopener"><code>firmware/src/main.cpp</code></a>) — não precisa de resistor de pull-up na placa. O módulo físico que chegou também tem pull-ups próprios (VCC no 3V3) — os dois ativos ao mesmo tempo não causam problema elétrico.</p>
     </div>
     <div class="note-card">
       <h3>Histórico de ajustes de pinout</h3>
@@ -581,8 +581,8 @@
 
   <footer class="page">
     Projeto DrumCore — módulo MIDI-USB para bateria eletrônica. Ver
-    <code>docs/02-hardware.md</code>, <code>docs/01-decisoes-arquiteturais.md</code>
-    e <code>docs/05-tipos-de-sensor.md</code> no repositório para o racional
+    <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/02-hardware.md" target="_blank" rel="noopener"><code>docs/02-hardware.md</code></a>, <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/01-decisoes-arquiteturais.md" target="_blank" rel="noopener"><code>docs/01-decisoes-arquiteturais.md</code></a>
+    e <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/05-tipos-de-sensor.md" target="_blank" rel="noopener"><code>docs/05-tipos-de-sensor.md</code></a> no repositório para o racional
     completo de cada decisão.
   </footer>
 </div>

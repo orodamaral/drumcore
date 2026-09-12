@@ -50,6 +50,16 @@ code {
   color: var(--ok);
 }
 
+/* <code>caminho/no/repo</code> como link pro GitHub - mesma cor/pill do
+   code normal, só ganha destaque no hover pra sinalizar que é clicável. */
+a.repo-link {
+  text-decoration: none;
+}
+
+a.repo-link:hover code {
+  background: color-mix(in srgb, var(--ok) 22%, var(--surface-2));
+}
+
 pre {
   font-family: 'IBM Plex Mono', monospace;
   background: #0c0e12;

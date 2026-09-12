@@ -39,7 +39,7 @@
     <h2>Esquemático interativo</h2>
     <p class="block-sub">
       Diagrama completo com todos os GPIOs, gerado a partir do pinout real usado em
-      <code>firmware/src/main.cpp</code>. Role dentro do quadro pra ver o diagrama inteiro,
+      <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/firmware/src/main.cpp" target="_blank" rel="noopener"><code>firmware/src/main.cpp</code></a>. Role dentro do quadro pra ver o diagrama inteiro,
       ou abra em uma aba própria pra tela cheia.
     </p>
     <div class="schematic-embed">
@@ -56,7 +56,7 @@
   <div class="wrap">
     <h2>Jackboard — placa de conectores</h2>
     <p class="block-sub">
-      Projeto KiCad (<code>hardware/jackboard/</code>): 8 conectores TRS 6.35mm
+      Projeto KiCad (<a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/hardware/jackboard" target="_blank" rel="noopener"><code>hardware/jackboard/</code></a>): 8 conectores TRS 6.35mm
       (16 canais — Tip e Ring de cada jack), cada canal com uma pequena rede de proteção
       antes de chegar no multiplexador. O sistema completo usa <strong>2 jackboards
       idênticas</strong> (uma por CD4067) pra fechar os 32 canais.
@@ -82,23 +82,27 @@
       <span class="glyph">✅</span>
       Roteamento completo e DRC limpo (0 curtos, 0 itens desconectados). Placa com
       logo "DRUMCORE" na serigrafia e pad de teste de +3V3 no estilo dos resistores.
-      Gerbers gerados em <code>hardware/jackboard/fab/</code> — ainda não fabricada
+      Gerbers gerados em <a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/hardware/jackboard/fab" target="_blank" rel="noopener"><code>hardware/jackboard/fab/</code></a> — ainda não fabricada
       fisicamente/testada em bancada.
     </p>
     <p class="block-sub" style="margin-top: 24px;">
-      <strong>Variante single-layer</strong> (<code>hardware/jackboard_singlelayer/</code>):
+      <strong>Variante single-layer</strong> (<a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/hardware/jackboard_singlelayer" target="_blank" rel="noopener"><code>hardware/jackboard_singlelayer/</code></a>):
       mesma função, redesenhada pra caber inteira na camada bottom — permite corrosão
       caseira (transferência térmica) em vez de mandar fabricar. Todos os 16 canais
       roteados nessa única camada, com malha de terra própria estendida até o limite
       da placa, e DRC limpo.
     </p>
     <figure class="pcb-figure">
+      <img src="assets/jackboard_pcb_full.svg" alt="Vista completa da jackboard single-layer: serigrafia com o logo DRUMCORE, footprints dos 8 conectores e o roteamento por baixo" loading="lazy" />
+      <figcaption>Vista completa (serigrafia + footprints + roteamento) — exportado direto do KiCad.</figcaption>
+    </figure>
+    <figure class="pcb-figure">
       <img src="assets/jackboard_pcb.svg" alt="Roteamento da jackboard single-layer (camada B.Cu): 8 conectores, malha de terra e trilhas com cantos chanfrados" loading="lazy" />
-      <figcaption>Camada B.Cu (única, do lado da corrosão) — exportado direto do KiCad.</figcaption>
+      <figcaption>Só a camada B.Cu (o lado que é de fato corroído).</figcaption>
     </figure>
     <p class="callout">
       <span class="glyph">🖨️</span>
-      PDFs prontos pra impressão em <code>hardware/jackboard_singlelayer/fab/</code>:
+      PDFs prontos pra impressão em <a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/hardware/jackboard_singlelayer/fab" target="_blank" rel="noopener"><code>hardware/jackboard_singlelayer/fab/</code></a>:
       a placa isolada (P&amp;B, pra transferência térmica) e um layout com 4 placas
       por folha A4 (retrato, com vãos de corte). Ainda não corroída/montada
       fisicamente.
@@ -128,7 +132,7 @@
 
 <footer class="site">
   <div class="wrap">
-    Ver <code>docs/02-hardware.md</code> e <code>docs/01-decisoes-arquiteturais.md</code> no
+    Ver <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/02-hardware.md" target="_blank" rel="noopener"><code>docs/02-hardware.md</code></a> e <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/01-decisoes-arquiteturais.md" target="_blank" rel="noopener"><code>docs/01-decisoes-arquiteturais.md</code></a> no
     repositório pro racional completo de cada escolha de pinout.
     <div class="foot-links">
       <a href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Repositório no GitHub</a>
