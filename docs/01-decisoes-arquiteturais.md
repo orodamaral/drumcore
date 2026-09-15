@@ -1422,6 +1422,20 @@ esse piso. Interessante: o código original já tinha o comentário
 `//compare time to cancel retrigger` nesse exato ponto — o autor original
 claramente já tinha o conceito em mente, só nunca implementou o decaimento.
 
+> **Atualização (2026-09-15)**: essa implementação tinha um bug de
+> domínio — `decayFloor` partia de `velocity`, que a própria lib
+> reaproveita tanto pra pico BRUTO (durante o scan) quanto pro resultado
+> já mapeado por `curve()` pra 1-127 (assim que o golpe termina) — mas era
+> comparado contra `piezoValue`, sempre bruto. Na prática, o piso caía
+> abaixo de qualquer valor bruto plausível quase imediatamente, deixando
+> passar quase qualquer coisa durante o `mask_time`, quase sempre,
+> independente da força real do novo golpe. Corrigido guardando o pico
+> bruto do golpe anterior num campo separado (`lastRawVelocity`/
+> `lastRawVelocityRim`) — ver
+> [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md) (seção
+> 2026-09-15) pro relato completo. Achado ao desenhar a calibração
+> automática do `retrigger` (Fase AA, mais abaixo).
+
 **Nota**: essa é a primeira vez que modificamos a *lógica* de detecção de
 hit da lib (as mudanças anteriores documentadas em
 [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md) foram um bug de
@@ -2407,3 +2421,202 @@ dela) nesse pinout novo e confirmou os dois funcionando — navegação por
 encoder e imagem na tela. **Ainda não validado**: o MUX (header direito,
 GPIO1/2/42/41/40/39) — o CD4067 físico ainda não foi conectado nesse
 layout.
+
+## 2026-09-15 — Fase AA: auto-tune de pads passa a colher por janela de tempo (10s por nível), não mais por meta fixa de golpes
+
+**Motivação (Rodrigo)**: cada nível de força (fraco/médio/forte, Fase T)
+sempre teve uma meta FIXA de 8 golpes — era a própria condição de
+"nível completo". Pedido: aumentar o número de amostras trocando essa
+meta por uma **janela de tempo de 10 segundos** por nível — o usuário
+bate o quanto conseguir nesse tempo (tipicamente bem mais que 8), o que
+dá uma média mais confiável, principalmente pra quem não consegue manter
+uma força de batida constante golpe a golpe. Explicitamente **fora de
+escopo**: o fluxo de calibração do controlador de pedal (HHC,
+`AT_HH_OPEN`/`AT_HH_CLOSED`, Fase X) — continua com o próprio esquema de
+segurar 2 posições por `AUTOTUNE_HH_HOLD_MS` (3s fixos), não é um sensor
+de impacto e não faz sentido "colher mais golpes" dele.
+
+**`AUTOTUNE_HIT_TARGET` (8) → `AUTOTUNE_TIER_WINDOW_MS` (10000)**: a
+condição de "nível completo" em `autoTuneTick()` deixou de ser
+`atHitCount >= 8` e passou a ser `(millis() - atTierStartMs) >=
+AUTOTUNE_TIER_WINDOW_MS`. Isso é checado em 2 pontos: (1) logo depois de
+capturar um golpe (fim de `AT_DECAYING`, igual sempre foi o único ponto
+de checagem) e (2) **ociosamente esperando o próximo golpe**
+(`AT_WAITING`, guardado por `atHitCount > 0` pro nível não poder nunca
+"completar" com zero golpes) — sem o segundo ponto, um usuário que
+parasse de bater bem na borda da janela ficaria preso esperando o
+próximo golpe pra só então perceber que o nível já tinha acabado. A
+lógica de "avança nível → avança zona → finaliza" (que antes vivia
+inline dentro do bloco de sucesso de `AT_DECAYING`) foi extraída pra
+`advanceAfterAutoTuneTier()`, chamada pelos 2 pontos.
+
+**Contagem real de golpes por nível/zona**: como o número de golpes por
+nível deixou de ser sempre exatamente 8, as médias em `finishAutoTune()`
+(que dividiam por `AUTOTUNE_HIT_TARGET`) passaram a dividir pelo
+contador real de golpes daquele nível/zona — 3 arrays novos,
+`atHitCountByTier[3]` (zona PRIMARY), `atRimHitCountByTier[3]`
+(SECONDARY — aro em `PAD_DUAL`, edge em prato/caixa 3 zonas) e
+`atCupHitCountByTier[3]` (TERTIARY — cup, só prato/caixa 3 zonas),
+espelhando exatamente os arrays de soma já existentes
+(`atSumPeakByTier`/`atSumRimPeakByTier`/`atSumCupByTier`). `atSumScanMs`/
+`atSumMaskMs` (timing, acumulados em todos os golpes de todas as
+rodadas) trocaram o divisor fixo (`AUTOTUNE_HIT_TARGET * 3 * rodadas`)
+por um contador corrido, `atTotalHitCount`. Todas as divisões novas têm
+guarda de `count > 0` (defensivo — na prática nunca deveria ser 0 ao
+chegar em `finishAutoTune()`, já que `advanceAfterAutoTuneTier()` só
+fecha um nível que já teve pelo menos 1 golpe).
+
+**Tela física (`renderAutoTune()`)**: o "X/8" + barra por contagem de
+golpes virou uma contagem regressiva em segundos + barra por tempo
+decorrido (`atTierStartMs`), no mesmo padrão visual já usado pro fluxo
+HHC (`AT_HH_OPEN`/`AT_HH_CLOSED`). O número de golpes capturados
+continua visível, só que como texto pequeno complementar ("N batidas"),
+não mais como a métrica principal. Redraw periódico (1Hz) que antes só
+existia dentro de `AT_NOISE` (contagem regressiva do ruído) foi ampliado
+pra rodar em qualquer sub-fase de coleta (`AT_WAITING`/`RISING`/
+`DECAYING`/`COOLDOWN`), senão a contagem regressiva da janela ficaria
+parada entre golpes.
+
+**Protocolo**: `autotune_status` deixou de enviar `hit_target` fixo e
+ganhou `tier_elapsed_ms`/`tier_target_ms` (só em `"collecting"`, fluxo
+de impacto) — mesmo padrão do `hold_elapsed_ms`/`hold_target_ms` já
+usado pro fluxo HHC. `hit_count` continua sendo enviado, agora só como
+informação complementar. Ver
+[04-protocolo-serial.md](04-protocolo-serial.md).
+
+**App web**: `PadEditor.tsx` troca a barra de progresso "X/8" por uma
+barra de tempo decorrido + contagem regressiva em segundos (mesmo
+componente visual já usado no bloco HHC), com o texto de dica
+pré-calibração reescrito pra descrever a janela de 10s em vez de "8x
+fraco/médio/forte". `mockDevice.ts` (simulador de demonstração, sem
+hardware real) segue o mesmo modelo — golpes simulados a cada
+~600-900ms até a janela de `AUTOTUNE_TIER_WINDOW_MS` esgotar, em vez de
+até completar 8.
+
+**Arquivos alterados**: `firmware/src/main.cpp` (constantes/estado/
+`autoTuneTick()`/`finishAutoTune()`/`sendAutoTuneStatus()`/
+`renderAutoTune()`), `web-app/src/protocol.ts` (tipo `AutoTuneStatus`,
+constante `AUTOTUNE_TIER_WINDOW_MS`), `web-app/src/components/
+PadEditor.tsx`, `web-app/src/mockDevice.ts`,
+[04-protocolo-serial.md](04-protocolo-serial.md). Validado com
+`pio run` (todos os 5 ambientes) e `npm run build` (typecheck + vite
+build) do `web-app/` — não testado ainda com hardware real nesta sessão.
+
+## 2026-09-15 — Fase AB: `curve` e `retrigger` inferidos automaticamente pelo auto-tune de pads
+
+**Motivação (Rodrigo)**: discussão sobre se dava pra usar os dados já
+coletados na calibração pra decidir sozinho outros parâmetros do pad,
+além de `sensitivity`/`threshold`/`scan`/`mask`/`rim_*` (já calibrados
+desde as Fases O/T/U/V). Decisão: **sim** pra `curve` (curva de resposta)
+e `retrigger` — os dois cabem dentro do mesmo fluxo por pad, sem precisar
+de coleta extra nenhuma além do que a Fase AA já captura. Filosofia
+combinada com o Rodrigo: infere e aplica direto (mesmo padrão de
+`sensitivity`/`threshold`), sem gate de "só sugere se os dados forem bons
+o suficiente" — se a calibração em si foi malfeita (usuário não variou a
+força de verdade entre os níveis), o resultado sai ruim do mesmo jeito
+que sensitivity/threshold já saem hoje nesse cenário; o usuário sempre
+pode ajustar `CURVA`/`RETRIG` manualmente depois, como qualquer outro
+campo.
+
+### Bug encontrado e corrigido ANTES desta fase: `retrigger` comparava domínios diferentes
+
+Ao desenhar a inferência de `retrigger`, percebemos que a implementação
+original (Fase P) tinha um bug real — o piso decrescente (`decayFloor`)
+comparava um valor já mapeado pra escala 1-127 (`velocity`, pós-`curve()`)
+contra um valor sempre bruto (`piezoValue`), fazendo o piso cair abaixo de
+qualquer leitura real quase instantaneamente. Corrigido antes de
+implementar a calibração automática em cima disso — ver seção
+"2026-09-15 — Correção" logo acima (dentro da própria entrada da Fase P)
+e [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md).
+
+### `curve` — decide sozinho olhando onde o nível MÉDIO caiu na faixa threshold..sensitivity
+
+`HelloDrum::curve()` (`hellodrum.cpp`) primeiro mapeia linearmente o pico
+bruto do golpe (`threshold..sensitivity` → `1..127`) e SÓ DEPOIS aplica o
+reshape exponencial/logarítmico em cima desse valor 1-127 — ou seja, o
+"x" que entra nas 5 fórmulas de curva já é exatamente a posição
+proporcional do golpe dentro da faixa calibrada. Isso significa que dá
+pra calcular, com o pico médio do nível MÉDIO (`atSumPeakByTier[
+AT_TIER_MEDIUM]`/`atHitCountByTier[AT_TIER_MEDIUM]` — coletado desde a
+Fase T, mas nunca lido até agora, só servia de "checagem de
+consistência"):
+
+```
+r = (avgMedium - threshold_bruto) / (sensitivity_bruto - threshold_bruto)   // 0..1
+```
+
+`r` mede como o sensor responde fisicamente ao longo da faixa: `r ≈ 0.5`
+(dentro de `AUTOTUNE_CURVE_LINEAR_TOL = 0.08`) → resposta já é
+aproximadamente linear → curva **LINEAR**. `r` bem abaixo de 0.5 (o golpe
+médio ficou "colado" perto do threshold, sobrando muita faixa até o
+forte) → o sensor comprime força baixa/média num raw pequeno → curva
+**LOG** dá mais resolução de velocity justo na faixa mais usada
+(fraco-médio). `r` bem acima de 0.5 (médio já perto do sensitivity) → o
+sensor satura rápido → curva **EXP** evita superestimar toques só um
+pouco mais fortes que o threshold. Desvio de 0.5 acima de
+`AUTOTUNE_CURVE_STRONG_DEV = 0.20` escolhe a variante mais forte (LOG2/
+EXP2) em vez da leve (LOG1/EXP1). As 2 constantes são heurísticas
+iniciais, ajustáveis sem quebrar nada — não persistem, só influenciam o
+resultado sugerido antes de aplicar. Sem golpes suficientes no nível
+MÉDIO (não deveria acontecer na prática — é obrigatório passar por ele
+entre o FRACO e o FORTE), cai no fallback seguro LINEAR.
+
+### `retrigger` — decide sozinho a partir da taxa de decaimento observada
+
+Reaproveita exatamente o mesmo dado que já alimenta `mask_time`: o pico do
+nível FORTE (`avgStrong`) e o tempo médio até esse pico cair pra metade
+(`avgMaskMs`, agora já corrigido pra domínio bruto — ver bug acima) dão
+uma taxa de decaimento observada (`avgStrong/2 / avgMaskMs`, em unidades
+brutas por ms — o mesmo domínio que `piezoValue`/`lastRawVelocity` na lib
+corrigida). Convertendo pra fórmula do `retrigger`
+(`decayFloor = pico - tempo*(retrigger+1)/16`): `retrigger = taxa*16 - 1`.
+
+`AUTOTUNE_RETRIGGER_SAFETY = 0.7` multiplica a taxa observada antes de
+converter — de propósito **mais devagar** que o decaimento real medido,
+não mais rápido nem exatamente igual: um piso que decai rápido demais
+volta a ter o mesmo problema do bug original (deixa passar ringing como
+se fosse pancada nova); um piso mais lento que o real só significa que
+uma pancada bem rápida de verdade eventualmente deixa de ser pega (mesmo
+resultado que já se tem hoje com `retrigger=0`, não piora nada). Mesma
+filosofia de margem de segurança já usada em todo o resto do auto-tune
+(threshold/sensitivity/mask sempre erram pro lado de evitar falso
+positivo). Efeito colateral bom, sem precisar de nenhuma checagem extra
+de consistência: pad com decaimento naturalmente lento/longo (ringing)
+já sai da própria fórmula com `retrigger` baixo/0, porque a taxa
+observada é pequena.
+
+**Só se aplica ao fluxo de impacto** — `curve`/`retrigger` não fazem
+sentido pro controlador de pedal (HHC, sensor de posição contínua, sem
+"golpe"), então `finishHihatCalibration()` não calcula nada disso, e
+`sendAutoTuneStatus()`/`applyAutoTuneResult()` só incluem os 2 campos
+quando `!padTypeIsHihatPedal(padTypes[atPad])`.
+
+**Protocolo**: `autotune_status` ganha `curve_type`/`retrigger` no
+resultado (`state == "done"`), ausentes quando `mode === "hihat_range"`.
+Ver [04-protocolo-serial.md](04-protocolo-serial.md).
+
+**Tela física**: `renderAutoTune()` (branch `AT_DONE`) passou a usar um
+cursor de linha corrido em vez de posições Y fixas — com `AT_SHAPE_DUAL`/
+`TRI` já ocupando 6 linhas (sensib/thresh/scan/mask/r.sens/r.thre) dentro
+dos 128px de altura do canvas, não sobrava espaço fixo pras 2 linhas
+novas. `curve_type`/`retrigger` saem numa única linha combinada
+("CURVA/RETRIG") em vez de 2 separadas, evitando estourar a tela nesse
+caso (shape SINGLE tem espaço de sobra, mas manter os 2 casos consistentes
+foi mais simples que ramificar o layout).
+
+**App web**: `PadEditor.tsx` mostra "Curva: LOG1" / "Retrigger: 42" na
+lista de resultado (`status.state === 'done'`), com um mapa local
+`CURVE_NAMES` espelhando os mesmos 5 nomes da tela física. `mockDevice.ts`
+simula os 2 campos com valores aleatórios plausíveis (não replica a
+lógica de inferência real, só demonstra a UI recebendo os campos).
+
+**Arquivos alterados**: `firmware/lib/HelloDrum-arduino-Library/src/
+hellodrum.h`/`hellodrum.cpp` (bugfix do `retrigger`), `firmware/src/
+main.cpp` (constantes/estado/`finishAutoTune()`/`sendAutoTuneStatus()`/
+`applyAutoTuneResult()`/`renderAutoTune()`), `web-app/src/protocol.ts`
+(tipo `AutoTuneStatus`), `web-app/src/components/PadEditor.tsx`,
+`web-app/src/mockDevice.ts`, [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md),
+[04-protocolo-serial.md](04-protocolo-serial.md). Validado com `pio run`
+(todos os 5 ambientes) e `npm run build` (typecheck + vite build) do
+`web-app/` — não testado ainda com hardware real nesta sessão (nem a
+inferência, nem o bugfix do `retrigger`).

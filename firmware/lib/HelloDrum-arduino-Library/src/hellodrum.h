@@ -321,6 +321,14 @@ private:
   int loopTimes = 0;
   unsigned long time_hit;
   unsigned long time_end;
+  // [MODIFICADO - projeto DrumCore, 2026-09-15] bug de dominio no retrigger
+  // (Fase P) corrigido aqui - ver singlePiezoSensing() pro racional
+  // completo. Guarda o pico BRUTO (pre-curve()) do ultimo golpe de
+  // verdade, separado de "velocity"/"velocityRim" (publicos, viram 1-127
+  // assim que curve() roda) - o calculo de decayFloor do retrigger precisa
+  // comparar contra o novo piezoValue, que e' sempre bruto.
+  int lastRawVelocity = 0;
+  int lastRawVelocityRim = 0; // so' usado por dualPiezoSensing()
   unsigned long time_choke;
   unsigned long time_hit_pedal_1;
   unsigned long time_hit_pedal_2;

@@ -2,6 +2,83 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-15 — Fase AB: `curve` e `retrigger` inferidos automaticamente pelo auto-tune de pads
+
+- O assistente de auto-calibração passa a decidir sozinho a **curva de
+  resposta** (`curve_type`) e o **retrigger**, além de sensitivity/
+  threshold/scan/mask/rim_* já calibrados — reaproveitando dados que a
+  coleta já produzia e não usava pra nada (nível MÉDIO, antes só
+  "checagem de consistência"; taxa de decaimento, já usada pro
+  `mask_time`). Sem coleta extra, sem gate de qualidade — infere e aplica
+  direto, mesmo padrão dos demais campos; o usuário sempre pode ajustar
+  `CURVA`/`RETRIG` manualmente depois.
+- **`curve`**: olha onde o pico médio do nível MÉDIO caiu dentro da faixa
+  threshold..sensitivity. Perto do meio → LINEAR. Colado no threshold
+  (sensor comprime força baixa/média) → LOG (mais resolução onde o
+  usuário mais toca). Colado no sensitivity (sensor satura rápido) → EXP.
+- **`retrigger`**: taxa de decaimento observada (pico forte até cair pra
+  metade) vira um piso decrescente calibrado, um pouco mais devagar que o
+  real medido de propósito (evita confundir ringing com pancada nova).
+  Pad com decaimento lento naturalmente sai com retrigger baixo/0 da
+  própria fórmula.
+- Só se aplica a pads de impacto — o controlador de pedal (HHC) não ganha
+  nenhum dos dois campos.
+- Detalhes completos: [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)
+  (Fase AB)
+
+## 2026-09-15 — Bug corrigido: `retrigger` comparava domínios diferentes (bug desde a Fase P)
+
+- Achado ao desenhar a calibração automática do `retrigger` (próxima
+  entrada abaixo): o piso decrescente do `retrigger` (`decayFloor`) partia
+  de `velocity`, que a própria lib reaproveita tanto pra pico **bruto**
+  (durante o scan) quanto pro resultado **já mapeado por `curve()` pra
+  1-127** (assim que o golpe termina) — mas era comparado contra
+  `piezoValue`, sempre bruto. Na prática, o piso caía abaixo de qualquer
+  valor bruto plausível quase imediatamente, deixando passar quase
+  qualquer coisa durante o `mask_time`, quase sempre, independente da
+  força real do novo golpe — `retrigger` não estava de fato exigindo "bem
+  mais forte que o anterior" como pretendido.
+- Sem efeito pra quem usa `retrigger = 0` (comportamento original,
+  intocado). Nunca testado com hardware real, nem antes nem depois da
+  correção.
+- Corrigido em `firmware/lib/HelloDrum-arduino-Library/src/hellodrum.h`/
+  `hellodrum.cpp` (`singlePiezoSensing()`, `dualPiezoSensing()`,
+  `cymbal2zoneSensing()`, `cymbal3zoneSensing()`) — 2 campos novos,
+  `lastRawVelocity`/`lastRawVelocityRim`, guardam o pico bruto do golpe
+  anterior separado do resultado mapeado. Detalhes completos:
+  [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md).
+
+## 2026-09-15 — Fase AA: auto-tune de pads passa a colher por janela de tempo (10s por nível)
+
+- **Cada nível de força (fraco/médio/forte) agora colhe por 10 segundos**
+  em vez de uma meta fixa de 8 golpes — mais amostras por nível, média
+  mais confiável, principalmente pra quem não bate com força constante
+  golpe a golpe. Pedido do Rodrigo. **Fora de escopo**: a calibração do
+  controlador de pedal (HHC) continua igual (3s segurando cada posição),
+  não é um sensor de impacto.
+- `firmware/src/main.cpp`: `AUTOTUNE_HIT_TARGET` (8) vira
+  `AUTOTUNE_TIER_WINDOW_MS` (10000) — a condição de "nível completo" em
+  `autoTuneTick()` deixa de ser contagem de golpes e passa a ser tempo
+  decorrido desde `atTierStartMs`, checado tanto logo após capturar um
+  golpe quanto ociosamente esperando o próximo (pra não travar esperando
+  um golpe que não precisa mais vir). Lógica de avançar nível/zona/
+  finalizar extraída pra `advanceAfterAutoTuneTier()`. Médias em
+  `finishAutoTune()` passam a dividir pela contagem real de golpes de
+  cada nível/zona (`atHitCountByTier`/`atRimHitCountByTier`/
+  `atCupHitCountByTier`, novos), não mais por uma constante.
+- Tela física (`renderAutoTune()`): barra de progresso por contagem de
+  golpes vira contagem regressiva em segundos + barra por tempo
+  decorrido (mesmo padrão já usado na calibração do pedal); golpes
+  capturados continuam visíveis como texto pequeno complementar.
+- Protocolo: `autotune_status` troca o `hit_target` fixo por
+  `tier_elapsed_ms`/`tier_target_ms` (ver
+  [04-protocolo-serial.md](04-protocolo-serial.md)).
+- `web-app/`: `PadEditor.tsx` (barra/contagem por tempo, texto de dica
+  reescrito), `protocol.ts` (`AUTOTUNE_TIER_WINDOW_MS`), `mockDevice.ts`
+  (simulação de demonstração segue o mesmo modelo de janela de tempo).
+- Detalhes completos:
+  [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase AA)
+
 ## 2026-09-12 — Licença do projeto: CC BY-NC 4.0
 
 - Adiciona `LICENSE` na raiz do repositório: Creative Commons

@@ -1936,13 +1936,15 @@ enum AutoTuneAbortReason : byte
 };
 
 // [MODIFICADO - projeto DrumCore, 2026-09-02] 3 niveis de intensidade
-// (fraco/medio/forte), 8 batidas cada (24 no total, era so' 8 de
-// intensidade unica) - a pedido do Rodrigo, pra deixar a calibracao mais
+// (fraco/medio/forte) - a pedido do Rodrigo, pra deixar a calibracao mais
 // precisa: o nivel FRACO calibra o piso (threshold, garante que toques
 // leves disparem), o FORTE calibra o teto (sensitivity, velocity 127 de
 // verdade numa pancada forte de verdade), o MEDIO serve de conferencia
-// (nao alimenta a formula final, so' e' guardado/enviado pro app). Ver
-// finishAutoTune() e docs/01-decisoes-arquiteturais.md.
+// (nao alimenta a formula final, so' e' guardado/enviado pro app). Cada
+// nivel colhia originalmente 8 batidas fixas (24 no total); [Fase AA,
+// 2026-09-15] isso virou uma JANELA DE TEMPO de 10s por nivel - ver
+// AUTOTUNE_TIER_WINDOW_MS mais abaixo. Ver finishAutoTune() e
+// docs/01-decisoes-arquiteturais.md.
 enum AutoTuneTier : byte
 {
     AT_TIER_WEAK,
@@ -1952,7 +1954,8 @@ enum AutoTuneTier : byte
 #define AUTOTUNE_TIER_COUNT 3
 
 // [Fase U/V] Pads de 2 canais fazem 1 ou 2 rodadas EXTRAS de calibracao
-// (mais 3 niveis x 8 golpes cada) depois da passada normal no canal
+// (mais 3 niveis, cada um com sua janela de tempo - ver
+// AUTOTUNE_TIER_WINDOW_MS/Fase AA) depois da passada normal no canal
 // principal (que vira a zona "PRIMARY") - quantas rodadas extras e o que
 // cada uma mede dependem de COMO a lib classifica a zona, que varia por
 // "formato" de pad (AutoTuneShape):
@@ -1992,11 +1995,40 @@ enum AutoTuneZone : byte
 };
 
 #define AUTOTUNE_NOISE_MS 2000
-#define AUTOTUNE_HIT_TARGET 8 // por nivel - 24 batidas no total (AUTOTUNE_TIER_COUNT niveis)
+// [Fase AA] Era uma meta FIXA de golpes por nivel (8) - trocado por uma
+// JANELA DE TEMPO (a pedido do Rodrigo, 2026-09-15): mais amostras por
+// nivel = media mais confiavel, principalmente pra quem nao consegue
+// manter uma forca de batida bem constante golpe a golpe. So' se aplica ao
+// fluxo baseado em impacto (pads normais) - o fluxo do controlador de
+// pedal (AT_HH_OPEN/AT_HH_CLOSED, ver AUTOTUNE_HH_HOLD_MS) fica de fora
+// dessa mudanca, continua com o proprio esquema de segurar 2 posicoes.
+// Ver docs/01-decisoes-arquiteturais.md.
+#define AUTOTUNE_TIER_WINDOW_MS 10000
 #define AUTOTUNE_RISE_SETTLE_MS 8
 #define AUTOTUNE_DECAY_TIMEOUT_MS 500
 #define AUTOTUNE_COOLDOWN_MS 30
 #define AUTOTUNE_WAIT_TIMEOUT_MS 15000
+
+// [Fase AB] Curva de resposta (curvetype) inferida automaticamente em
+// finishAutoTune() a partir de onde o pico do nivel MEDIO caiu dentro da
+// faixa threshold..sensitivity (r = 0..1, 0.5 = bem no meio). Ver racional
+// completo em docs/01-decisoes-arquiteturais.md. Bandas (desvio de 0.5):
+// |dev| < LINEAR_TOL -> linear; entre LINEAR_TOL e STRONG_DEV -> curva leve
+// (EXP1/LOG1); >= STRONG_DEV -> curva forte (EXP2/LOG2). Heuristica inicial,
+// ajustavel sem quebrar nada (nao persiste, so' influencia o resultado
+// sugerido - o usuario sempre pode trocar a CURVA manualmente depois).
+#define AUTOTUNE_CURVE_LINEAR_TOL 0.08f
+#define AUTOTUNE_CURVE_STRONG_DEV 0.20f
+
+// [Fase AB] Retrigger inferido a partir da taxa de decaimento observada
+// (pico FORTE / tempo ate' cair pra metade, ja' medidos pro mask_time) -
+// ver racional completo em docs/01-decisoes-arquiteturais.md. Fator < 1
+// de proposito: o piso sintetico decai um pouco MAIS DEVAGAR que o
+// decaimento real observado, pra nao confundir ringing/bounce natural com
+// uma pancada nova de verdade (mesma filosofia de margem de seguranca do
+// threshold/sensitivity/mask acima - preferir perder um retrigger valido
+// bem cedo a soltar um retrigger falso).
+#define AUTOTUNE_RETRIGGER_SAFETY 0.7f
 
 // [Fase X] Controlador de pedal (HHC) - assistente completamente diferente
 // do baseado em pancada acima: nao ha' "golpe" nenhum, e' um sensor de
@@ -2012,19 +2044,29 @@ AutoTuneTier atTier = AT_TIER_WEAK;
 byte atPad = 0;
 byte atSavedGain = 100; // gain original do pad, salvo em startAutoTune() - ver comentario la
 unsigned long atPhaseStartMs = 0;
-unsigned long atLastCountdownMs = 0; // so' pra redesenhar a contagem regressiva do AT_NOISE 1x/segundo
+unsigned long atLastCountdownMs = 0; // so' pra redesenhar a contagem regressiva/barra de tempo 1x/segundo
+unsigned long atTierStartMs = 0;     // [Fase AA] inicio do nivel/janela atual - ver AUTOTUNE_TIER_WINDOW_MS
 int atNoiseFloor = 0;
-byte atHitCount = 0; // zera a cada nivel (0..AUTOTUNE_HIT_TARGET)
+byte atHitCount = 0; // zera a cada nivel - so' contador de exibicao (a janela e' por TEMPO, nao mais por quantidade)
 int atHitPeak = 0;
 unsigned long atHitStartMs = 0;
 unsigned long atPeakAtMs = 0;
-long atSumScanMs = 0; // acumulado nos 3 niveis - timing nao varia muito por forca
+long atSumScanMs = 0; // acumulado em TODOS os golpes de TODAS as rodadas/niveis - ver atTotalHitCount
 long atSumMaskMs = 0;
+long atTotalHitCount = 0; // [Fase AA] denominador de atSumScanMs/atSumMaskMs - substitui a conta fixa de antes
 long atSumPeakByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0};
+// [Fase AA] Quantos golpes de verdade cairam em cada nivel - antes sempre
+// dava exatamente AUTOTUNE_HIT_TARGET (a janela era "ate' completar N
+// golpes"); agora a janela e' por tempo, entao varia por usuario/forca, e
+// as medias em finishAutoTune() precisam dividir pelo valor real, nao mais
+// por uma constante.
+long atHitCountByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0};
 byte atResultSensitivity = 0;
 byte atResultThreshold = 0;
 byte atResultScan = 0;
 byte atResultMask = 0;
+byte atResultCurve = 0;     // [Fase AB] inferido a partir do nivel MEDIO - ver AUTOTUNE_CURVE_LINEAR_TOL/STRONG_DEV
+byte atResultRetrigger = 0; // [Fase AB] inferido a partir da taxa de decaimento observada - ver AUTOTUNE_RETRIGGER_SAFETY
 AutoTuneAbortReason atAbortedReason = AT_ABORT_TIMEOUT;
 
 // [Fase U/V] Estado das rodadas extras (canal secundario) - ver comentario
@@ -2036,6 +2078,8 @@ int atCrossFloor = 0;            // pior vazamento visto no canal secundario dur
 long atMaxHeadRimDiff = -100000; // pior (primary - secondary) visto durante golpes reais na zona SECONDARY - so' usado em AT_SHAPE_DUAL. Sentinela bem negativa, sobrescrita no 1o golpe
 long atSumRimPeakByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0};  // picos da zona SECONDARY (aro em DUAL, edge/borda em TRI)
 long atSumCupByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0};      // picos da zona TERTIARY (cup/aro-forte) - so' usado em AT_SHAPE_TRI
+long atRimHitCountByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0}; // [Fase AA] golpes reais por nivel na zona SECONDARY - espelha atHitCountByTier
+long atCupHitCountByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0}; // [Fase AA] golpes reais por nivel na zona TERTIARY - espelha atHitCountByTier
 byte atResultRimSensitivity = 0; // vai no campo rimSensitivity do pad - "aro" em DUAL, "edge threshold" em TRI (ver getFieldsForType)
 byte atResultRimThreshold = 0;   // vai no campo rimThreshold do pad - "aro" em DUAL, "cup threshold" em TRI
 
@@ -2172,6 +2216,11 @@ void sendAutoTuneStatus()
         doc["tier"] = autoTuneTierName(atTier);
         doc["tier_index"] = atTier + 1;
         doc["tier_count"] = AUTOTUNE_TIER_COUNT;
+        // [Fase AA] janela de tempo do nivel atual (substitui a meta fixa de
+        // golpes - ver AUTOTUNE_TIER_WINDOW_MS) - mesmo padrao de
+        // hold_elapsed_ms/hold_target_ms ja usado pro fluxo HHC abaixo.
+        doc["tier_elapsed_ms"] = (long)(millis() - atTierStartMs);
+        doc["tier_target_ms"] = AUTOTUNE_TIER_WINDOW_MS;
         if (atShape != AT_SHAPE_SINGLE)
         {
             doc["zone"] = autoTuneZoneName(padTypes[atPad], atZone);
@@ -2195,8 +2244,11 @@ void sendAutoTuneStatus()
         break;
     }
 
+    // [Fase AA] hit_count continua sendo enviado como info complementar (o
+    // usuario ve' quantos golpes ja' capturou), mas nao ha' mais uma meta
+    // fixa (hit_target) - quem manda e' a janela de tempo, ver
+    // tier_elapsed_ms/tier_target_ms acima.
     doc["hit_count"] = atHitCount;
-    doc["hit_target"] = AUTOTUNE_HIT_TARGET;
 
     if (atState == AT_DONE)
     {
@@ -2215,6 +2267,15 @@ void sendAutoTuneStatus()
             // posicao (pedal aberto/fechado), nao pico de pancada - a tela
             // de resultado deve rotular/explicar diferente.
             doc["mode"] = "hihat_range";
+        }
+        else
+        {
+            // [Fase AB] curve_type/retrigger so' fazem sentido pro fluxo de
+            // impacto (finishAutoTune()) - o HHC (finishHihatCalibration())
+            // nunca calcula esses 2 campos, ficariam com lixo/valor de uma
+            // calibracao anterior se enviados aqui tambem.
+            doc["curve_type"] = atResultCurve;
+            doc["retrigger"] = atResultRetrigger;
         }
     }
 
@@ -2244,19 +2305,30 @@ void startAutoTune(byte pad)
         atShape = AT_SHAPE_SINGLE;
     }
     atPhaseStartMs = millis();
+    atTierStartMs = atPhaseStartMs; // [Fase AA] inicio da janela de tempo do 1o nivel
     atNoiseFloor = 0;
     atHitCount = 0;
+    atTotalHitCount = 0;
     atSumScanMs = 0;
     atSumMaskMs = 0;
     atSumPeakByTier[0] = 0;
     atSumPeakByTier[1] = 0;
     atSumPeakByTier[2] = 0;
+    atHitCountByTier[0] = 0;
+    atHitCountByTier[1] = 0;
+    atHitCountByTier[2] = 0;
     atSumRimPeakByTier[0] = 0;
     atSumRimPeakByTier[1] = 0;
     atSumRimPeakByTier[2] = 0;
+    atRimHitCountByTier[0] = 0;
+    atRimHitCountByTier[1] = 0;
+    atRimHitCountByTier[2] = 0;
     atSumCupByTier[0] = 0;
     atSumCupByTier[1] = 0;
     atSumCupByTier[2] = 0;
+    atCupHitCountByTier[0] = 0;
+    atCupHitCountByTier[1] = 0;
+    atCupHitCountByTier[2] = 0;
     atCrossFloor = 0;
     atMaxHeadRimDiff = -100000;
     atHhSampleSum = 0;
@@ -2291,15 +2363,23 @@ void startAutoTune(byte pad)
 // So calcula os resultados (RAM) - nao aplica ainda, ver applyAutoTuneResult().
 void finishAutoTune()
 {
-    float avgWeak = (float)atSumPeakByTier[AT_TIER_WEAK] / AUTOTUNE_HIT_TARGET;
-    float avgStrong = (float)atSumPeakByTier[AT_TIER_STRONG] / AUTOTUNE_HIT_TARGET;
+    // [Fase AA] Antes cada nivel sempre tinha EXATAMENTE AUTOTUNE_HIT_TARGET
+    // golpes (era a propria condicao de conclusao) - agora a janela e' por
+    // TEMPO (AUTOTUNE_TIER_WINDOW_MS), entao o numero real de golpes varia
+    // por usuario/forca. As medias abaixo dividem pelo contador de golpes
+    // real de cada nivel/zona (atHitCountByTier/atRimHitCountByTier/
+    // atCupHitCountByTier), com guarda de divisao por zero - na pratica
+    // nunca deveria ser 0 aqui (so' se chega em finishAutoTune() depois de
+    // passar por todo nivel/zona com pelo menos 1 golpe cada, ver
+    // advanceAfterAutoTuneTier()), mas e' barato garantir.
+    float avgWeak = atHitCountByTier[AT_TIER_WEAK] > 0 ? (float)atSumPeakByTier[AT_TIER_WEAK] / atHitCountByTier[AT_TIER_WEAK] : 0;
+    float avgStrong = atHitCountByTier[AT_TIER_STRONG] > 0 ? (float)atSumPeakByTier[AT_TIER_STRONG] / atHitCountByTier[AT_TIER_STRONG] : 0;
     // atSumScanMs/atSumMaskMs acumulam em TODOS os golpes de TODAS as
     // rodadas (PRIMARY e, se houver, SECONDARY/TERTIARY) - media sobre o
-    // total de golpes capturados, nao so' o ultimo nivel/rodada.
-    byte roundCount = atShape == AT_SHAPE_SINGLE ? 1 : atShape == AT_SHAPE_DUAL ? 2 : 3;
-    long totalHits = (long)AUTOTUNE_HIT_TARGET * AUTOTUNE_TIER_COUNT * roundCount;
-    float avgScanMs = (float)atSumScanMs / totalHits;
-    float avgMaskMs = (float)atSumMaskMs / totalHits;
+    // total de golpes capturados de verdade (atTotalHitCount), nao mais uma
+    // conta fixa (nivel * zona * meta).
+    float avgScanMs = atTotalHitCount > 0 ? (float)atSumScanMs / atTotalHitCount : 0;
+    float avgMaskMs = atTotalHitCount > 0 ? (float)atSumMaskMs / atTotalHitCount : 0;
 
     // sensitivity/threshold sao lidos pela lib como Valor*10 (raw ADC,
     // 0-1023ish pos-transformacao ESP32) - ver dualPiezoSensing() etc em
@@ -2324,6 +2404,66 @@ void finishAutoTune()
     atResultScan = (byte)constrain((int)(avgScanMs * 1.2f), 1, 100);   // +20% de margem
     atResultMask = (byte)constrain((int)(avgMaskMs * 1.3f), 1, 100);   // +30% de margem (evita retrigger falso)
 
+    // [Fase AB] Curva de resposta - o nivel MEDIO (so' checagem de
+    // consistencia ate' agora) passa a decidir sozinho qual curva usar:
+    // olha ONDE o pico medio dele caiu dentro da faixa threshRaw..sensRaw
+    // (r = 0 -> colado no threshold, 1 -> colado no sensitivity, 0.5 ->
+    // bem no meio). curve() (hellodrum.cpp) aplica o reshape DEPOIS do
+    // valor ja' mapeado linearmente pra 1-127, entao "r" e' diretamente o
+    // ponto nessa escala 1-127 que o toque MEDIO ocupa. Desvio de 0.5 perto
+    // de 0 -> resposta ja' e' ~linear (LINEAR). Desvio bem negativo (medio
+    // "colado" no threshold, sobra muito range ate' o forte) -> sensor
+    // comprime forca baixa/media num raw pequeno -> LOG da' mais resolucao
+    // de velocity justo na faixa mais usada. Desvio bem positivo (medio ja'
+    // perto do sensitivity) -> sensor satura rapido -> EXP evita
+    // superestimar toques so' um pouco mais fortes que o threshold. Sem
+    // dado suficiente (nivel MEDIO vazio, nao deveria acontecer na
+    // pratica), cai no fallback seguro LINEAR. Usuario sempre pode trocar
+    // manualmente depois pelo campo CURVA normal. Ver
+    // docs/01-decisoes-arquiteturais.md.
+    atResultCurve = 0; // LINEAR - padrao e fallback sem dado suficiente
+    if (atHitCountByTier[AT_TIER_MEDIUM] > 0 && sensRaw > threshRaw)
+    {
+        float avgMedium = (float)atSumPeakByTier[AT_TIER_MEDIUM] / atHitCountByTier[AT_TIER_MEDIUM];
+        float r = (avgMedium - threshRaw) / (float)(sensRaw - threshRaw);
+        float dev = r - 0.5f;
+        if (dev <= -AUTOTUNE_CURVE_STRONG_DEV)
+        {
+            atResultCurve = 4; // LOG2
+        }
+        else if (dev <= -AUTOTUNE_CURVE_LINEAR_TOL)
+        {
+            atResultCurve = 3; // LOG1
+        }
+        else if (dev >= AUTOTUNE_CURVE_STRONG_DEV)
+        {
+            atResultCurve = 2; // EXP2
+        }
+        else if (dev >= AUTOTUNE_CURVE_LINEAR_TOL)
+        {
+            atResultCurve = 1; // EXP1
+        }
+    }
+
+    // [Fase AB] Retrigger - taxa de decaimento observada (pico FORTE ate'
+    // cair pra metade, atHitPeak/2 em avgMaskMs ms - mesmo dado ja' usado
+    // pro mask_time acima) vira uma sugestao de retrigger. AUTOTUNE_RETRIGGER_SAFETY
+    // (< 1) faz o piso sintetico decair um pouco mais devagar que o
+    // decaimento real medido, de proposito - ver comentario do define.
+    // Inverte a formula da lib (decayFloor = pico - tempo*(retrigger+1)/16,
+    // ja' corrigida pro dominio bruto - ver docs/03-biblioteca-hellodrum.md
+    // 2026-09-15): retrigger = taxaAlvo*16 - 1. Pads com decaimento muito
+    // lento (ringing/cauda longa) naturalmente saem com retrigger baixo/0
+    // dessa mesma conta, sem precisar de nenhuma checagem extra.
+    atResultRetrigger = 0; // padrao seguro - sem dado suficiente, sem mudanca de comportamento
+    if (atHitCountByTier[AT_TIER_STRONG] > 0 && avgMaskMs > 0)
+    {
+        float observedRatePerMs = (avgStrong / 2.0f) / avgMaskMs;
+        float targetRatePerMs = observedRatePerMs * AUTOTUNE_RETRIGGER_SAFETY;
+        int retrig = (int)(targetRatePerMs * 16.0f + 0.5f) - 1;
+        atResultRetrigger = (byte)constrain(retrig, 0, 100);
+    }
+
     if (atShape == AT_SHAPE_DUAL)
     {
         // rimThreshold: piso minimo pro aro ser sequer considerado - mesma
@@ -2331,7 +2471,7 @@ void finishAutoTune()
         // "piso" e a media fraca), so' que aqui o "piso" e' o pior
         // vazamento visto no aro durante os golpes na PELE (atCrossFloor),
         // nao o ruido de silencio.
-        float avgRimWeak = (float)atSumRimPeakByTier[AT_TIER_WEAK] / AUTOTUNE_HIT_TARGET;
+        float avgRimWeak = atRimHitCountByTier[AT_TIER_WEAK] > 0 ? (float)atSumRimPeakByTier[AT_TIER_WEAK] / atRimHitCountByTier[AT_TIER_WEAK] : 0;
         int rimThreshRaw = atCrossFloor + (int)((avgRimWeak - atCrossFloor) * 0.3f);
         if (rimThreshRaw < 1)
         {
@@ -2366,9 +2506,9 @@ void finishAutoTune()
         // 30% do caminho entre a media FORTE da rodada SECONDARY (edge mais
         // alto) e a media FRACA da rodada TERTIARY (cup mais fraco) -
         // separando as 2 faixas com folga dos dois lados.
-        float avgEdgeWeak = (float)atSumRimPeakByTier[AT_TIER_WEAK] / AUTOTUNE_HIT_TARGET;
-        float avgEdgeStrong = (float)atSumRimPeakByTier[AT_TIER_STRONG] / AUTOTUNE_HIT_TARGET;
-        float avgCupWeak = (float)atSumCupByTier[AT_TIER_WEAK] / AUTOTUNE_HIT_TARGET;
+        float avgEdgeWeak = atRimHitCountByTier[AT_TIER_WEAK] > 0 ? (float)atSumRimPeakByTier[AT_TIER_WEAK] / atRimHitCountByTier[AT_TIER_WEAK] : 0;
+        float avgEdgeStrong = atRimHitCountByTier[AT_TIER_STRONG] > 0 ? (float)atSumRimPeakByTier[AT_TIER_STRONG] / atRimHitCountByTier[AT_TIER_STRONG] : 0;
+        float avgCupWeak = atCupHitCountByTier[AT_TIER_WEAK] > 0 ? (float)atSumCupByTier[AT_TIER_WEAK] / atCupHitCountByTier[AT_TIER_WEAK] : 0;
 
         int edgeThreshRaw = atCrossFloor + (int)((avgEdgeWeak - atCrossFloor) * 0.3f);
         if (edgeThreshRaw < 1)
@@ -2392,6 +2532,44 @@ void finishAutoTune()
     atState = AT_DONE;
     forceScreenRedraw = true;
     sendAutoTuneStatus();
+}
+
+// [Fase AA] Chamado quando a janela de tempo do nivel atual esgota
+// (AUTOTUNE_TIER_WINDOW_MS) - decide se avanca fraco->medio->forte, se
+// avanca pra proxima zona (2a/3a rodada em pads DUAL/TRI, comeca de novo em
+// FRACO) ou se finaliza o assistente. Extraido pra funcao separada porque a
+// janela pode se esgotar em 2 pontos diferentes de autoTuneTick(): logo
+// apos capturar um golpe (AT_DECAYING) ou ociosamente esperando o proximo
+// golpe (AT_WAITING) - so' nunca fecha um nivel com ZERO golpes (o
+// chamador em AT_WAITING so' invoca isso com atHitCount > 0; o de
+// AT_DECAYING sempre acabou de incrementar).
+void advanceAfterAutoTuneTier(unsigned long now)
+{
+    bool lastTierOfZone = atTier >= AT_TIER_STRONG;
+    bool zoneNeedsAdvance = lastTierOfZone && autoTuneHasNextZone(atShape, atZone);
+
+    if (lastTierOfZone && !zoneNeedsAdvance)
+    {
+        finishAutoTune(); // ja envia sendAutoTuneStatus() internamente
+        return;
+    }
+
+    if (zoneNeedsAdvance)
+    {
+        // rodada atual completa - avanca pra proxima zona, do zero (FRACO)
+        atZone = autoTuneNextZone(atZone);
+        atTier = AT_TIER_WEAK;
+    }
+    else
+    {
+        // nivel atual completo - avanca fraco -> medio -> forte
+        atTier = (AutoTuneTier)(atTier + 1);
+    }
+    atHitCount = 0;
+    atTierStartMs = now;
+    atState = AT_COOLDOWN;
+    atPhaseStartMs = now;
+    sendAutoTuneStatus(); // atualiza o nivel/zona pro app
 }
 
 // [Fase X] So' calcula os resultados (RAM) a partir de atHhOpenRaw/
@@ -2512,6 +2690,17 @@ void autoTuneTick()
     }
     unsigned long now = millis();
 
+    // [Fase AA] Redesenha a barra/contagem da janela de tempo do nivel a 1Hz
+    // mesmo sem golpe nenhum acontecendo (AT_WAITING/RISING/DECAYING/
+    // COOLDOWN) - antes so' existia esse redraw periodico dentro do
+    // AT_NOISE (contagem regressiva do ruido). AT_NOISE fica de fora daqui
+    // porque ja' tem o proprio redraw 1Hz abaixo.
+    if (atState != AT_NOISE && now - atLastCountdownMs >= 1000)
+    {
+        atLastCountdownMs = now;
+        forceScreenRedraw = true;
+    }
+
     if (atState == AT_NOISE)
     {
         if (v > atNoiseFloor)
@@ -2528,6 +2717,7 @@ void autoTuneTick()
             atNoiseFloor = (int)(atNoiseFloor * 1.3f) + 5; // margem de seguranca sobre o ruido observado
             atState = AT_WAITING;
             atPhaseStartMs = now;
+            atTierStartMs = now; // [Fase AA] janela do nivel FRACO comeca so' agora, nao durante a medicao de ruido
             forceScreenRedraw = true;
             sendAutoTuneStatus();
         }
@@ -2536,6 +2726,16 @@ void autoTuneTick()
 
     if (atState == AT_WAITING)
     {
+        // [Fase AA] A janela de tempo do nivel tambem pode se esgotar aqui,
+        // ociosamente esperando o proximo golpe (nem todo mundo bate no
+        // timing exato de 10s) - so' avanca se ja' capturou pelo menos 1
+        // golpe nesse nivel (atHitCount > 0), senao quem cuida e' o timeout
+        // geral de inatividade abaixo (AUTOTUNE_WAIT_TIMEOUT_MS).
+        if (atHitCount > 0 && (now - atTierStartMs) >= AUTOTUNE_TIER_WINDOW_MS)
+        {
+            advanceAfterAutoTuneTier(now);
+            return;
+        }
         if (v > atNoiseFloor)
         {
             atHitStartMs = now;
@@ -2597,6 +2797,7 @@ void autoTuneTick()
                 // diferenca entre canais pra calcular aqui, e' so' o nivel
                 // desse golpe na mesma faixa/canal da rodada SECONDARY.
                 atSumCupByTier[atTier] += atHitPeak;
+                atCupHitCountByTier[atTier]++;
             }
             else if (atZone == AT_ZONE_SECONDARY)
             {
@@ -2606,6 +2807,7 @@ void autoTuneTick()
                 // usado na formula em AT_SHAPE_DUAL (diferenca entre
                 // canais), mas nao custa nada acumular sempre.
                 atSumRimPeakByTier[atTier] += atHitPeak;
+                atRimHitCountByTier[atTier]++;
                 if (atShape == AT_SHAPE_DUAL)
                 {
                     long diff = (long)atOtherPeak - (long)atHitPeak;
@@ -2618,40 +2820,30 @@ void autoTuneTick()
             else // AT_ZONE_PRIMARY
             {
                 atSumPeakByTier[atTier] += atHitPeak;
+                atHitCountByTier[atTier]++;
                 if (atShape != AT_SHAPE_SINGLE && atOtherPeak > atCrossFloor)
                 {
                     atCrossFloor = atOtherPeak; // pior vazamento no canal secundario durante uma pancada na PRIMARY
                 }
             }
             atHitCount++;
+            atTotalHitCount++;
             forceScreenRedraw = true;
 
-            bool tierDone = atHitCount >= AUTOTUNE_HIT_TARGET;
-            bool lastTierOfZone = tierDone && atTier >= AT_TIER_STRONG;
-            bool zoneNeedsAdvance = lastTierOfZone && autoTuneHasNextZone(atShape, atZone);
-
-            if (lastTierOfZone && !zoneNeedsAdvance)
+            // [Fase AA] A meta de golpes fixa (era a propria condicao de
+            // conclusao) virou so' informativa - quem decide se o nivel
+            // acabou agora e' a janela de tempo (AUTOTUNE_TIER_WINDOW_MS).
+            // Se ainda nao esgotou, so' segue pro cooldown normal (espera o
+            // sinal decair antes do proximo golpe) sem avancar de nivel/zona.
+            if ((now - atTierStartMs) >= AUTOTUNE_TIER_WINDOW_MS)
             {
-                finishAutoTune(); // ja envia sendAutoTuneStatus() internamente
+                advanceAfterAutoTuneTier(now); // pode chamar finishAutoTune() e encerrar o assistente
             }
             else
             {
-                if (zoneNeedsAdvance)
-                {
-                    // rodada atual completa (24 golpes) - avanca pra proxima zona, do zero
-                    atZone = autoTuneNextZone(atZone);
-                    atTier = AT_TIER_WEAK;
-                    atHitCount = 0;
-                }
-                else if (tierDone)
-                {
-                    // nivel atual completo (8/8) - avanca fraco -> medio -> forte
-                    atTier = (AutoTuneTier)(atTier + 1);
-                    atHitCount = 0;
-                }
                 atState = AT_COOLDOWN;
                 atPhaseStartMs = now;
-                sendAutoTuneStatus(); // atualiza o contador/nivel/zona pro app
+                sendAutoTuneStatus(); // atualiza o contador de golpes pro app
             }
         }
         else if ((now - atPeakAtMs) > AUTOTUNE_DECAY_TIMEOUT_MS)
@@ -2708,6 +2900,14 @@ bool applyAutoTuneResult()
     {
         pads[pad].rimSensitivity = atResultRimSensitivity;
         pads[pad].rimThreshold = atResultRimThreshold;
+    }
+    if (!padTypeIsHihatPedal(padTypes[pad]))
+    {
+        // [Fase AB] curve_type/retrigger inferidos - ver finishAutoTune().
+        // HHC nunca calcula esses 2 campos (ver sendAutoTuneStatus()), fica
+        // de fora tambem aqui.
+        pads[pad].curvetype = atResultCurve;
+        pads[pad].retrigger = atResultRetrigger;
     }
     // gain fica em 100 (neutro) de proposito - o resultado acima foi
     // calculado assumindo gain neutro (ver startAutoTune()), entao os
@@ -3656,15 +3856,28 @@ bool renderAutoTune()
         canvas.setCursor(4, 46);
         canvas.print(tierHint);
 
+        // [Fase AA] Contagem regressiva da JANELA DE TEMPO do nivel (era um
+        // contador de golpes "X/8") - mesmo padrao do AT_HH_OPEN/CLOSED
+        // abaixo. atHitCount vira so' texto pequeno complementar, pra quem
+        // quiser acompanhar quantos golpes ja' entraram.
+        unsigned long tierElapsedMs = millis() - atTierStartMs;
+        unsigned long tierRemainMs = tierElapsedMs >= AUTOTUNE_TIER_WINDOW_MS ? 0 : AUTOTUNE_TIER_WINDOW_MS - tierElapsedMs;
         canvas.setTextColor(COL_ACCENT);
         canvas.setTextSize(2);
-        char countBuf[8];
-        snprintf(countBuf, sizeof(countBuf), "%d/%d", atHitCount, AUTOTUNE_HIT_TARGET);
         canvas.setCursor(4, 64);
+        canvas.print((tierRemainMs / 1000) + 1);
+        canvas.print("s");
+
+        canvas.setTextSize(1);
+        canvas.setTextColor(COL_TXT_DIM);
+        char countBuf[16];
+        snprintf(countBuf, sizeof(countBuf), "%d batidas", atHitCount);
+        canvas.setCursor(60, 70);
         canvas.print(countBuf);
 
-        // Barrinha de progresso (golpes capturados no nivel atual).
-        int barW = 120 * atHitCount / AUTOTUNE_HIT_TARGET;
+        // Barrinha de progresso (tempo decorrido no nivel atual).
+        int barW = (int)(120L * tierElapsedMs / AUTOTUNE_TIER_WINDOW_MS);
+        if (barW > 120) barW = 120;
         canvas.drawRect(4, 90, 120, 8, COL_LINE);
         if (barW > 0)
         {
@@ -3713,23 +3926,47 @@ bool renderAutoTune()
 
         bool isHihat = padTypeIsHihatPedal(padTypes[atPad]);
         char buf[10];
+        // [Fase AB] cursor de linha corrido (em vez de y fixo por campo) -
+        // curve_type/retrigger, novos, so' aparecem pra pad de impacto, e
+        // shapes DUAL/TRI ja' ocupavam as 2 ultimas posicoes fixas
+        // (84/98) com R.SENS/R.THRE - com y fixo, curve/retrigger nao
+        // teriam onde entrar nesse caso. Sem isso a lista so' cresce por
+        // baixo, na ordem que ja' era desenhada.
+        int y = 28;
         snprintf(buf, sizeof(buf), "%d", atResultSensitivity);
-        drawValueRow(28, isHihat ? "MAXIMO" : "SENSIB", buf, false, false);
+        drawValueRow(y, isHihat ? "MAXIMO" : "SENSIB", buf, false, false);
+        y += 14;
         snprintf(buf, sizeof(buf), "%d", atResultThreshold);
-        drawValueRow(42, isHihat ? "MINIMO" : "THRESH", buf, false, false);
+        drawValueRow(y, isHihat ? "MINIMO" : "THRESH", buf, false, false);
+        y += 14;
         if (!isHihat)
         {
             snprintf(buf, sizeof(buf), "%d", atResultScan);
-            drawValueRow(56, "SCAN", buf, false, false);
+            drawValueRow(y, "SCAN", buf, false, false);
+            y += 14;
             snprintf(buf, sizeof(buf), "%d", atResultMask);
-            drawValueRow(70, "MASK", buf, false, false);
+            drawValueRow(y, "MASK", buf, false, false);
+            y += 14;
         }
         if (atShape != AT_SHAPE_SINGLE)
         {
             snprintf(buf, sizeof(buf), "%d", atResultRimSensitivity);
-            drawValueRow(84, "R.SENS", buf, false, false);
+            drawValueRow(y, "R.SENS", buf, false, false);
+            y += 14;
             snprintf(buf, sizeof(buf), "%d", atResultRimThreshold);
-            drawValueRow(98, "R.THRE", buf, false, false);
+            drawValueRow(y, "R.THRE", buf, false, false);
+            y += 14;
+        }
+        if (!isHihat)
+        {
+            // [Fase AB] CURVA+RETRIG numa linha so' (em vez de 2) - com
+            // shape DUAL/TRI (que ja' usa 6 linhas antes dessa), 2 linhas a
+            // mais estourava os 128px de altura do canvas (28 + 8*14 = 140).
+            static const char *curveNames[] = {"LIN", "EXP1", "EXP2", "LOG1", "LOG2"};
+            char curveBuf[16];
+            snprintf(curveBuf, sizeof(curveBuf), "%s / %d", curveNames[atResultCurve < 5 ? atResultCurve : 0], atResultRetrigger);
+            drawValueRow(y, "CURVA/RETRIG", curveBuf, false, false);
+            y += 14;
         }
     }
     else if (atState == AT_ABORTED)
@@ -3968,11 +4205,18 @@ void setup()
     // montada). Os demais 30 canais ficam desabilitados aqui (so' em RAM,
     // nao mexe na EEPROM) pra evitar que ruido/flutuacao dos canais sem
     // sensor dispare "hit" espalhados pela tela LIVE.
+    //
+    // TESTE (2026-09-12, a pedido do Rodrigo): canal 1 (GPIO9) agora e'
+    // PAD_HIHAT_PEDAL em vez de PAD_SINGLE - o sensor hall (SS49E) ligado
+    // ali e' de posicao continua (igual um FSR), entao serve pra validar
+    // o controlador de chimbal (hihatControlMUX()/FSRSensing(), saida via
+    // CC + "chick" ao fechar rapido). Canal 2 (GPIO10) continua
+    // PAD_SINGLE (sem sensor conectado por enquanto).
     for (byte i = 0; i < NUM_PADS; i++)
     {
         padEnabled[i] = false;
     }
-    padTypes[0] = PAD_SINGLE;
+    padTypes[0] = PAD_HIHAT_PEDAL;
     padTypes[1] = PAD_SINGLE;
     padEnabled[0] = true;
     padEnabled[1] = true;

@@ -4,7 +4,7 @@ import {
   AutoTuneStatus,
   AutoTuneTier,
   AUTOTUNE_HH_HOLD_MS,
-  AUTOTUNE_HIT_TARGET,
+  AUTOTUNE_TIER_WINDOW_MS,
   PadConfigPrimary,
   PadField,
   PAD_FIELDS,
@@ -50,6 +50,10 @@ export class MockDevice {
   private autoTunePad = -1
   private autoTuneTierIndex = 0
   private autoTuneHitCount = 0
+  // [Fase AA] Inicio da janela de tempo do nivel atual (Date.now()) - o
+  // nivel nao fecha mais numa meta fixa de golpes, fecha depois de
+  // AUTOTUNE_TIER_WINDOW_MS. autoTuneHitCount vira so' contador informativo.
+  private autoTuneTierStartMs = 0
   // Fase U/V: pads de 2 canais rodam 1 (PAD_DUAL) ou 2 (prato/caixa 3 zonas)
   // passadas extras (3 níveis de novo cada) depois da passada normal na
   // zona principal - ver autoTuneZonesFor() em protocol.ts (fonte única do
@@ -68,6 +72,8 @@ export class MockDevice {
     mask_time: number
     rim_sensitivity?: number
     rim_threshold?: number
+    curve_type?: number
+    retrigger?: number
   } | null = null
 
   constructor(padCount = 32) {
@@ -302,6 +308,8 @@ export class MockDevice {
               tier: MockDevice.AUTOTUNE_TIERS[this.autoTuneTierIndex],
               tier_index: this.autoTuneTierIndex + 1,
               tier_count: MockDevice.AUTOTUNE_TIERS.length,
+              tier_elapsed_ms: Date.now() - this.autoTuneTierStartMs,
+              tier_target_ms: AUTOTUNE_TIER_WINDOW_MS,
               ...(zones.length > 0 ? { zone: zones[this.autoTuneZoneIndex] } : {})
             }
     this.emit({
@@ -309,7 +317,6 @@ export class MockDevice {
       pad: this.autoTunePad,
       state,
       hit_count: this.autoTuneHitCount,
-      hit_target: AUTOTUNE_HIT_TARGET,
       ...tierInfo,
       ...extra
     })
@@ -336,6 +343,7 @@ export class MockDevice {
     this.autoTunePad = cmd.pad
     this.autoTuneTierIndex = 0
     this.autoTuneHitCount = 0
+    this.autoTuneTierStartMs = 0
     this.autoTuneZoneIndex = 0
     this.autoTuneHhPhase = null
     this.autoTuneResult = null
@@ -355,6 +363,7 @@ export class MockDevice {
     // Fase "ruido" simulada - so' espera um tempo fixo, nao ha' ADC de
     // verdade pra medir nada aqui.
     this.autoTuneTimer = setTimeout(() => {
+      this.autoTuneTierStartMs = Date.now() // [Fase AA] janela do nivel FRACO comeca so' agora
       this.emitAutoTuneStatus('collecting')
       this.scheduleAutoTuneHit()
     }, 2000)
@@ -384,26 +393,30 @@ export class MockDevice {
     }, AUTOTUNE_HH_HOLD_MS)
   }
 
-  // Simula um golpe chegando a cada ~600-900ms, ate' completar AUTOTUNE_HIT_TARGET
-  // no nivel atual - ai' avanca fraco -> medio -> forte, ate' fechar os 3.
-  // Pads de 2 canais fazem isso 1x por zona extra (autoTuneZones()) - Fase U/V.
+  // [Fase AA] Simula um golpe chegando a cada ~600-900ms - o nivel atual so'
+  // fecha depois que a janela de tempo (AUTOTUNE_TIER_WINDOW_MS) esgota
+  // (era uma meta fixa de golpes), ai' avanca fraco -> medio -> forte, ate'
+  // fechar os 3. Pads de 2 canais fazem isso 1x por zona extra
+  // (autoTuneZones()) - Fase U/V.
   private scheduleAutoTuneHit(): void {
     this.autoTuneTimer = setTimeout(() => {
       this.autoTuneHitCount++
-      if (this.autoTuneHitCount >= AUTOTUNE_HIT_TARGET) {
+      if (Date.now() - this.autoTuneTierStartMs >= AUTOTUNE_TIER_WINDOW_MS) {
         if (this.autoTuneTierIndex < MockDevice.AUTOTUNE_TIERS.length - 1) {
           this.autoTuneTierIndex++
           this.autoTuneHitCount = 0
+          this.autoTuneTierStartMs = Date.now()
           this.emitAutoTuneStatus('collecting')
           this.scheduleAutoTuneHit()
           return
         }
         const zones = this.autoTuneZones()
         if (this.autoTuneZoneIndex < zones.length - 1) {
-          // Zona atual completa (24 golpes) - avanca pra proxima, do zero.
+          // Zona atual completa - avanca pra proxima, do zero (FRACO).
           this.autoTuneZoneIndex++
           this.autoTuneTierIndex = 0
           this.autoTuneHitCount = 0
+          this.autoTuneTierStartMs = Date.now()
           this.emitAutoTuneStatus('collecting')
           this.scheduleAutoTuneHit()
           return
@@ -416,6 +429,11 @@ export class MockDevice {
           threshold: clamp(pad.threshold + Math.round((Math.random() - 0.5) * 6), 1, 100),
           scan_time: clamp(8 + Math.round(Math.random() * 6), 1, 100),
           mask_time: clamp(25 + Math.round(Math.random() * 10), 1, 100),
+          // Fase AB: só pra demonstrar a UI recebendo os campos novos - o
+          // firmware de verdade infere isso da coleta (ver finishAutoTune()
+          // em main.cpp), aqui é só um valor plausível qualquer.
+          curve_type: Math.floor(Math.random() * 5),
+          retrigger: Math.round(Math.random() * 40),
           ...(zones.length > 0
             ? {
                 rim_sensitivity: clamp(pad.rim_sensitivity + Math.round((Math.random() - 0.5) * 10), 1, 100),
@@ -438,10 +456,11 @@ export class MockDevice {
     this.autoTunePad = -1
     this.autoTuneTierIndex = 0
     this.autoTuneHitCount = 0
+    this.autoTuneTierStartMs = 0
     this.autoTuneZoneIndex = 0
     this.autoTuneHhPhase = null
     this.autoTuneResult = null
-    this.emit({ type: 'autotune_status', pad, state: 'idle', hit_count: 0, hit_target: AUTOTUNE_HIT_TARGET })
+    this.emit({ type: 'autotune_status', pad, state: 'idle', hit_count: 0 })
   }
 
   private handleApplyAutotune(): void {
@@ -460,16 +479,23 @@ export class MockDevice {
     if (this.autoTuneResult.rim_threshold !== undefined) {
       pad.rim_threshold = this.autoTuneResult.rim_threshold
     }
+    if (this.autoTuneResult.curve_type !== undefined) {
+      pad.curve_type = this.autoTuneResult.curve_type
+    }
+    if (this.autoTuneResult.retrigger !== undefined) {
+      pad.retrigger = this.autoTuneResult.retrigger
+    }
 
     const appliedPad = this.autoTunePad
     this.autoTunePad = -1
     this.autoTuneTierIndex = 0
     this.autoTuneHitCount = 0
+    this.autoTuneTierStartMs = 0
     this.autoTuneZoneIndex = 0
     this.autoTuneHhPhase = null
     this.autoTuneResult = null
 
-    this.emit({ type: 'autotune_status', pad: appliedPad, state: 'idle', hit_count: 0, hit_target: AUTOTUNE_HIT_TARGET })
+    this.emit({ type: 'autotune_status', pad: appliedPad, state: 'idle', hit_count: 0 })
     this.emitPadConfig(appliedPad)
   }
 

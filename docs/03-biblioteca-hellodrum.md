@@ -233,3 +233,42 @@ em mente, só nunca chegou a implementar o decaimento.
 Ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase P)
 pro racional completo, incluindo por que `Gain` e `Xtalk` (implementados na
 mesma fase) **não** precisaram de nenhuma mudança na lib.
+
+### 2026-09-15 — Correção: `retrigger` comparava domínios diferentes (bug desde a Fase P)
+
+**Arquivos**: `firmware/lib/HelloDrum-arduino-Library/src/hellodrum.h` e
+`hellodrum.cpp`
+
+**Achado ao desenhar a calibração automática do `retrigger`** (ver Fase AA
+em [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)): o `piso`
+calculado em `decayFloor = velocity - tempo_decorrido*(retrigger+1)/16`
+partia de `velocity` (ou `velocityRim`, no caso do `dualPiezoSensing()`) —
+mas essa variável é reaproveitada em 2 domínios diferentes pela própria
+lib: pico **bruto** durante o scan, e resultado **já mapeado por
+`curve()` pra 1-127** assim que o golpe termina (`velocity =
+curve(velocity, ...)`, logo antes de `hit = true`). No momento em que o
+`retrigger` checa o piso (durante o `mask_time` seguinte), `velocity`
+ainda guardava esse valor final de 1-127 do golpe anterior — só que era
+comparado contra `piezoValue` (ou `abs(piezoValue-sensorValue)`, nos
+prato/caixa 3 zonas), que é sempre **bruto** (escala de centenas, já que
+`Threshold = thre*10`). Como o piso partia de no máximo ~127 e decaía até
+~8/ms (`retrigger=100`), em poucos milissegundos ele já caía abaixo de
+qualquer `piezoValue` bruto plausível — na prática, `retrigger` deixava
+passar quase qualquer coisa que cruzasse o threshold durante o
+`mask_time`, quase imediatamente, **independente da força real do novo
+golpe** e do valor configurado. Sem efeito nenhum pra quem usa
+`retrigger = 0` (o `return` incondicional original, intocado).
+
+**Correção**: 2 novos campos privados, `lastRawVelocity`/
+`lastRawVelocityRim`, guardam o pico **bruto** do último golpe de
+verdade (gravados logo ANTES de cada chamada de `curve()` reescrever
+`velocity`/`velocityRim`) — o cálculo de `decayFloor` passou a usar esses
+campos em vez de `velocity`/`velocityRim`, mantendo os dois lados da
+comparação sempre em escala bruta. Aplicado nos mesmos 4 pontos da Fase P
+(`singlePiezoSensing()`, `dualPiezoSensing()`, `cymbal2zoneSensing()`,
+`cymbal3zoneSensing()`).
+
+**Nunca testado com hardware real** (nem antes nem depois da correção,
+pelo que consta em [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)
+Fase P) — achado só por leitura de código ao preparar a calibração
+automática do `retrigger`.

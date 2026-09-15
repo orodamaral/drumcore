@@ -243,14 +243,13 @@ export interface GlobalConfig {
 // cobre as sub-fases internas do firmware (waiting/rising/decaying/cooldown)
 // - o app só precisa saber "esperando o usuário bater" vs "processando".
 //
-// Fase T: a coleta agora é dividida em 3 níveis de força (fraco/médio/forte),
-// 8 golpes cada (24 no total) - ver docs/01-decisoes-arquiteturais.md. Em
-// "collecting", hit_count/hit_target contam o nível atual (não um total
-// acumulado), e tier/tier_index/tier_count dizem qual nível está em coleta.
+// Fase T: a coleta agora é dividida em 3 níveis de força (fraco/médio/forte)
+// - ver docs/01-decisoes-arquiteturais.md. Em "collecting", tier/tier_index/
+// tier_count dizem qual nível está em coleta.
 //
-// Fase U: pads de 2 canais fazem 1 rodada extra inteira (mais 3 níveis, 24
-// golpes) por zona além da principal, pra também calibrar rim_sensitivity/
-// rim_threshold (que antes só davam pra ajustar na mão) - ver docs/01-
+// Fase U: pads de 2 canais fazem 1 rodada extra inteira (mais 3 níveis) por
+// zona além da principal, pra também calibrar rim_sensitivity/rim_threshold
+// (que antes só davam pra ajustar na mão) - ver docs/01-
 // decisoes-arquiteturais.md. "zone" só aparece quando o pad calibrado tem
 // mais de 1 zona, e reaproveita o MESMO vocabulário do evento "hit" (zone
 // em "hit" - ver PAD_TYPE_META/docs/05-tipos-de-sensor.md): "head"/"rim"
@@ -258,8 +257,16 @@ export interface GlobalConfig {
 // (pad_type 5, Fase V); "head"/"edge"/"rim" pra PAD_SNARE_3ZONE (pad_type
 // 8, Fase V) - 2 rodadas extras nesses últimos dois (edge e cup/rim são 2
 // faixas de threshold no MESMO canal secundário, não um 3º piezo).
-export const AUTOTUNE_HIT_TARGET = 8
+//
+// Fase AA (2026-09-15): cada nível colhia originalmente uma meta FIXA de 8
+// golpes (hit_count/hit_target) - virou uma JANELA DE TEMPO de 10s por
+// nível (tier_elapsed_ms/tier_target_ms, mesmo padrão já usado pro fluxo
+// HHC abaixo com hold_elapsed_ms/hold_target_ms), pra colher mais amostras
+// e dar uma média mais confiável. hit_count continua sendo enviado como
+// info complementar (não é mais alvo de nada). Só se aplica ao fluxo de
+// impacto (pads normais) - o fluxo HHC não muda.
 export const AUTOTUNE_TIER_COUNT = 3
+export const AUTOTUNE_TIER_WINDOW_MS = 10000
 export const AUTOTUNE_HH_HOLD_MS = 3000
 export type AutoTuneUiState = 'idle' | 'noise' | 'collecting' | 'done' | 'aborted'
 export type AutoTuneTier = 'weak' | 'medium' | 'strong'
@@ -298,10 +305,11 @@ export interface AutoTuneStatus {
   pad: number
   state: AutoTuneUiState
   hit_count: number
-  hit_target: number
   tier?: AutoTuneTier
   tier_index?: number
   tier_count?: number
+  tier_elapsed_ms?: number
+  tier_target_ms?: number
   zone?: AutoTuneZone
   phase?: AutoTuneHihatPhase
   hold_elapsed_ms?: number
@@ -312,6 +320,14 @@ export interface AutoTuneStatus {
   mask_time?: number
   rim_sensitivity?: number
   rim_threshold?: number
+  // Fase AB: inferidos automaticamente em finishAutoTune() a partir da
+  // própria coleta (nível médio pra curve_type, taxa de decaimento
+  // observada pro retrigger) - só aparecem no resultado de pads de
+  // impacto (ausentes quando mode === 'hihat_range'). O usuário sempre
+  // pode trocar os dois manualmente depois pelos campos normais (CURVA/
+  // RETRIG) - ver docs/01-decisoes-arquiteturais.md.
+  curve_type?: number
+  retrigger?: number
   mode?: 'hihat_range'
   reason?: 'timeout' | 'channel_disabled'
 }

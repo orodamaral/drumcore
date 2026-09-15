@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   AUTOTUNE_HH_HOLD_MS,
-  AUTOTUNE_HIT_TARGET,
+  AUTOTUNE_TIER_WINDOW_MS,
   autoTuneShapeFor,
   autoTuneZonesFor,
   AutoTuneShape,
@@ -224,6 +224,11 @@ const ZONE_HIT_PHRASE: Record<string, string> = {
   cup: 'no cup'
 }
 
+// Mesmos nomes/índices (0-4) do campo CURVA na tela física
+// (renderAutoTune() em main.cpp) - usado só pra exibir o curve_type
+// inferido (Fase AB) de forma legível no resultado do auto-tune.
+const CURVE_NAMES = ['Linear', 'Exp 1', 'Exp 2', 'Log 1', 'Log 2']
+
 // Assistente de auto-calibração (Fase O) - bate no pad algumas vezes e o
 // firmware calcula sensibilidade/threshold/scan/mask sozinho, em vez de
 // ajustar cada slider por tentativa e erro. Ver docs/01-decisoes-
@@ -269,9 +274,9 @@ function AutoTunePanel({
           </p>
         ) : (
           <p className="pad-hint">
-            Bate no pad <strong>{AUTOTUNE_HIT_TARGET}x fraco</strong>, <strong>{AUTOTUNE_HIT_TARGET}x médio</strong>{' '}
-            e <strong>{AUTOTUNE_HIT_TARGET}x forte</strong> e o módulo calcula sensibilidade, threshold, scan e
-            mask sozinho.
+            Bate no pad <strong>fraco</strong>, <strong>médio</strong> e <strong>forte</strong>, por{' '}
+            {AUTOTUNE_TIER_WINDOW_MS / 1000} segundos cada intensidade, e o módulo calcula sensibilidade,
+            threshold, scan e mask sozinho — quanto mais batidas nesse tempo, melhor a média.
             {shape !== 'single' &&
               ` Esse pad tem ${extraZoneLabels.length > 1 ? 'mais zonas' : 'mais uma zona'} — depois repete os 3 níveis batendo ${extraZoneLabels
                 .map((l) => `no ${l}`)
@@ -322,6 +327,12 @@ function AutoTunePanel({
     const tierLabel =
       status.tier === 'weak' ? 'fraco' : status.tier === 'strong' ? 'forte' : 'médio'
     const zoneHitPhrase = status.zone ? (ZONE_HIT_PHRASE[status.zone] ?? 'no pad') : 'no pad'
+    // Fase AA: nível agora é uma janela de TEMPO (era uma meta fixa de
+    // golpes) - mesmo padrão do bloco HHC acima (hold_elapsed_ms/
+    // hold_target_ms). hit_count vira só info complementar.
+    const elapsed = status.tier_elapsed_ms ?? 0
+    const target = status.tier_target_ms ?? AUTOTUNE_TIER_WINDOW_MS
+    const remainSec = Math.max(0, Math.ceil((target - elapsed) / 1000))
     return (
       <div className="autotune-panel active">
         {status.tier_index && status.tier_count && (
@@ -330,13 +341,16 @@ function AutoTunePanel({
             Nível {status.tier_index}/{status.tier_count}
           </p>
         )}
-        <p className="autotune-instruction">Bata {zoneHitPhrase} com toque {tierLabel}</p>
+        <p className="autotune-instruction">
+          Bata {zoneHitPhrase} com toque {tierLabel} — {remainSec}s
+        </p>
         <div className="autotune-progress">
-          <div className="autotune-progress-bar" style={{ width: `${(100 * status.hit_count) / status.hit_target}%` }} />
+          <div
+            className="autotune-progress-bar"
+            style={{ width: `${Math.min(100, (100 * elapsed) / target)}%` }}
+          />
         </div>
-        <span className="field-value">
-          {status.hit_count}/{status.hit_target}
-        </span>
+        <span className="field-value">{status.hit_count} batidas</span>
         <button className="autotune-cancel" onClick={onCancel}>
           Cancelar
         </button>
@@ -380,6 +394,10 @@ function AutoTunePanel({
               {rimThreshLabel}: {status.rim_threshold}
             </li>
           )}
+          {status.curve_type !== undefined && (
+            <li>Curva: {CURVE_NAMES[status.curve_type] ?? status.curve_type}</li>
+          )}
+          {status.retrigger !== undefined && <li>Retrigger: {status.retrigger}</li>}
         </ul>
         <div className="autotune-actions">
           <button className="autotune-apply" onClick={onApply}>

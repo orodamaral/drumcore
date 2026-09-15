@@ -236,10 +236,18 @@ void HelloDrum::singlePiezoSensing(byte sens, byte thre, byte scanTime, byte mas
       // Fase P (DrumCore): retrigger==0 mantem o corte rigido original.
       // >0 deixa passar dentro do mask_time so' se a pancada nova for bem
       // mais forte que a anterior (limiar decrescente com o tempo).
+      // [Corrigido 2026-09-15] decayFloor precisa vir de lastRawVelocity
+      // (pico BRUTO do golpe anterior), nao de "velocity" - esse ja' foi
+      // reescrito por curve() pra escala 1-127 assim que o golpe anterior
+      // terminou (ver "velocity = curve(...)" abaixo), e comparar isso
+      // contra piezoValue (sempre bruto) fazia decayFloor cair abaixo de
+      // qualquer piezoValue real quase instantaneamente - retrigger
+      // deixava passar quase tudo, quase sempre, independente do valor
+      // configurado.
       bool allowRetrigger = false;
       if (retrigger > 0)
       {
-        int decayFloor = velocity - (int)((time_hit - time_end) * (retrigger + 1) / 16);
+        int decayFloor = lastRawVelocity - (int)((time_hit - time_end) * (retrigger + 1) / 16);
         allowRetrigger = decayFloor > 0 && piezoValue > decayFloor;
       }
       if (!allowRetrigger)
@@ -272,6 +280,7 @@ void HelloDrum::singlePiezoSensing(byte sens, byte thre, byte scanTime, byte mas
       int prevVel = velocity;
 #endif
 
+      lastRawVelocity = velocity; // [Fase retrigger fix] salva o pico bruto ANTES de curve() reescrever velocity
       velocity = curve(velocity, Threshold, Sensitivity, curvetype); //apply the curve at the velocity
       hit = true;                                                    //mark as hit
       time_end = millis();
@@ -330,10 +339,14 @@ void HelloDrum::dualPiezoSensing(byte sens, byte thre, byte scanTime, byte maskT
     {
       // Fase P (DrumCore) - ver singlePiezoSensing() pro racional. Aqui o
       // "pico" e' o maior entre pele e aro, dos dois lados (anterior/novo).
+      // [Corrigido 2026-09-15] prevPeak precisa vir de lastRawVelocity/
+      // lastRawVelocityRim (picos BRUTOS do golpe anterior) - "velocity"/
+      // "velocityRim" ja' viram 1-127 (curve()) assim que o golpe anterior
+      // termina, mesmo bug de dominio do singlePiezoSensing() acima.
       bool allowRetrigger = false;
       if (retrigger > 0)
       {
-        int prevPeak = velocity > velocityRim ? velocity : velocityRim;
+        int prevPeak = lastRawVelocity > lastRawVelocityRim ? lastRawVelocity : lastRawVelocityRim;
         int newPeak = piezoValue > RimPiezoValue ? piezoValue : RimPiezoValue;
         int decayFloor = prevPeak - (int)((time_hit - time_end) * (retrigger + 1) / 16);
         allowRetrigger = decayFloor > 0 && newPeak > decayFloor;
@@ -380,6 +393,8 @@ void HelloDrum::dualPiezoSensing(byte sens, byte thre, byte scanTime, byte maskT
       if ((velocity - velocityRim < RimSensitivity) && (velocityRim > RimThreshold))
       {
 
+        lastRawVelocity = velocity;       // [Fase retrigger fix] pico bruto ANTES de curve()
+        lastRawVelocityRim = velocityRim;
         velocity = curve(velocity, Threshold, Sensitivity, curvetype);
         velocityRim = curve(velocityRim, Threshold, Sensitivity, curvetype);
 
@@ -406,6 +421,8 @@ void HelloDrum::dualPiezoSensing(byte sens, byte thre, byte scanTime, byte maskT
       else
       {
 
+        lastRawVelocity = velocity;       // [Fase retrigger fix] pico bruto ANTES de curve()
+        lastRawVelocityRim = velocityRim;
         velocity = curve(velocity, Threshold, Sensitivity, curvetype);
         velocityRim = curve(velocityRim, Threshold, Sensitivity, curvetype);
 
@@ -470,11 +487,15 @@ void HelloDrum::cymbal2zoneSensing(byte sens, byte thre, byte scanTime, byte mas
     if (time_hit - time_end < maskTime)
     {
       // Fase P (DrumCore) - ver singlePiezoSensing() pro racional.
+      // [Corrigido 2026-09-15] mesmo bug de dominio - decayFloor precisa
+      // vir de lastRawVelocity (pico BRUTO, aqui = abs(piezoValue-
+      // sensorValue) do golpe anterior), nao de "velocity" (vira 1-127
+      // assim que curve() roda, nos ramos bow/edge abaixo).
       bool allowRetrigger = false;
       if (retrigger > 0)
       {
         int newPeak = abs(piezoValue - sensorValue);
-        int decayFloor = velocity - (int)((time_hit - time_end) * (retrigger + 1) / 16);
+        int decayFloor = lastRawVelocity - (int)((time_hit - time_end) * (retrigger + 1) / 16);
         allowRetrigger = decayFloor > 0 && newPeak > decayFloor;
       }
       if (!allowRetrigger)
@@ -525,6 +546,7 @@ void HelloDrum::cymbal2zoneSensing(byte sens, byte thre, byte scanTime, byte mas
       //bow
       if (firstSensorValue < edgeThreshold && lastSensorValue < edgeThreshold)
       {
+        lastRawVelocity = velocity; // [Fase retrigger fix] pico bruto ANTES de curve()
         velocity = curve(velocity, Threshold, Sensitivity, curvetype);
 
 #ifdef DEBUG_DRUM
@@ -551,6 +573,7 @@ void HelloDrum::cymbal2zoneSensing(byte sens, byte thre, byte scanTime, byte mas
       //edge
       else if (velocity > Threshold && firstSensorValue > edgeThreshold && firstSensorValue > lastSensorValue)
       {
+        lastRawVelocity = velocity; // [Fase retrigger fix] pico bruto ANTES de curve()
         velocity = curve(velocity, Threshold, Sensitivity, curvetype);
 
 #ifdef DEBUG_DRUM
@@ -630,11 +653,13 @@ void HelloDrum::cymbal3zoneSensing(byte sens, byte thre, byte scanTime, byte mas
     if (time_hit - time_end < maskTime)
     {
       // Fase P (DrumCore) - ver singlePiezoSensing() pro racional.
+      // [Corrigido 2026-09-15] mesmo bug de dominio do cymbal2zoneSensing()
+      // acima - decayFloor precisa vir de lastRawVelocity.
       bool allowRetrigger = false;
       if (retrigger > 0)
       {
         int newPeak = abs(piezoValue - sensorValue);
-        int decayFloor = velocity - (int)((time_hit - time_end) * (retrigger + 1) / 16);
+        int decayFloor = lastRawVelocity - (int)((time_hit - time_end) * (retrigger + 1) / 16);
         allowRetrigger = decayFloor > 0 && newPeak > decayFloor;
       }
       if (!allowRetrigger)
@@ -686,6 +711,7 @@ void HelloDrum::cymbal3zoneSensing(byte sens, byte thre, byte scanTime, byte mas
       //bow
       if (velocity > Threshold && firstSensorValue < edgeThreshold && lastSensorValue < edgeThreshold)
       {
+        lastRawVelocity = velocity; // [Fase retrigger fix] pico bruto ANTES de curve()
         velocity = curve(velocity, Threshold, Sensitivity, curvetype);
 #ifdef DEBUG_DRUM
         Serial.print("[Hit Bow] velocity : ");
@@ -710,6 +736,7 @@ void HelloDrum::cymbal3zoneSensing(byte sens, byte thre, byte scanTime, byte mas
       //edge
       else if (velocity > Threshold && firstSensorValue > edgeThreshold && firstSensorValue < cupThreshold && firstSensorValue > lastSensorValue)
       {
+        lastRawVelocity = velocity; // [Fase retrigger fix] pico bruto ANTES de curve()
         velocity = curve(velocity, Threshold, Sensitivity, curvetype);
 #ifdef DEBUG_DRUM
         Serial.print("[Hit Edge] velocity : ");
@@ -734,6 +761,7 @@ void HelloDrum::cymbal3zoneSensing(byte sens, byte thre, byte scanTime, byte mas
       //cup
       else if (velocity > Threshold && firstSensorValue > cupThreshold && lastSensorValue < edgeThreshold)
       {
+        lastRawVelocity = velocity; // [Fase retrigger fix] pico bruto ANTES de curve()
         velocity = curve(velocity, Threshold, Sensitivity, curvetype);
 #ifdef DEBUG_DRUM
         Serial.print("[Hit Cup] velocity : ");

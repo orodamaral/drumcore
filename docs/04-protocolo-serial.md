@@ -122,7 +122,7 @@ Cada linha enviada pelo módulo é um objeto com um campo `type`.
 | `pad_config` | Ver abaixo | Resposta a `get_pad`/`get_all_pads`, e a `set_pad` bem-sucedido em `label`/`pad_type`/`hihat_pedal_channel`/`enabled`/`hihat_invert`, e a `apply_autotune`. |
 | `hit` | `pad`, `zone`, `note`, `velocity` | Sempre que um pad é atingido (telemetria em tempo real). `zone` varia por tipo: `"bow"`, `"head"`, `"rim"`, `"edge"`, `"cup"`, `"open"`, `"closed"`, `"pedal"`, `"choke"` (abafamento de prato/aro, `pad_type` 3/5) ou `"touch"` (`pad_type` 9 — `PAD_CHOKE`, sensor de contato; `velocity` sempre `127`) — ver [05-tipos-de-sensor.md](05-tipos-de-sensor.md). |
 | `ack` | `cmd`, `pad`, `field`, `value` | Confirmação de um `set_pad` com campo numérico simples. |
-| `autotune_status` | `pad`, `state`, `hit_count`, `hit_target`, e (`state == "collecting"`) `tier`/`tier_index`/`tier_count`/`zone`? **ou** `phase`/`hold_elapsed_ms`/`hold_target_ms` (pedal, ver abaixo), e (`state == "done"`) `sensitivity`/`threshold`/`scan_time`/`mask_time`/`rim_sensitivity`?/`rim_threshold`?/`mode`?, ou (`state == "aborted"`) `reason` | Progresso do assistente de auto-calibração (Fase O, 3 níveis de força desde a Fase T, 2ª/3ª zona pra pads de mais de 1 canal desde a Fase U/V, fluxo de posição contínua pro controlador de pedal desde a Fase X) — emitido a cada mudança de fase relevante, não só em resposta a comando (dá pra acompanhar em tempo real: contagem regressiva do ruído, golpes capturados, etc). `state`: `"idle"` (parado/cancelado/aplicado), `"noise"` (medindo ruído de fundo — não acontece pro pedal, ver abaixo), `"collecting"` (esperando/processando golpes, ou segurando o pedal numa posição), `"done"` (resultado calculado, esperando `apply_autotune`/`cancel_autotune`), `"aborted"` (timeout de 15s sem pancada, ou canal desligado — ver `reason`: `"timeout"` ou `"channel_disabled"`). Em `"collecting"`, `hit_count`/`hit_target` contam as batidas *da zona/nível atual* (0-8, não um total acumulado); `tier` indica qual nível está em coleta agora — `"weak"`, `"medium"` ou `"strong"` — e `tier_index`/`tier_count` (ex: `2`/`3`) dão o progresso entre níveis. Cada zona pede 8 golpes fracos, depois 8 médios, depois 8 fortes (24 no total por zona) — ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md). `zone` só aparece quando o pad calibrado tem mais de 1 canal, e reaproveita o MESMO vocabulário do evento `hit` (não é um nome genérico): `"head"`/`"rim"` pra `pad_type` 1 (`PAD_DUAL`, 1 rodada extra); `"bow"`/`"edge"`/`"cup"` pra `pad_type` 5 (`PAD_CYMBAL_3ZONE`, 2 rodadas extras); `"head"`/`"edge"`/`"rim"` pra `pad_type` 8 (`PAD_SNARE_3ZONE`, 2 rodadas extras) — a 1ª zona de cada lista já aparece na 1ª rodada (não só nas extras). O resultado final em `"done"` ganha `rim_sensitivity`/`rim_threshold` também nesses casos (mesmos campos do `pad_config`, reaproveitados com significado diferente por `pad_type` — ver tabela de campos por tipo em [05-tipos-de-sensor.md](05-tipos-de-sensor.md)). **Controlador de pedal** (`pad_type` 6/7, Fase X): fluxo totalmente diferente — sensor de posição contínua, sem "golpes"/níveis. Pula direto pra `"collecting"` com `phase` (`"hh_open"` = segure o pedal solto, `"hh_closed"` = pressione até o fim) e `hold_elapsed_ms`/`hold_target_ms` (progresso dentro dos 3s de cada posição — `hit_count`/`hit_target`/`tier`/`zone` não se aplicam). O resultado em `"done"` ganha `mode: "hihat_range"`, avisando que `sensitivity`/`threshold` são o teto/piso de posição (pedal fechado/aberto), não pico de pancada. |
+| `autotune_status` | `pad`, `state`, `hit_count`, e (`state == "collecting"`) `tier`/`tier_index`/`tier_count`/`tier_elapsed_ms`/`tier_target_ms`/`zone`? **ou** `phase`/`hold_elapsed_ms`/`hold_target_ms` (pedal, ver abaixo), e (`state == "done"`) `sensitivity`/`threshold`/`scan_time`/`mask_time`/`rim_sensitivity`?/`rim_threshold`?/`curve_type`?/`retrigger`?/`mode`?, ou (`state == "aborted"`) `reason` | Progresso do assistente de auto-calibração (Fase O, 3 níveis de força desde a Fase T, 2ª/3ª zona pra pads de mais de 1 canal desde a Fase U/V, fluxo de posição contínua pro controlador de pedal desde a Fase X, coleta por janela de tempo desde a Fase AA, `curve_type`/`retrigger` inferidos desde a Fase AB) — emitido a cada mudança de fase relevante, não só em resposta a comando (dá pra acompanhar em tempo real: contagem regressiva do ruído, janela de tempo do nível, golpes capturados, etc). `state`: `"idle"` (parado/cancelado/aplicado), `"noise"` (medindo ruído de fundo — não acontece pro pedal, ver abaixo), `"collecting"` (esperando/processando golpes, ou segurando o pedal numa posição), `"done"` (resultado calculado, esperando `apply_autotune`/`cancel_autotune`), `"aborted"` (timeout de 15s sem pancada, ou canal desligado — ver `reason`: `"timeout"` ou `"channel_disabled"`). Em `"collecting"`, `tier` indica qual nível está em coleta agora — `"weak"`, `"medium"` ou `"strong"` — e `tier_index`/`tier_count` (ex: `2`/`3`) dão o progresso entre níveis; `tier_elapsed_ms`/`tier_target_ms` dão o progresso *dentro* do nível atual (mesmo padrão do `hold_elapsed_ms`/`hold_target_ms` do pedal, ver abaixo). `hit_count` conta as batidas capturadas *na zona/nível atual* (só informativo — não é mais alvo de nada). Cada zona pede 10s de golpes fracos, depois 10s de médios, depois 10s de fortes ([Fase AA](01-decisoes-arquiteturais.md), substitui a meta fixa de 8 golpes por nível usada até então — mais amostras por nível, média mais confiável) — ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md). `zone` só aparece quando o pad calibrado tem mais de 1 canal, e reaproveita o MESMO vocabulário do evento `hit` (não é um nome genérico): `"head"`/`"rim"` pra `pad_type` 1 (`PAD_DUAL`, 1 rodada extra); `"bow"`/`"edge"`/`"cup"` pra `pad_type` 5 (`PAD_CYMBAL_3ZONE`, 2 rodadas extras); `"head"`/`"edge"`/`"rim"` pra `pad_type` 8 (`PAD_SNARE_3ZONE`, 2 rodadas extras) — a 1ª zona de cada lista já aparece na 1ª rodada (não só nas extras). O resultado final em `"done"` ganha `rim_sensitivity`/`rim_threshold` também nesses casos (mesmos campos do `pad_config`, reaproveitados com significado diferente por `pad_type` — ver tabela de campos por tipo em [05-tipos-de-sensor.md](05-tipos-de-sensor.md)). `curve_type` (0-4, mesma escala do campo `CURVA` do `pad_config`) e `retrigger` (0-100, mesma escala do campo `RETRIG`) vêm inferidos automaticamente a partir da própria coleta ([Fase AB](01-decisoes-arquiteturais.md)) — presentes em todo resultado de pad de impacto, ausentes quando `mode === "hihat_range"` (não fazem sentido pro pedal). **Controlador de pedal** (`pad_type` 6/7, Fase X, fora das mudanças da Fase AA/AB): fluxo totalmente diferente — sensor de posição contínua, sem "golpes"/níveis. Pula direto pra `"collecting"` com `phase` (`"hh_open"` = segure o pedal solto, `"hh_closed"` = pressione até o fim) e `hold_elapsed_ms`/`hold_target_ms` (progresso dentro dos 3s de cada posição — `tier`/`tier_elapsed_ms`/`tier_target_ms`/`zone` não se aplicam). O resultado em `"done"` ganha `mode: "hihat_range"`, avisando que `sensitivity`/`threshold` são o teto/piso de posição (pedal fechado/aberto), não pico de pancada — e não ganha `curve_type`/`retrigger`. |
 | `error` | `cmd`, `message` | Comando inválido, campo desconhecido, valor fora da faixa, canal consumido, JSON malformado, etc. |
 | `log` | `message` | Mensagens informativas de boot/diagnóstico (antes eram `Serial.println` livres), e também pareamento/desconexão do BLE-MIDI. |
 
@@ -212,32 +212,32 @@ Evento de hit num prato 3 zonas (zona "cup"):
 {"type":"hit","pad":5,"zone":"cup","note":40,"velocity":112}
 ```
 
-Progresso do auto-tune no meio do nível médio (5º golpe de 8):
+Progresso do auto-tune no meio do nível médio (6.2s dos 10s da janela, 5 golpes capturados até agora):
 ```json
-{"type":"autotune_status","pad":3,"state":"collecting","tier":"medium","tier_index":2,"tier_count":3,"hit_count":5,"hit_target":8}
+{"type":"autotune_status","pad":3,"state":"collecting","tier":"medium","tier_index":2,"tier_count":3,"tier_elapsed_ms":6200,"tier_target_ms":10000,"hit_count":5}
 ```
 
-Auto-tune de um pad `PAD_DUAL` (`pad_type` 1) na rodada extra do aro, nível fraco (2º golpe):
+Auto-tune de um pad `PAD_DUAL` (`pad_type` 1) na rodada extra do aro, nível fraco (2.1s dos 10s, 2º golpe):
 ```json
-{"type":"autotune_status","pad":0,"state":"collecting","tier":"weak","tier_index":1,"tier_count":3,"zone":"rim","hit_count":2,"hit_target":8}
+{"type":"autotune_status","pad":0,"state":"collecting","tier":"weak","tier_index":1,"tier_count":3,"zone":"rim","tier_elapsed_ms":2100,"tier_target_ms":10000,"hit_count":2}
 ```
-Resultado final desse mesmo pad (`rim_sensitivity`/`rim_threshold` só aparecem pra pads de mais de 1 canal):
+Resultado final desse mesmo pad (`rim_sensitivity`/`rim_threshold` só aparecem pra pads de mais de 1 canal; `curve_type`/`retrigger` inferidos automaticamente, Fase AB):
 ```json
-{"type":"autotune_status","pad":0,"state":"done","hit_count":8,"hit_target":8,"sensitivity":72,"threshold":8,"scan_time":12,"mask_time":38,"rim_sensitivity":45,"rim_threshold":6}
-```
-
-Auto-tune de um prato 3 zonas (`pad_type` 5) na rodada extra do cup, nível forte (6º golpe) — note que já foram 2 rodadas extras antes dessa (`edge`, depois `cup`):
-```json
-{"type":"autotune_status","pad":7,"state":"collecting","tier":"strong","tier_index":3,"tier_count":3,"zone":"cup","hit_count":6,"hit_target":8}
+{"type":"autotune_status","pad":0,"state":"done","hit_count":11,"sensitivity":72,"threshold":8,"scan_time":12,"mask_time":38,"rim_sensitivity":45,"rim_threshold":6,"curve_type":3,"retrigger":22}
 ```
 
-Auto-tune de um controlador de pedal (`pad_type` 6/7) segurando a posição fechada, 1.4s dos 3s:
+Auto-tune de um prato 3 zonas (`pad_type` 5) na rodada extra do cup, nível forte (9.1s dos 10s) — note que já foram 2 rodadas extras antes dessa (`edge`, depois `cup`):
 ```json
-{"type":"autotune_status","pad":12,"state":"collecting","phase":"hh_closed","hold_elapsed_ms":1400,"hold_target_ms":3000,"hit_count":0,"hit_target":8}
+{"type":"autotune_status","pad":7,"state":"collecting","tier":"strong","tier_index":3,"tier_count":3,"zone":"cup","tier_elapsed_ms":9100,"tier_target_ms":10000,"hit_count":13}
+```
+
+Auto-tune de um controlador de pedal (`pad_type` 6/7) segurando a posição fechada, 1.4s dos 3s (fluxo HHC, fora da mudança da Fase AA — continua por contagem de tempo fixa, não por golpes):
+```json
+{"type":"autotune_status","pad":12,"state":"collecting","phase":"hh_closed","hold_elapsed_ms":1400,"hold_target_ms":3000,"hit_count":0}
 ```
 Resultado final desse mesmo pedal (`mode: "hihat_range"` avisa que `sensitivity`/`threshold` são o teto/piso de posição, não pico de pancada):
 ```json
-{"type":"autotune_status","pad":12,"state":"done","hit_count":0,"hit_target":8,"sensitivity":92,"threshold":8,"scan_time":10,"mask_time":30,"mode":"hihat_range"}
+{"type":"autotune_status","pad":12,"state":"done","hit_count":0,"sensitivity":92,"threshold":8,"scan_time":10,"mask_time":30,"mode":"hihat_range"}
 ```
 
 Invertendo o CC de um controlador de pedal (`pad_type` 6/7):
