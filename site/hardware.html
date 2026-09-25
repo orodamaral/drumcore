@@ -65,7 +65,7 @@
       <div class="card">
         <div class="icon">🛡️</div>
         <h3>Proteção por canal (x16)</h3>
-        <p>Resistor série 100Ω (limita corrente / amortece ringing do piezo) + resistor paralelo 100kΩ pra GND + diodo BAT85 (grampeia excursões negativas de tensão) — mesma topologia usada no esquema de referência da biblioteca de sensing pro MUX.</p>
+        <p>Resistor série 1kΩ (limita a corrente que passa pelo grampo) + resistor paralelo 100kΩ pra GND + dois diodos 1N4148 — um pra GND (grampeia excursões negativas) e um pro 3V3 (grampeia picos acima da alimentação do ADC). Mais um resistor de 4,7kΩ do SIG do MUX pro GND, que descarrega a capacitância entre um canal e outro. Mesma ideia do esquema de referência da biblioteca de sensing (100Ω + 1MΩ + 2x BAT85), adaptada pro 1N4148, que é fácil de achar.</p>
       </div>
       <div class="card">
         <div class="icon">🔊</div>
@@ -90,7 +90,10 @@
       mesma função, redesenhada pra caber inteira na camada bottom — permite corrosão
       caseira (transferência térmica) em vez de mandar fabricar. Todos os 16 canais
       roteados nessa única camada, com malha de terra própria estendida até o limite
-      da placa, e DRC limpo.
+      da placa, e DRC limpo. Na revisão atual, os 16 diodos de grampo pro 3V3 ficam
+      em pé embaixo da placa do MUX, um sobre cada pino de canal, e as trilhas
+      passaram de 0,5mm pra 0,8mm (a primeira placa corroída mostrou que 0,5mm ficava
+      fino demais pra transferência térmica).
     </p>
     <figure class="pcb-figure">
       <img src="assets/jackboard_pcb_full.svg" alt="Vista completa da jackboard single-layer: serigrafia com o logo DRUMCORE, footprints dos 8 conectores e o roteamento por baixo" loading="lazy" />
@@ -104,8 +107,8 @@
       <span class="glyph">🖨️</span>
       PDFs prontos pra impressão em <a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/hardware/jackboard_singlelayer/fab" target="_blank" rel="noopener"><code>hardware/jackboard_singlelayer/fab/</code></a>:
       a placa isolada (P&amp;B, pra transferência térmica) e um layout com 4 placas
-      por folha A4 (retrato, com vãos de corte). Ainda não corroída/montada
-      fisicamente.
+      por folha A4 (retrato, com vãos de corte). A revisão anterior já foi corroída
+      uma vez; esta revisão (trilhas mais largas + diodos pro 3V3) ainda não.
     </p>
   </div>
 </section>
