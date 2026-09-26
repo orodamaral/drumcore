@@ -39,7 +39,7 @@ export class MockDevice {
   private pads: MockPad[]
   private primary: boolean[]
   private hitTimer: ReturnType<typeof setInterval> | null = null
-  private bleTimer: ReturnType<typeof setInterval> | null = null
+  private bleTimer: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout> | null = null
   private bleConnected = false
   private global = { midi_channel: 10, midi_output: 2 as 0 | 1 | 2 }
 
@@ -141,32 +141,52 @@ export class MockDevice {
       const candidates = this.pads.filter((p, i) => this.primary[i] && p.enabled)
       if (candidates.length === 0) return
       const pad = candidates[Math.floor(Math.random() * candidates.length)]
-      const zone = this.randomZoneFor(pad)
-      // PAD_CHOKE (fita de aluminio): gatilho binario, sempre velocity 127
-      // (nao tem envelope de piezo pra variar) - ver dispatchChoke() no
-      // firmware.
-      const velocity = pad.pad_type === 9 ? 127 : 40 + Math.floor(Math.random() * 87)
-      const note = this.noteForZone(pad, zone)
-      this.emit({ type: 'hit', pad: pad.pad, zone, note, velocity })
+      this.emitHit(pad)
     }, 1800)
 
     // Simula pareamento/desconexao BLE-MIDI periodicamente, so pra
     // demonstrar o indicador na UI - no firmware real isso reflete um
     // dispositivo de verdade pareando (ver docs/01-decisoes-arquiteturais.md).
-    this.bleTimer = setInterval(() => {
+    // Pareia logo no começo e só alterna de vez em quando (antes era a
+    // cada 15s, o que enchia o log de pareado/desconectado).
+    const toggleBle = () => {
       this.bleConnected = !this.bleConnected
       this.emit({
         type: 'log',
         message: this.bleConnected ? 'BLE-MIDI: dispositivo pareado. (simulado)' : 'BLE-MIDI: dispositivo desconectado. (simulado)'
       })
       this.emit(this.deviceInfo())
-    }, 15000)
+    }
+    this.bleTimer = setTimeout(() => {
+      toggleBle()
+      this.bleTimer = setInterval(toggleBle, 90000)
+    }, 3000)
+  }
+
+  /** Batida simulada num pad específico (botão "Simular batida" do app). */
+  simulateHit(padIndex: number): void {
+    const pad = this.pads[padIndex]
+    if (!pad || !this.primary[padIndex] || !pad.enabled) return
+    this.emitHit(pad)
+  }
+
+  private emitHit(pad: MockPad): void {
+    const zone = this.randomZoneFor(pad)
+    // PAD_CHOKE (fita de aluminio): gatilho binario, sempre velocity 127
+    // (nao tem envelope de piezo pra variar) - ver dispatchChoke() no
+    // firmware.
+    const velocity = pad.pad_type === 9 ? 127 : 40 + Math.floor(Math.random() * 87)
+    const note = this.noteForZone(pad, zone)
+    this.emit({ type: 'hit', pad: pad.pad, zone, note, velocity })
   }
 
   stop(): void {
     if (this.hitTimer) clearInterval(this.hitTimer)
     this.hitTimer = null
-    if (this.bleTimer) clearInterval(this.bleTimer)
+    if (this.bleTimer) {
+      clearTimeout(this.bleTimer)
+      clearInterval(this.bleTimer)
+    }
     this.bleTimer = null
     this.bleConnected = false
     if (this.autoTuneTimer) clearTimeout(this.autoTuneTimer)
@@ -485,6 +505,9 @@ export class MockDevice {
     if (this.autoTuneResult.retrigger !== undefined) {
       pad.retrigger = this.autoTuneResult.retrigger
     }
+    // Igual ao firmware (applyAutoTuneResult): o resultado foi medido com
+    // gain neutro, então aplicar sempre deixa o gain em 100.
+    pad.gain = 100
 
     const appliedPad = this.autoTunePad
     this.autoTunePad = -1
