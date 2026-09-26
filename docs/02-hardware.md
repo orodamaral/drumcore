@@ -37,7 +37,12 @@ como desatualizado) se o pinout abaixo mudar de novo.
   **jackboard** (`hardware/jackboard/`, projeto KiCad): HC4067 onboard +
   8 jacks TRS 6.35mm (16 canais) + rede de proteção por canal. O sistema
   final usa **2 jackboards idênticas**, uma por MUX, pra fechar os 32
-  canais. Ver [site/hardware.html](../site/hardware.html) e
+  canais. **Cada jack TRS leva 2 canais**: canal par (0-based: 0, 2, 4…) =
+  **tip**, ímpar (1, 3, 5…) = **ring** — na numeração do ConfigTool, Pad 1
+  = tip e Pad 2 = ring do Jack 1, e assim por diante (confirmado pelo
+  Rodrigo em 2026-09-27). Sensores de 2 zonas leem a zona principal no 1º
+  canal do par, então precisam começar no tip: **tip = pele/corpo, ring =
+  aro/borda**, o padrão dos pads de mercado. Ver [site/hardware.html](../site/hardware.html) e
   `docs/CHANGELOG.md` (entrada 2026-09-06) pro estado atual da placa.
 - Pads piezo (simples e/ou duplos), pratos 2/3 zonas, hi-hat, conforme suportado
   pela lib (ver [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md)).

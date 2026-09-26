@@ -18,6 +18,7 @@ import {
 import { CURVE_NAMES, FIELD_UI, NOTE_FIELDS, padTypeLabel, SectionKey, SECTION_TITLES } from '../uiMeta'
 import { noteName, useMidiMap } from '../midiMaps'
 import MidiMapSelect from './MidiMapSelect'
+import { canStartTwoChannel, crossesJacks, jackLabel, jackOf, jackPos, twoChannelZones } from '../jacks'
 import PadActions from './PadActions'
 import { PadOp, PadSnapshot } from '../padActions'
 import ParamSlider, { InfoTip } from './ParamSlider'
@@ -359,6 +360,11 @@ export default function PadEditor({
             nota {activePad.note} · {noteName(activePad.note, midiMap)}
           </span>
           <span className="chip">{padTypeLabel(activePad.pad_type)}</span>
+          <span className="chip" title="Onde plugar o cabo na jackboard">
+            {crossesJacks(activePad)
+              ? `⚠ ${jackLabel(jackOf(activePad.pad))} ring + ${jackLabel(jackOf(activePad.pad) + 1)} tip`
+              : `${jackLabel(jackOf(activePad.pad))} · ${meta.channels === 2 ? 'tip + ring' : jackPos(activePad.pad)}`}
+          </span>
         </div>
 
         {disabled && (
@@ -400,17 +406,37 @@ export default function PadEditor({
                 value={activePad.pad_type}
                 onChange={(event) => onChangeType(Number(event.target.value) as PadType)}
               >
-                {PAD_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {padTypeLabel(type)}
-                  </option>
-                ))}
+                {PAD_TYPES.map((type) => {
+                  // Sensor de 2 canais só no tip (pad ímpar): no ring a 2ª
+                  // zona cairia no jack seguinte - ver jacks.ts.
+                  const blocked =
+                    PAD_TYPE_META[type].channels === 2 && !canStartTwoChannel(activePad.pad) && type !== activePad.pad_type
+                  return (
+                    <option key={type} value={type} disabled={blocked}>
+                      {padTypeLabel(type)}
+                      {blocked ? ' — só no tip (pad ímpar)' : ''}
+                    </option>
+                  )
+                })}
               </select>
-              {meta.channels === 2 && (
-                <p className="param-note">
-                  Usa 2 canais: este + o Pad {activePad.pad + 2}, que fica reservado para a 2ª zona.
+              {crossesJacks(activePad) ? (
+                <p className="dialog-warn">
+                  Este sensor usa 2 canais começando no <strong>ring</strong> do {jackLabel(jackOf(activePad.pad))}, e a
+                  2ª zona cai no Pad {activePad.pad + 2}, que já é o tip do {jackLabel(jackOf(activePad.pad) + 1)}. Pele
+                  e aro precisam estar no mesmo cabo estéreo: configure este sensor no Pad {activePad.pad} (tip deste
+                  jack) ou troque o tipo.
                 </p>
-              )}
+              ) : meta.channels === 2 ? (
+                <p className="param-note">
+                  Usa o {jackLabel(jackOf(activePad.pad))} inteiro: <strong>tip</strong> (Pad {activePad.pad + 1}) ={' '}
+                  {twoChannelZones(activePad.pad_type)[0]}, <strong>ring</strong> (Pad {activePad.pad + 2}) ={' '}
+                  {twoChannelZones(activePad.pad_type)[1]}.
+                </p>
+              ) : !canStartTwoChannel(activePad.pad) ? (
+                <p className="param-note">
+                  Ring do {jackLabel(jackOf(activePad.pad))} — sensores de 2 zonas só podem começar no tip (pad ímpar).
+                </p>
+              ) : null}
             </div>
 
             {meta.isHihatCymbal && (

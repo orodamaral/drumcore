@@ -2,6 +2,18 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-27 — ConfigTool: pads agrupados por jack (tip/ring)
+
+- A lista de pads passa a mostrar os canais agrupados como estão na placa:
+  um bloco por jack TRS (tip = pad ímpar, ring = pad par), separados em
+  Placa A (jacks 1–8) e Placa B (jacks 9–16). Sensor de 2 zonas vira um
+  item só no bloco ("tip pele · ring aro", notas "38 / 39").
+- Editor: chip "Jack N · tip/ring"; tipos de 2 canais bloqueados nos pads
+  do ring (a 2ª zona cairia no jack seguinte); aviso ⚠ para configurações
+  que já atravessam jacks (ex: feitas pela tela do módulo).
+- Convenção documentada em [02-hardware.md](02-hardware.md). Só no app — o
+  firmware ainda aceita 2 canais começando no ring.
+
 ## 2026-09-27 — Bug corrigido: tela não atualizava após mudanças feitas pelo app
 
 - Renomear um pad pelo app (e também mudar nota, tipo, ativo, valores,

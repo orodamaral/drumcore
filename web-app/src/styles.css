@@ -2288,3 +2288,108 @@ kbd {
     gap: 2px;
   }
 }
+
+/* ---------------------------------------------------------------- lista agrupada por jack */
+
+.board-sep {
+  margin: 10px 4px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--txt-dim);
+}
+
+.board-sep:first-child {
+  margin-top: 2px;
+}
+
+.jack-block {
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: 8px;
+  padding: 2px 2px 3px;
+  margin-bottom: 4px;
+}
+
+.jack-block.warn {
+  border-color: color-mix(in srgb, var(--warn) 60%, var(--line));
+}
+
+.jack-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--txt-dim);
+}
+
+.jack-warn {
+  color: var(--warn);
+  font-size: 12px;
+  cursor: help;
+}
+
+.jack-block .pad-row {
+  width: 100%;
+}
+
+.jack-pos {
+  flex: none;
+  width: 26px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--txt-dim);
+  position: relative;
+}
+
+.pad-row-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pad-row-sub {
+  font-size: 11px;
+  color: var(--txt-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pad-row-sub .jack-pos {
+  width: auto;
+  margin-right: 2px;
+}
+
+.pad-row-sub .jack-pos + .jack-pos,
+.pad-row-sub .jack-pos:not(:first-child) {
+  margin-left: 6px;
+}
+
+@media (max-width: 1023px) {
+  .board-sep {
+    display: none;
+  }
+
+  .jack-block {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+  }
+
+  .jack-block .pad-row {
+    border: none;
+    min-height: 40px;
+  }
+}
+
+.pad-row-main .pad-row-name {
+  flex: none;
+}
