@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WebDrum — módulo de bateria pelo navegador | DrumCore</title>
+<meta name="description" content="Protótipo: conecte um controlador MIDI e toque bateria direto pelo navegador, com mixer por peça — Web MIDI + Web Audio, samples SFZ livres (CC0)." />
+<link rel="stylesheet" href="assets/style.css" />
+<link rel="stylesheet" href="assets/webdrum.css" />
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><svg class="brand-logo" viewBox="0 0 94 46" width="30" height="15" aria-hidden="true" focusable="false"><rect x="0" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="36" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="48" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="60" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="72" y="0" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="0" width="10" height="10" rx="2" fill="var(--line)"/><rect x="0" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="12" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="36" y="12" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="48" y="12" width="10" height="10" rx="2" fill="var(--mux)"/><rect x="60" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="72" y="12" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="12" width="10" height="10" rx="2" fill="var(--line)"/><rect x="0" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="36" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="48" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="60" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="72" y="24" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="24" width="10" height="10" rx="2" fill="var(--line)"/><rect x="0" y="36" width="10" height="10" rx="2" fill="var(--line)"/><rect x="12" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="24" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="36" y="36" width="10" height="10" rx="2" fill="var(--line)"/><rect x="48" y="36" width="10" height="10" rx="2" fill="var(--line)"/><rect x="60" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="72" y="36" width="10" height="10" rx="2" fill="var(--ink)"/><rect x="84" y="36" width="10" height="10" rx="2" fill="var(--line)"/></svg>DRUMCORE</a>
+    <ul class="navlinks">
+      <li><a href="index.html">Visão geral</a></li>
+      <li><a href="hardware.html">Hardware</a></li>
+      <li><a href="app/">ConfigTool</a></li>
+      <li><a class="active" href="webdrum.html">WebDrum</a></li>
+      <li><a class="nav-gh" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">GitHub ↗</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero" style="padding: 52px 0 40px;">
+  <div class="wrap">
+    <p class="eyebrow">Protótipo experimental</p>
+    <h1>Toque bateria direto pelo navegador.</h1>
+    <p class="lede">
+      Conecte qualquer controlador MIDI (o DrumCore ou outro) e toque na hora — sem instalar
+      nada. Cada peça tem seu próprio canal no mixer, com fader e mudo independentes, tocando
+      samples de um kit acústico livre via <strong>Web MIDI</strong> + <strong>Web Audio</strong>.
+    </p>
+    <div class="status-pill"><span class="dot"></span>Protótipo — requer Chrome ou Edge (Web MIDI não é suportado no Firefox/Safari)</div>
+  </div>
+</header>
+
+<section class="block">
+  <div class="wrap">
+    <div class="wd-panel">
+      <div class="wd-transport">
+        <button id="wd-start" class="btn btn-primary" type="button">Ativar áudio e conectar MIDI</button>
+        <div class="wd-status" id="wd-midi-status">MIDI: aguardando ativação.</div>
+      </div>
+      <div class="wd-last-hit" id="wd-last-hit"></div>
+      <div class="mixer-grid" id="wd-mixer"></div>
+    </div>
+    <p class="callout">
+      <span class="glyph">🎛️</span>
+      Sem controlador à mão? Clica no botão <strong>▶</strong> de cada canal pra testar o som direto.
+    </p>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <h2>De onde vêm os sons</h2>
+    <p class="block-sub">
+      Kit <strong>Gogodze Phu Vol II</strong>, por
+      <a href="https://karoryfer.com/" target="_blank" rel="noopener">Karoryfer Samples</a>,
+      licenciado em <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0-1.0</a>
+      (domínio público) — catalogado em
+      <a href="https://sfzinstruments.github.io/drums/" target="_blank" rel="noopener">sfzinstruments.github.io/drums</a>.
+      As amostras são servidas direto do
+      <a href="https://github.com/sfzinstruments/karoryfer.gogodze-phu-vol-ii" target="_blank" rel="noopener">repositório original</a>
+      via jsDelivr, sem cópia no repo do DrumCore.
+    </p>
+    <p class="callout warn">
+      <span class="glyph">ℹ️</span>
+      O kit original grava cada peça com 7 microfones simultâneos (mixáveis via SFZ). Este
+      protótipo usa só <strong>1 microfone por peça</strong> (o mic próprio do bumbo/caixa, e o
+      overhead pros toms/chimbal, que não têm mic dedicado) pra manter o teste simples — e ainda
+      não tem pratos de choque (crash/ride), porque este kit específico não inclui essas peças.
+    </p>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    Projeto DrumCore — módulo MIDI-USB/BLE para bateria eletrônica, construído em cima da
+    <a href="https://github.com/RyoKosaka/HelloDrum-arduino-Library" target="_blank" rel="noopener">HelloDrum-arduino-Library</a>.
+    <p class="license-note">
+      Licenciado sob <a href="https://github.com/orodamaral/drumcore/blob/master/LICENSE" target="_blank" rel="noopener">CC BY-NC 4.0</a>
+      — uso e cópia livres, sem fins comerciais, sempre citando a fonte.
+    </p>
+    <div class="foot-links">
+      <a href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Repositório no GitHub</a>
+      <a href="hardware.html">Esquemático de ligação</a>
+      <a href="https://github.com/orodamaral/drumcore/blob/master/LICENSE" target="_blank" rel="noopener">Licença</a>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/webdrum.js"></script>
+</body>
+</html>

@@ -1,0 +1,141 @@
+/* ---------------------------------------------------------------- webdrum */
+
+.wd-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.wd-transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.wd-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}
+
+.wd-status .ok { color: var(--ok); }
+.wd-status .warn { color: var(--warn); }
+
+.wd-last-hit {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  min-height: 18px;
+}
+
+.mixer-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.channel {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+  transition: box-shadow 0.15s;
+}
+
+.channel.hit {
+  box-shadow: 0 0 0 1px var(--mux), 0 0 14px color-mix(in srgb, var(--mux) 55%, transparent);
+}
+
+.channel.master {
+  border-color: var(--mux);
+  background: color-mix(in srgb, var(--mux) 8%, var(--surface-2));
+}
+
+.channel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  grid-column: 1 / -1;
+}
+
+.channel-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.channel-note {
+  color: var(--ink-faint);
+  font-size: 11.5px;
+}
+
+.channel-fader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.channel-fader input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--mux);
+}
+
+.channel-fader output {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  width: 34px;
+  text-align: right;
+}
+
+.channel-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.chip-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-dim);
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.chip-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
+}
+
+.chip-btn.mute-on {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+}
+
+.chip-btn.hit-btn:active {
+  transform: scale(0.94);
+}
+
+@media (min-width: 720px) {
+  .mixer-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .channel.master {
+    grid-column: 1 / -1;
+  }
+}
