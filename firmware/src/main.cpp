@@ -2914,7 +2914,17 @@ bool applyAutoTuneResult()
     // numeros so' fazem sentido nessa combinacao. Se o pad tinha um gain
     // != 100 antes, essa calibracao o substitui.
     padGain[pad] = 100;
-    unsavedChanges = true;
+
+    // Persiste na hora, igual a um set_pad do app (antes so' marcava
+    // unsavedChanges e a calibracao se perdia ao desligar sem SALVAR - o
+    // docs/04-protocolo-serial.md ja' dizia "persiste em EEPROM"). Vale
+    // tambem pro apply feito pela tela fisica: calibracao aplicada nao
+    // depende mais do SALVAR (e o RESTAURAR nao a desfaz). initMemory()
+    // grava os 10 campos da lib (sens/thre/scan/mask/rim/curva/notas);
+    // retrigger e gain ficam em enderecos proprios.
+    pads[pad].initMemory();
+    persistPadRetrigger(pad);
+    persistPadGain(pad);
 
     atState = AT_IDLE;
     currentPage = PAGE_PAD_EDIT;
