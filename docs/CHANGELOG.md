@@ -2,6 +2,47 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-26 — ConfigTool: aba Pads redesenhada, mapas MIDI (GM + Addictive Drums 2) e ações em lote
+
+- **Parâmetros**: sliders com trilha preenchida e campo numérico,
+  unidades reais (ms, %), padrão de fábrica com restauração, ajuda por
+  parâmetro e envio com debounce (menos gravações na EEPROM).
+- **Organização**: seções (Identificação, Detecção, Resposta, Crosstalk,
+  MIDI), cabeçalho "Pad N · nome" com ◀ ▶, switch Ativo/Inativo, curva
+  com gráfico usando as fórmulas reais do firmware, nota MIDI com nome e
+  instrumento, grupo de crosstalk segmentado.
+- **Mapas MIDI**: General MIDI e **Addictive Drums 2** (padrão), com
+  **"Aplicar mapa aos pads"**, que preenche as notas de cada zona a partir
+  do instrumento de cada pad.
+- **Ações por pad** (menu ⋯): copiar, colar, copiar para outros pads e
+  restaurar padrões, enviados em fila com progresso.
+- **Calibração**: tabela atual → proposto, aplicação parcial por
+  checkbox e a linha do gain (que o apply sempre força em 100%) agora
+  visível.
+- **Ao vivo**: flash de batida na lista proporcional à velocity, monitor
+  de velocity do pad selecionado, "Seguir pad tocado".
+- **Desfazer/refazer** (Ctrl+Z / Ctrl+Shift+Z), painel **"?"** de
+  atalhos, barra de conexão única com estado DEMO inconfundível, log
+  recolhível e layout responsivo para tablet.
+- Detalhes: [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)
+  (Fase AC).
+
+## 2026-09-26 — `apply_autotune` passa a gravar na EEPROM
+
+- **Bug**: `applyAutoTuneResult()` só alterava a RAM e marcava
+  `unsavedChanges` — a calibração aplicada se perdia ao desligar o módulo
+  se ninguém usasse SALVAR, apesar de o
+  [04-protocolo-serial.md](04-protocolo-serial.md) já dizer "persiste em
+  EEPROM". Agora grava na hora (`initMemory()` + `persistPadRetrigger()` +
+  `persistPadGain()`), igual a um `set_pad` do app.
+- Vale também pro apply feito pela tela física: calibração aplicada não
+  depende mais do SALVAR, e o RESTAURAR não a desfaz.
+- Documentado o que já acontecia sem constar no protocolo: o apply força
+  `gain` = 100.
+- App (ConfigTool): a tabela de resultado da calibração mostra a linha do
+  gain e permite aplicar só parte dos valores (`cancel_autotune` +
+  `set_pad` dos campos escolhidos — sem comando novo).
+
 ## 2026-09-15 — Fase AB: `curve` e `retrigger` inferidos automaticamente pelo auto-tune de pads
 
 - O assistente de auto-calibração passa a decidir sozinho a **curva de

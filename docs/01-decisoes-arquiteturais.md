@@ -2620,3 +2620,141 @@ main.cpp` (constantes/estado/`finishAutoTune()`/`sendAutoTuneStatus()`/
 (todos os 5 ambientes) e `npm run build` (typecheck + vite build) do
 `web-app/` — não testado ainda com hardware real nesta sessão (nem a
 inferência, nem o bugfix do `retrigger`).
+
+## 2026-09-26 — Fase AC: ConfigTool redesenhado (aba Pads) + `apply_autotune` persistente
+
+**Motivação (Rodrigo)**: a aba PADS do ConfigTool funcionava, mas era
+difícil de usar. Os sliders apareciam como barras cinzas sem posição
+visível, os 10 parâmetros vinham em sequência sem hierarquia, a borda
+vermelha na lista não tinha explicação, o modo demo parecia uma conexão
+real e o log ocupava espaço fixo. O ponto de partida foi um documento
+de melhorias escrito a partir de um print da tela
+([DrumCore_ConfigTool_melhorias_UI.md](../DrumCore_ConfigTool_melhorias_UI.md)).
+A regra combinada: onde o documento divergisse do código, **o código
+manda**. Nada no protocolo mudou, com uma exceção no firmware, descrita
+no fim.
+
+### Divergências entre o documento e o código (o código venceu)
+
+- **Sensibilidade**: o texto sugerido estava invertido. Em `curve()`
+  (`hellodrum.cpp`), `sensitivity × 10` é o nível bruto que vira velocity
+  127, então valor **maior** exige batida **mais forte** para chegar a
+  127.
+- **Unidades**: `scan_time`/`mask_time` são **ms**, porque são comparados
+  com `millis()` na lib. `gain` é **%**, e 100 é neutro. Sensibilidade e
+  threshold não têm unidade física e aparecem sem unidade.
+- **Borda vermelha**: era só o último pad que recebeu `hit`, e ficava
+  presa até a próxima batida. Virou um flash de ~600 ms com intensidade
+  proporcional à velocity.
+- **"Modificado / não salvo"**: esse estado não existe no app. Cada
+  `set_pad` já grava na EEPROM na hora, então não há botão "Gravar no
+  módulo".
+- **Monitor de sinal nível B** (curva do piezo ao vivo): o firmware não
+  envia sinal bruto, e o combinado era não criar comando novo. Ficou só o
+  **nível A**: velocity da última batida, histórico das últimas 20 e
+  mín/méd/máx, a partir dos eventos `hit` que já chegam pela serial.
+- **Atalhos de slider**: o `input[type=range]` nativo não tem Shift+seta.
+  O que foi documentado é o comportamento real: setas mudam 1 passo,
+  PgUp/PgDn mudam 10% da faixa, Home/End vão ao mínimo e ao máximo.
+
+### Decisões de implementação (`web-app/`)
+
+- **`ParamSlider`**: um componente único para os parâmetros numéricos,
+  com trilha preenchida, thumb visível, campo numérico sincronizado nos
+  dois sentidos (clamp ao confirmar), unidade, marca do valor padrão e
+  restauração do padrão (↺ ou duplo clique no rótulo). Os padrões vêm de
+  `HelloDrum::begin()` e da primeira inicialização da EEPROM em
+  `main.cpp`. O envio tem **debounce de 120 ms** durante o arraste, com o
+  valor final enviado ao soltar. Antes, arrastar um slider gerava dezenas
+  de `set_pad`, e cada um gravava na flash.
+- **Seções**: Identificação, Detecção, Resposta, Crosstalk e MIDI, em 2
+  colunas a partir de 1280 px. O mapeamento campo → seção fica em
+  `uiMeta.ts` (`FIELD_UI`). A ordem de envio no protocolo não muda.
+- **Curva**: 5 botões e um mini-gráfico SVG desenhado com **as mesmas
+  fórmulas** de `HelloDrum::curve()`, com bases 1 / 1.02 / 1.05 / 0.98 /
+  0.95 (`applyCurve()` em `uiMeta.ts`).
+- **Nota MIDI**: stepper, nome da nota, instrumento do mapa ativo,
+  seletor agrupado por peça e aviso de nota repetida em outro pad (sem
+  bloquear).
+- **Grupo de crosstalk**: botões segmentados `Nenhum · 1–4` e a lista dos
+  pads no mesmo grupo.
+- **Mapas MIDI** (`midiMaps.ts`): General MIDI e **Addictive Drums 2**, o
+  padrão desde esta fase. O AD2 foi transcrito do keymap oficial da XLN
+  Audio (2021-06-02). O mapa é preferência só do app, salva no
+  `localStorage`, e o módulo continua recebendo apenas o número da nota.
+  Convenção de nome de nota por mapa: GM usa 36 = C2 (igual ao MIDI
+  Monitor), AD2 usa 36 = C1 (igual ao keymap do AD2, para bater com o
+  PDF).
+- **Aplicar mapa aos pads** (`drumRoles.ts`): cada pad recebe um papel
+  (bumbo, caixa, tom 1–4, chimbal, pedal, condução, ataque 1/2, splash,
+  china). O papel é sugerido pelo nome, pelo tipo de sensor ou pela nota
+  atual, e vira notas por zona conforme o tipo de sensor (pele/aro,
+  corpo/borda/cúpula, aberto/fechado). No GM, os toms não têm nota de aro
+  e repetem a nota principal. Sensores de choke só recebem nota quando o
+  mapa tem "choke" (AD2).
+- **Ações por pad** (menu ⋯, `padActions.ts`): copiar, colar, copiar para
+  outros pads e restaurar padrões, com escolha das seções. Notas ficam
+  desmarcadas por padrão. `rim_sensitivity`/`rim_threshold` **só** são
+  copiados entre pads do mesmo tipo de sensor, porque o significado muda
+  por tipo.
+- **Fila de envio em lote**: cada `set_pad` grava na flash e sempre
+  responde com exatamente um `ack`/`error`. A fila envia um comando por
+  vez e espera essa resposta (timeout de 1,5 s), com barra de progresso e
+  botão Parar. Disparar tudo junto arriscava estourar o buffer da serial
+  durante os commits de EEPROM.
+- **Calibração**: tabela Atual → Proposto com checkbox por linha e marca
+  fantasma nos sliders afetados. Tudo marcado envia `apply_autotune` como
+  antes. Parte marcada envia `cancel_autotune` (que devolve o gain
+  original) e depois `set_pad` só dos campos escolhidos, pela fila.
+- **Gain forçado**: `applyAutoTuneResult()` força `gain = 100`, porque o
+  resultado é medido com gain neutro (Fase W), mas isso nunca aparecia na
+  tela. Agora aparece como uma linha própria, com aviso se o usuário
+  aplicar sensibilidade/threshold mantendo outro gain.
+- **Desfazer/refazer** (`history.ts`): ↶ ↷ no cabeçalho do pad,
+  Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y. Entram no histórico as alterações de
+  valores e notas, venham de slider, lote, mapa ou calibração. Envios
+  seguidos do mesmo campo em até 2 s viram uma entrada só (arraste). Ficam
+  **de fora**, de propósito, nome, tipo de sensor, ativo, pedal linkado e
+  inverter: trocar o tipo reorganiza os canais consumidos, e desfazer
+  isso campo a campo não é seguro.
+- **Moldura**: uma barra única de abas + chip de conexão
+  (Desconectado / Conectando… / Conectado · USB / **DEMO · sem hardware**
+  em roxo), faixa de aviso no modo demo, log recolhível (horário, nível,
+  repetições agrupadas ×N, filtro, copiar, limpar, abre sozinho em erro),
+  painel "?" de atalhos e layout responsivo (< 1024 px: lista de pads vira
+  seletor horizontal).
+- **Mock** (`mockDevice.ts`): BLE parou de alternar a cada 15 s (pareia
+  em 3 s e alterna a cada 90 s), ganhou `simulateHit(pad)` para o botão
+  "Simular batida" e passou a forçar `gain = 100` no apply, como o
+  firmware.
+
+### Firmware: `apply_autotune` passa a gravar na EEPROM
+
+O [04-protocolo-serial.md](04-protocolo-serial.md) dizia que o
+`apply_autotune` "persiste em EEPROM", mas `applyAutoTuneResult()` só
+alterava a RAM e marcava `unsavedChanges`. **A calibração se perdia ao
+desligar o módulo** se ninguém usasse SALVAR. Agora grava na hora, pelo
+mesmo caminho do `set_pad`: `pads[pad].initMemory()` para os 10 campos da
+lib, mais `persistPadRetrigger()` e `persistPadGain()`. Isso vale também
+para o apply feito pela tela física, que chama a mesma função: a
+calibração aplicada não depende mais do SALVAR, e o RESTAURAR não a
+desfaz. Foi escolhido corrigir no firmware (e não fazer o app mandar um
+"salvar" depois) justamente para cobrir o caminho da tela.
+
+**Arquivos**: `firmware/src/main.cpp` (`applyAutoTuneResult()`);
+`web-app/src/` — `App.tsx`, `mockDevice.ts`, `styles.css`,
+`components/PadEditor.tsx`, `components/PadGrid.tsx`, novos
+`uiMeta.ts`, `midiMaps.ts`, `drumRoles.ts`, `padActions.ts`, `history.ts`,
+`components/ParamSlider.tsx`, `NoteField.tsx`, `CurveField.tsx`,
+`HitMonitor.tsx`, `LogPanel.tsx`, `MidiMapSelect.tsx`, `PadActions.tsx`,
+`ApplyMapDialog.tsx`, `ShortcutsDialog.tsx`;
+[04-protocolo-serial.md](04-protocolo-serial.md).
+
+**Validação**: `npm run build` (typecheck + vite) e `pio run -e
+esp32-s3-devkitc-1`. Os fluxos foram percorridos no **modo demo** em
+Chrome headless, com prints em 1440/1100/820 px: sliders, calibração
+completa e parcial, copiar/colar/restaurar/copiar para 31 pads, aplicar
+mapa (GM e AD2), desfazer/refazer e atalhos. **Ainda não testado com
+hardware real**, nem o firmware novo gravado na placa. Teste pendente:
+calibrar, aplicar, desligar e religar, e conferir que os valores
+continuam lá.
