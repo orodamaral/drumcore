@@ -293,6 +293,26 @@ bool padTypeUsesSecondChannel(byte type)
     return type == PAD_DUAL || type == PAD_CYMBAL_2ZONE || type == PAD_HIHAT_2ZONE || type == PAD_CYMBAL_3ZONE || type == PAD_SNARE_3ZONE;
 }
 
+// Jackboard: cada jack TRS leva 2 canais - canal par (0-based: 0, 2, 4...)
+// = TIP, impar = RING (confirmado pelo Rodrigo, 2026-09-27; ver
+// docs/02-hardware.md). Pad de 2 zonas le a zona principal no proprio canal
+// e a 2a no seguinte (recomputeChannelPrimary()), entao so' pode comecar no
+// TIP: pele/corpo no tip, aro/borda no ring - padrao dos pads de mercado.
+// Comecando num RING a 2a zona cairia no tip do jack seguinte (outro cabo).
+bool padIsJackTip(byte pad)
+{
+    return (pad % 2) == 0;
+}
+
+bool padTypeAllowedAt(byte pad, byte type)
+{
+    if (!padTypeUsesSecondChannel(type))
+    {
+        return true;
+    }
+    return padIsJackTip(pad) && pad < NUM_PADS - 1;
+}
+
 bool padTypeIsHihatCymbal(byte type)
 {
     return type == PAD_HIHAT_SINGLE || type == PAD_HIHAT_2ZONE;
@@ -732,9 +752,9 @@ void setFieldValue(byte padIndex, FieldId id, int value)
     switch (id)
     {
     case FIELD_SENSOR:
-        if (padTypeUsesSecondChannel((byte)value) && padIndex >= NUM_PADS - 1)
+        if (!padTypeAllowedAt(padIndex, (byte)value))
         {
-            return; // sem 2o canal disponivel pro ultimo pad
+            return; // 2 zonas so' no TIP do jack (e nunca no ultimo pad) - ver padTypeAllowedAt()
         }
         padTypes[padIndex] = (byte)value;
         recomputeChannelPrimary();
@@ -1141,6 +1161,12 @@ void handleSetPad(JsonDocument &doc)
         if (padTypeUsesSecondChannel((byte)newType) && pad >= NUM_PADS - 1)
         {
             sendError("set_pad", "no_second_channel");
+            return;
+        }
+        if (!padTypeAllowedAt(pad, (byte)newType))
+        {
+            // 2 zonas so' comecando no TIP do jack - ver padTypeAllowedAt().
+            sendError("set_pad", "two_channel_needs_tip");
             return;
         }
 
@@ -3032,8 +3058,17 @@ void onEncRotate(int delta)
         if (next < 0) next = 0;
         if (next > NUM_PADS - 1) next = NUM_PADS - 1;
         padsListSelection = next;
-        if (padsListSelection < padsListTop) padsListTop = padsListSelection;
-        if (padsListSelection > padsListTop + 7) padsListTop = padsListSelection - 7;
+        // Janela sempre alinhada no TIP (linha par) - um jack nunca fica
+        // cortado ao meio no topo/rodape da lista.
+        if (padsListSelection < padsListTop)
+        {
+            padsListTop = padsListSelection & ~1;
+        }
+        if (padsListSelection > padsListTop + 7)
+        {
+            padsListTop = padsListSelection - 7;
+            if (padsListTop % 2) padsListTop++;
+        }
         forceScreenRedraw = true;
         return;
     }
@@ -3090,6 +3125,20 @@ void onEncRotate(int delta)
             int value = getFieldValue(editPadIndex, f.id) + step;
             if (value < f.minVal) value = f.minVal;
             if (value > f.maxVal) value = f.maxVal;
+            if (f.id == FIELD_SENSOR)
+            {
+                // Pula os tipos de 2 zonas num pad do RING (em vez de "travar"
+                // o encoder no tipo anterior) - ver padTypeAllowedAt().
+                int dir = delta > 0 ? 1 : -1;
+                while (value >= f.minVal && value <= f.maxVal && !padTypeAllowedAt(editPadIndex, (byte)value))
+                {
+                    value += dir;
+                }
+                if (value < f.minVal || value > f.maxVal)
+                {
+                    value = getFieldValue(editPadIndex, f.id); // nada valido nessa direcao
+                }
+            }
             setFieldValue(editPadIndex, f.id, value);
         }
         forceScreenRedraw = true;
@@ -3416,24 +3465,68 @@ void renderBoot()
     printCentered(versionLine, 110);
 }
 
-// Grade 8x4 ocupando a largura/altura inteiras da tela em paisagem (2026-
-// 09-01 - antes do giro pra paisagem, cabia numa area 128x99 so', sobrando
-// uma faixa em branco embaixo; agora usa os 160x116 disponiveis abaixo da
-// barra de titulo). Pitch = passo entre celulas, celula em si e' 2-3px
-// menor que o pitch (a diferenca vira a folga entre pads, igual ao design
-// original).
-#define LIVE_GRID_PITCH_X 20
-#define LIVE_GRID_CELL_W 18
+// Grade 8x4 ocupando a tela em paisagem (160x116 abaixo da barra de
+// titulo), agrupada como a jackboard (2026-09-27): os 2 canais de cada jack
+// (tip + ring) ficam colados, com um respiro maior entre jacks e entre as
+// 2 placas (linhas 1-2 = placa A, pads 1-16; linhas 3-4 = placa B). Pad de
+// 2 zonas comecando no tip vira uma celula larga ocupando o jack inteiro.
+#define LIVE_GRID_CELL_W 17
+#define LIVE_GRID_INNER 1  // folga entre tip e ring do mesmo jack
+#define LIVE_PAIR_PITCH 40 // 2 celulas + folga interna + 5px entre jacks
+#define LIVE_GRID_X0 2
 #define LIVE_GRID_Y0 14
-#define LIVE_GRID_PITCH_Y 28
-#define LIVE_GRID_CELL_H 25
+#define LIVE_GRID_PITCH_Y 27
+#define LIVE_GRID_CELL_H 24
+#define LIVE_BOARD_GAP 4 // respiro extra entre a placa A e a placa B
+
+// Pad primario de 2 zonas comecando num RING - configuracao salva antes da
+// regra do tip (padTypeAllowedAt()) existir. Continua funcionando, mas a 2a
+// zona esta' no jack seguinte: as telas marcam em COL_EDIT.
+bool padCrossesJacks(byte pad)
+{
+    return channelPrimary[pad] && padTypeUsesSecondChannel(padTypes[pad]) && !padIsJackTip(pad);
+}
+
+// Canal consumido cujo primario (pad - 1) atravessa jacks.
+bool padConsumedAcrossJacks(byte pad)
+{
+    return pad > 0 && !channelPrimary[pad] && padCrossesJacks(pad - 1);
+}
+
+// Nome curto da 2a zona (canal do ring) de cada tipo de 2 canais.
+const char *secondZoneName(byte type)
+{
+    switch (type)
+    {
+    case PAD_DUAL:
+        return "aro";
+    case PAD_CYMBAL_2ZONE:
+    case PAD_HIHAT_2ZONE:
+        return "borda";
+    case PAD_CYMBAL_3ZONE:
+        return "borda/cup";
+    case PAD_SNARE_3ZONE:
+        return "borda/aro";
+    default:
+        return "2a zona";
+    }
+}
 
 void renderLivePad(byte i)
 {
+    // Ring de um pad de 2 zonas bem configurado: ja' desenhado dentro da
+    // celula larga do tip.
+    if (i > 0 && !channelPrimary[i] && !padConsumedAcrossJacks(i))
+    {
+        return;
+    }
+
     byte col = i % 8;
     byte row = i / 8;
-    int x = 1 + col * LIVE_GRID_PITCH_X;
-    int y = LIVE_GRID_Y0 + row * LIVE_GRID_PITCH_Y;
+    int x = LIVE_GRID_X0 + (col / 2) * LIVE_PAIR_PITCH + (col % 2) * (LIVE_GRID_CELL_W + LIVE_GRID_INNER);
+    int y = LIVE_GRID_Y0 + row * LIVE_GRID_PITCH_Y + (row >= 2 ? LIVE_BOARD_GAP : 0);
+    bool wide = channelPrimary[i] && padTypeUsesSecondChannel(padTypes[i]) && padIsJackTip(i);
+    int w = wide ? 2 * LIVE_GRID_CELL_W + LIVE_GRID_INNER : LIVE_GRID_CELL_W;
 
     unsigned long since = millis() - padHitAtMs[i];
     bool solid = padHitAtMs[i] != 0 && since < PAD_FLASH_MS;
@@ -3443,21 +3536,23 @@ void renderLivePad(byte i)
     // a ter hit), so' desenha "apagado" - sem borda visivel, numero bem
     // fraco - pra distinguir de um canal ligado que so' esta' ocioso.
     bool off = channelPrimary[i] && !padEnabled[i];
+    bool warn = padCrossesJacks(i) || padConsumedAcrossJacks(i);
+    bool consumed = !channelPrimary[i];
 
     uint16_t bg = solid ? COL_HIT : COL_BG;
-    uint16_t border = off ? COL_BG : solid ? COL_HIT : decay ? COL_HIT : COL_LINE;
-    uint16_t fg = off ? COL_LINE : solid ? COL_BG : decay ? COL_HIT : COL_TXT_DIM;
+    uint16_t border = off ? COL_BG : solid ? COL_HIT : decay ? COL_HIT : warn ? COL_EDIT : COL_LINE;
+    uint16_t fg = off || consumed ? COL_LINE : solid ? COL_BG : decay ? COL_HIT : COL_TXT_DIM;
 
-    canvas.fillRect(x, y, LIVE_GRID_CELL_W, LIVE_GRID_CELL_H, bg);
-    canvas.drawRect(x, y, LIVE_GRID_CELL_W, LIVE_GRID_CELL_H, border);
+    canvas.fillRect(x, y, w, LIVE_GRID_CELL_H, bg);
+    canvas.drawRect(x, y, w, LIVE_GRID_CELL_H, border);
 
     char buf[3];
     snprintf(buf, sizeof(buf), "%02d", i + 1);
     canvas.setTextSize(1);
     canvas.setTextColor(fg);
     // "01".."32" (2 chars, textSize 1) mede uns 11px de largura - centraliza
-    // na celula, que agora e' bem maior que o texto (LIVE_GRID_CELL_W/H).
-    canvas.setCursor(x + (LIVE_GRID_CELL_W - 11) / 2, y + (LIVE_GRID_CELL_H - 8) / 2);
+    // na celula (normal ou larga).
+    canvas.setCursor(x + (w - 11) / 2, y + (LIVE_GRID_CELL_H - 8) / 2);
     canvas.print(buf);
 }
 
@@ -3509,43 +3604,87 @@ bool renderPadsList()
     forceScreenRedraw = false;
 
     canvas.fillScreen(COL_BG);
-    char right[8];
-    snprintf(right, sizeof(right), "%02d/32", padsListSelection + 1);
+    char right[12];
+    snprintf(right, sizeof(right), "J%02d %02d/32", padsListSelection / 2 + 1, padsListSelection + 1);
     drawTitleBar("PADS", right, COL_TXT_DIM);
 
     // Largura da lista = tela inteira menos a faixa da scrollbar (3px) e um
-    // pequeno respiro (2px) antes dela - ver scrollbar no fim da funcao.
-    int rowW = canvas.width() - 5;
+    // pequeno respiro (2px) antes dela - ver scrollbar no fim da funcao. As
+    // linhas comecam em x=4: os 4px da esquerda sao do colchete que agrupa
+    // os 2 canais de cada jack (tip + ring) - padsListTop e' sempre par,
+    // entao a janela de 8 linhas mostra sempre 4 jacks inteiros.
+    int rowX = 4;
+    int rowW = canvas.width() - 5 - rowX;
 
     for (byte row = 0; row < 8; row++)
     {
         byte i = padsListTop + row;
         int y = 12 + row * 14;
         bool sel = (i == padsListSelection);
+        bool tip = padIsJackTip(i);
 
         // Canal primario mas desligado (padEnabled[i] == false): tudo na
         // linha em COL_LINE (mais apagado que COL_TXT_DIM), distinto de
-        // "canal ocupado" (2o canal de um pad de 2 zonas, mostra "--").
+        // "canal ocupado" (2o canal de um pad de 2 zonas).
         bool off = channelPrimary[i] && !padEnabled[i];
+        bool warn = padCrossesJacks(i) || padConsumedAcrossJacks(i);
+        // Ring de um pad de 2 zonas bem configurado (primario no tip logo acima).
+        bool zoneRow = !channelPrimary[i] && !padConsumedAcrossJacks(i);
 
-        canvas.fillRect(0, y, rowW, 14, sel ? COL_ACCENT : COL_BG);
+        // Colchete do jack: desce do meio da linha do tip ate' o meio da do
+        // ring - COL_EDIT no jack inteiro se qualquer um dos 2 canais estiver
+        // numa config que atravessa jacks.
+        byte jackTip = i & ~1;
+        bool jackWarn = padCrossesJacks(jackTip) || padConsumedAcrossJacks(jackTip) ||
+                        padCrossesJacks(jackTip + 1) || padConsumedAcrossJacks(jackTip + 1);
+        uint16_t bracket = jackWarn ? COL_EDIT : COL_LINE;
+        if (tip)
+        {
+            canvas.drawFastVLine(1, y + 6, 16, bracket);
+            canvas.drawFastHLine(1, y + 6, 3, bracket);
+        }
+        else
+        {
+            canvas.drawFastHLine(1, y + 7, 3, bracket);
+        }
+
+        canvas.fillRect(rowX, y, rowW, 14, sel ? COL_ACCENT : COL_BG);
         canvas.setTextSize(1);
         canvas.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT);
 
         char idxBuf[5];
         snprintf(idxBuf, sizeof(idxBuf), "P%02d", i + 1);
-        canvas.setCursor(4, y + 3);
+        canvas.setCursor(rowX + 3, y + 3);
         canvas.print(idxBuf);
 
-        canvas.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT_DIM);
-        canvas.setCursor(40, y + 3);
-        if (channelPrimary[i] && padLabels[i][0] != '\0')
+        // T/R: posicao no jack (COL_EDIT quando a config atravessa jacks).
+        canvas.setTextColor(sel ? COL_BG : warn ? COL_EDIT : COL_LINE);
+        canvas.setCursor(rowX + 24, y + 3);
+        canvas.print(tip ? "T" : "R");
+
+        canvas.setTextColor(sel ? COL_BG : off || zoneRow ? COL_LINE : COL_TXT_DIM);
+        canvas.setCursor(rowX + 34, y + 3);
+        if (zoneRow)
+        {
+            // 2a zona do pad de cima - mostra o nome dela ("+ aro").
+            canvas.print("+ ");
+            canvas.print(secondZoneName(padTypes[i - 1]));
+        }
+        else if (padConsumedAcrossJacks(i))
+        {
+            // 2a zona de um pad do jack anterior (config que atravessa jacks).
+            char fromBuf[20];
+            snprintf(fromBuf, sizeof(fromBuf), "+ %s P%02d", secondZoneName(padTypes[i - 1]), i);
+            canvas.setTextColor(sel ? COL_BG : COL_EDIT);
+            canvas.print(fromBuf);
+        }
+        else if (channelPrimary[i] && padLabels[i][0] != '\0')
         {
             // Nome configurado pelo usuario (campo "label" do protocolo -
             // ver docs/04-protocolo-serial.md), nao o "N - Label" completo
             // de padNames[] (o indice ja aparece na coluna P01/P02/...).
             // Truncado pra nao invadir a coluna de nota/OFF a direita.
-            char labelBuf[14];
+            char labelBuf[13];
             strncpy(labelBuf, padLabels[i], sizeof(labelBuf) - 1);
             labelBuf[sizeof(labelBuf) - 1] = '\0';
             canvas.print(labelBuf);
@@ -3555,9 +3694,9 @@ bool renderPadsList()
             canvas.print("--");
         }
 
+        char noteBuf[6] = "";
         if (channelPrimary[i])
         {
-            char noteBuf[6];
             if (off)
             {
                 snprintf(noteBuf, sizeof(noteBuf), "OFF");
@@ -3566,11 +3705,18 @@ bool renderPadsList()
             {
                 snprintf(noteBuf, sizeof(noteBuf), "N%d", pads[i].note);
             }
+        }
+        else if (zoneRow && padEnabled[i - 1])
+        {
+            snprintf(noteBuf, sizeof(noteBuf), "N%d", pads[i - 1].noteRim);
+        }
+        if (noteBuf[0])
+        {
             int16_t x1, y1;
             uint16_t w, h;
-            canvas.setTextColor(sel ? COL_BG : off ? COL_LINE : COL_TXT);
+            canvas.setTextColor(sel ? COL_BG : off || zoneRow ? COL_LINE : COL_TXT);
             canvas.getTextBounds(noteBuf, 0, 0, &x1, &y1, &w, &h);
-            canvas.setCursor(rowW - 4 - (int)w, y + 3);
+            canvas.setCursor(rowX + rowW - 4 - (int)w, y + 3);
             canvas.print(noteBuf);
         }
     }

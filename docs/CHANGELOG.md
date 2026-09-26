@@ -2,6 +2,23 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-27 — Firmware: regra do tip e telas agrupadas por jack
+
+- **Regra**: sensor de 2 zonas só pode começar no **tip** do jack (canal
+  0-based par). `set_pad` de `pad_type` responde `error`
+  `two_channel_needs_tip` num ring; na tela física o encoder pula os tipos
+  de 2 zonas nesses pads, em vez de travar. Configurações antigas salvas
+  na EEPROM que atravessam jacks continuam funcionando, mas aparecem
+  marcadas em laranja.
+- **LIVE**: grade 8×4 agrupada como a jackboard — tip e ring colados, mais
+  respiro entre jacks e entre as placas A (pads 1–16) e B (17–32); pad de
+  2 zonas vira uma célula larga ocupando o jack.
+- **Lista de pads**: colchete por jack, coluna T/R, a linha do ring de um
+  pad de 2 zonas mostra "+ aro" (ou borda/cup) com a nota da 2ª zona, e o
+  título mostra o jack ("J02 03/32"). A rolagem anda sempre de jack em
+  jack.
+- Modo demo do app recusa igual ao firmware.
+
 ## 2026-09-27 — ConfigTool: pads agrupados por jack (tip/ring)
 
 - A lista de pads passa a mostrar os canais agrupados como estão na placa:

@@ -42,7 +42,10 @@ como desatualizado) se o pinout abaixo mudar de novo.
   = tip e Pad 2 = ring do Jack 1, e assim por diante (confirmado pelo
   Rodrigo em 2026-09-27). Sensores de 2 zonas leem a zona principal no 1º
   canal do par, então precisam começar no tip: **tip = pele/corpo, ring =
-  aro/borda**, o padrão dos pads de mercado. Ver [site/hardware.html](../site/hardware.html) e
+  aro/borda**, o padrão dos pads de mercado. O firmware recusa tipo de 2
+  canais começando num ring (`set_pad` → `two_channel_needs_tip`; na tela
+  o encoder pula esses tipos), e a tela LIVE/lista de pads mostra os
+  canais agrupados por jack. Ver [site/hardware.html](../site/hardware.html) e
   `docs/CHANGELOG.md` (entrada 2026-09-06) pro estado atual da placa.
 - Pads piezo (simples e/ou duplos), pratos 2/3 zonas, hi-hat, conforme suportado
   pela lib (ver [03-biblioteca-hellodrum.md](03-biblioteca-hellodrum.md)).

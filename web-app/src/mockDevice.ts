@@ -566,6 +566,12 @@ export class MockDevice {
         this.emit({ type: 'error', cmd: 'set_pad', message: 'no_second_channel' })
         return
       }
+      // Igual ao firmware (padTypeAllowedAt()): 2 zonas só começando no TIP
+      // do jack (canal 0-based par) - ver jacks.ts.
+      if (usesSecondChannel(newType) && pad.pad % 2 === 1) {
+        this.emit({ type: 'error', cmd: 'set_pad', message: 'two_channel_needs_tip' })
+        return
+      }
 
       pad.pad_type = newType
       pad.uses_second_channel = usesSecondChannel(newType)

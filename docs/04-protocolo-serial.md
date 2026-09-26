@@ -73,7 +73,7 @@ significa em cada tipo de pad):
 | `note_rim` | número | `0-127` | `ack` |
 | `note_cup` | número | `0-127` | `ack` |
 | `label` | string | até 19 caracteres | `pad_config` |
-| `pad_type` | número | `0-8` (ver tabela em [05-tipos-de-sensor.md](05-tipos-de-sensor.md)) | `pad_config` do próprio pad **e** do pad seguinte (pode ter mudado de status) |
+| `pad_type` | número | `0-8` (ver tabela em [05-tipos-de-sensor.md](05-tipos-de-sensor.md)); tipos de 2 canais só num pad cujo canal 0-based é par (**tip** do jack) e nunca no último pad — `error` `two_channel_needs_tip` / `no_second_channel` caso contrário | `pad_config` do próprio pad **e** do pad seguinte (pode ter mudado de status) |
 | `hihat_pedal_channel` | número | índice de outro pad (`6`/`7`), ou `-1` pra remover o link | `pad_config` |
 | `enabled` | número | `0` ou `1` | `pad_config` |
 | `hihat_invert` | número | `0` ou `1` (só pad_type `6`/`7`, Fase X) | `pad_config` |
