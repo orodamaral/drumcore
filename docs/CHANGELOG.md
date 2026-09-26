@@ -2,6 +2,22 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-27 — ConfigTool: exportar e importar configuração (JSON)
+
+- Aba Global > **Backup e compartilhamento**: "Exportar configuração
+  (.json)" salva tipos, nomes, notas, calibração e crosstalk dos pads, mais
+  canal/saída MIDI e o mapa MIDI escolhido
+  (`drumcore-config-AAAA-MM-DD.json`).
+- "Importar configuração…" valida o arquivo e mostra um resumo antes de
+  aplicar (pads, canal MIDI, mapa, nomes), com opções de levar ou não os
+  nomes e o canal/saída MIDI, e avisos do que não dá para aplicar (ex:
+  sensor de 2 zonas num ring). Aplica só o que muda, em fila com progresso.
+- A fila de envio passa a esperar a resposta certa de cada campo
+  (`pad_config` para label/tipo/ativo/pedal, `ack` para os numéricos e para
+  `set_global`) e informa quantas alterações o módulo recusou.
+- Formato documentado em [04-protocolo-serial.md](04-protocolo-serial.md)
+  ("Arquivo de configuração do ConfigTool"). Sem mudança no firmware.
+
 ## 2026-09-27 — Mapeamento de fábrica, restaurar padrão de fábrica e fim do bring-up sem jackboard
 
 - **Kit de fábrica** (`applyFactoryPreset()`): HH Pedal, HiHat, Kick,

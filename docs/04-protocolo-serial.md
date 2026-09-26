@@ -266,3 +266,47 @@ Invertendo o CC de um controlador de pedal (`pad_type` 6/7):
   local via USB, sem exposição de rede.
 - Nada disso foi testado com hardware real ainda (ver
   [05-tipos-de-sensor.md](05-tipos-de-sensor.md), seção final).
+
+## Arquivo de configuração do ConfigTool (backup / compartilhamento)
+
+Não é um comando do protocolo: o ConfigTool (aba Global > "Backup e
+compartilhamento") exporta um JSON a partir dos `pad_config` que já tem e,
+ao importar, transforma o arquivo numa fila de `set_pad`/`set_global` — só
+o que muda, um comando por vez esperando a resposta (`ack` ou `pad_config`).
+Implementação em `web-app/src/configFile.ts`.
+
+```json
+{
+  "format": "drumcore-config",
+  "version": 1,
+  "exported_at": "2026-09-27T19:00:00.000Z",
+  "firmware_version": "fw-v0.0.7-test",
+  "pad_count": 32,
+  "global": { "midi_channel": 10, "midi_output": 2 },
+  "app": { "midi_map": "ad2" },
+  "pads": [
+    {
+      "pad": 6, "pad_type": 8, "label": "Snare", "enabled": true,
+      "hihat_pedal_channel": -1, "hihat_invert": false,
+      "sensitivity": 100, "threshold": 10, "scan_time": 10, "mask_time": 30,
+      "curve_type": 0, "retrigger": 0, "gain": 100, "xtalk": 0, "xtalk_group": 0,
+      "rim_sensitivity": 20, "rim_threshold": 3,
+      "note": 38, "note_rim": 43, "note_cup": 37
+    }
+  ]
+}
+```
+
+- `pads` lista só os pads **primários** (o 2º canal de um pad de 2 zonas não
+  tem configuração própria); `pad` é o índice 0-based, igual ao protocolo.
+  Campos e faixas iguais aos de `set_pad` acima.
+- Ordem de aplicação no import: (1) `pad_type`, do pad 0 ao 31 — subindo em
+  ordem, cada pad já é primário quando chega a vez dele; (2) `label`,
+  `enabled`, `hihat_invert` e campos numéricos do tipo; (3)
+  `hihat_pedal_channel` (o alvo precisa já ser pedal); (4) `set_global`.
+- Validação antes de aplicar: `format`/`version`, faixas de cada campo, a
+  regra do tip (2 zonas só em pad de canal par) e links de pedal. O que não
+  passa vira aviso no diálogo e é ignorado; o resto é importado.
+- `version` só sobe em mudança incompatível; campos desconhecidos são
+  ignorados.
+

@@ -2450,3 +2450,42 @@ kbd {
 .dialog-foot button {
   white-space: nowrap;
 }
+
+/* importar configuração */
+
+.import-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0 0 10px;
+}
+
+.import-summary dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--txt-dim);
+}
+
+.import-summary dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.import-names {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  color: var(--txt-dim);
+  line-height: 1.5;
+}
+
+.import-warnings ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.import-warnings li + li {
+  margin-top: 2px;
+}

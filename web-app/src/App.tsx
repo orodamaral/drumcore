@@ -20,6 +20,8 @@ import MidiMapSelect from './components/MidiMapSelect'
 import ApplyMapDialog from './components/ApplyMapDialog'
 import ShortcutsDialog from './components/ShortcutsDialog'
 import FactoryResetDialog from './components/FactoryResetDialog'
+import ImportConfigDialog from './components/ImportConfigDialog'
+import { BatchOp, buildConfigFile, configFileName, ParsedConfig, parseConfigFile, repliesWithPadConfig } from './configFile'
 import { PadOp, PadSnapshot } from './padActions'
 import { changesFor, fieldLabel, HistoryEntry, pushEntry, redoOps, undoOps } from './history'
 import { loadMidiMapId, MidiMapContext, MidiMapId, MIDI_MAPS, saveMidiMapId } from './midiMaps'
@@ -64,6 +66,8 @@ export default function App() {
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([])
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [factoryOpen, setFactoryOpen] = useState(false)
+  const [importing, setImporting] = useState<{ fileName: string; parsed: ParsedConfig } | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
   const [redoStack, setRedoStack] = useState<HistoryEntry[]>([])
   const [batch, setBatch] = useState<{ label: string; done: number; total: number } | null>(null)
   const [bleConnected, setBleConnected] = useState(false)
@@ -80,9 +84,12 @@ export default function App() {
   const followRef = useRef(followHits)
   followRef.current = followHits
   // Fila de ações em lote: cada set_pad grava na flash do módulo e sempre
-  // responde com exatamente um ack/error - o próximo só sai depois dessa
-  // resposta (ou do timeout), pra não estourar o buffer serial.
-  const pendingReply = useRef<(() => void) | null>(null)
+  // responde com exatamente uma resposta - ack (campos numéricos),
+  // pad_config (label/pad_type/enabled/hihat_*) ou error; set_global responde
+  // ack. O próximo comando só sai depois dessa resposta (ou do timeout), pra
+  // não estourar o buffer serial.
+  const pendingReply = useRef<{ expect: 'ack' | 'config' | 'global'; pad: number; resolve: () => void } | null>(null)
+  const batchErrors = useRef(0)
   const padsRef = useRef(pads)
   padsRef.current = pads
   const batchCancel = useRef(false)
@@ -104,10 +111,13 @@ export default function App() {
     return () => clearTimeout(t)
   }, [toast])
 
-  function resolveReply(): void {
+  function resolveReply(kind?: 'ack' | 'config' | 'global' | 'error', pad?: number): void {
     const r = pendingReply.current
+    if (!r) return
+    if (kind && kind !== 'error' && (kind !== r.expect || (kind === 'config' && pad !== r.pad))) return
+    if (kind === 'error') batchErrors.current++
     pendingReply.current = null
-    r?.()
+    r.resolve()
   }
 
   function handleLine(line: string): void {
@@ -125,6 +135,7 @@ export default function App() {
         break
       case 'pad_config':
         setPads((prev) => ({ ...prev, [message.pad]: message }))
+        resolveReply('config', message.pad)
         break
       case 'hit':
         setLastHit({ pad: message.pad, velocity: message.velocity, seq: ++hitSeq.current })
@@ -142,11 +153,12 @@ export default function App() {
         break
       case 'error':
         appendLog(`Erro (${message.cmd}): ${message.message}`, 'error')
-        if (message.cmd === 'set_pad') resolveReply()
+        if (message.cmd === 'set_pad' || message.cmd === 'set_global') resolveReply('error')
         break
       case 'ack': {
         appendLog(`OK: pad ${message.pad + 1} ${message.field} = ${message.value}`)
-        if (message.cmd === 'set_pad') resolveReply()
+        if (message.cmd === 'set_pad') resolveReply('ack')
+        if (message.cmd === 'set_global') resolveReply('global')
 
         // set_pad em campos numericos (sensitivity, threshold, etc) responde
         // com ack, nao com pad_config - sem isso, o slider correspondente no
@@ -334,10 +346,17 @@ export default function App() {
     setAutoTune(null)
   }
 
-  async function runOps(ops: PadOp[], label: string, recordHistory = true): Promise<void> {
+  async function runOps(ops: BatchOp[], label: string, recordHistory = true): Promise<void> {
     if (ops.length === 0 || batch) return
-    if (recordHistory) record(label, ops)
+    // Histórico só dos campos numéricos (ver history.ts).
+    if (recordHistory) {
+      record(
+        label,
+        ops.filter((o): o is PadOp => (o.cmd ?? 'set_pad') === 'set_pad' && (PAD_FIELDS as readonly string[]).includes(o.field) && typeof o.value === 'number')
+      )
+    }
     batchCancel.current = false
+    batchErrors.current = 0
     setBatch({ label, done: 0, total: ops.length })
     let done = 0
     for (const op of ops) {
@@ -347,17 +366,29 @@ export default function App() {
           pendingReply.current = null
           resolve()
         }, 1500)
-        pendingReply.current = () => {
-          clearTimeout(timer)
-          resolve()
+        const cmd = op.cmd ?? 'set_pad'
+        pendingReply.current = {
+          expect: cmd === 'set_global' ? 'global' : repliesWithPadConfig(op.field) ? 'config' : 'ack',
+          pad: op.pad,
+          resolve: () => {
+            clearTimeout(timer)
+            resolve()
+          }
         }
-        send({ cmd: 'set_pad', pad: op.pad, field: op.field, value: op.value })
+        send(cmd === 'set_global' ? { cmd, field: op.field, value: op.value } : { cmd, pad: op.pad, field: op.field, value: op.value })
       })
       done++
       setBatch((b) => (b ? { ...b, done } : b))
     }
     setBatch(null)
-    setToast(batchCancel.current ? `Interrompido: ${done} de ${ops.length} alterações enviadas` : label)
+    const errs = batchErrors.current
+    setToast(
+      batchCancel.current
+        ? `Interrompido: ${done} de ${ops.length} alterações enviadas`
+        : errs > 0
+          ? `${label} — ${errs} alteraç${errs === 1 ? 'ão recusada' : 'ões recusadas'} pelo módulo (ver log)`
+          : label
+    )
   }
 
   function updateGlobalField(field: keyof GlobalConfig, value: number): void {
@@ -374,6 +405,44 @@ export default function App() {
     // depois disso mandaria valores que já não batem.
     setUndoStack([])
     setRedoStack([])
+  }
+
+  function exportConfig(): void {
+    const data = buildConfigFile(padList, global, firmwareVersion, midiMapId)
+    const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = configFileName()
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setToast(`Configuração exportada (${data.pads.length} pads)`)
+  }
+
+  async function pickImportFile(file: File | undefined): Promise<void> {
+    if (!file) return
+    const text = await file.text().catch(() => null)
+    if (text === null) {
+      appendLog(`Não foi possível ler ${file.name}.`, 'error')
+      return
+    }
+    const result = parseConfigFile(text, PAD_COUNT)
+    if (!result.ok) {
+      appendLog(`Importar ${file.name}: ${result.error}`, 'error')
+      return
+    }
+    setImporting({ fileName: file.name, parsed: result.value })
+  }
+
+  function runImport(ops: BatchOp[], label: string): void {
+    // Valores mudam por fora do histórico (tipos, nomes...) - desfazer
+    // depois disso mandaria valores que já não batem.
+    setUndoStack([])
+    setRedoStack([])
+    setClipboard(null)
+    void runOps(ops, label, false)
   }
 
   function factoryReset(): void {
@@ -640,6 +709,33 @@ export default function App() {
               </section>
 
               <section className="editor-section">
+                <h3 className="section-title">Backup e compartilhamento</h3>
+                <div className="global-actions">
+                  <button onClick={exportConfig} disabled={padList.some((p) => !p)}>
+                    Exportar configuração (.json)
+                  </button>
+                  <button onClick={() => importInputRef.current?.click()} disabled={batch !== null}>
+                    Importar configuração…
+                  </button>
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    hidden
+                    onChange={(e) => {
+                      void pickImportFile(e.target.files?.[0])
+                      e.target.value = '' // permite escolher o mesmo arquivo de novo
+                    }}
+                  />
+                </div>
+                <p className="pad-hint">
+                  Salva tipos, nomes, notas, calibração e crosstalk dos 32 canais, mais canal/saída MIDI e o mapa MIDI
+                  escolhido, num arquivo que você pode guardar de backup ou mandar pra outra pessoa importar no módulo
+                  dela.
+                </p>
+              </section>
+
+              <section className="editor-section">
                 <h3 className="section-title">Memória do módulo</h3>
                 <div className="global-actions">
                   <button onClick={saveAll}>Salvar tudo na memória</button>
@@ -700,6 +796,17 @@ export default function App() {
         )}
 
         {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+
+        {importing && connected && (
+          <ImportConfigDialog
+            fileName={importing.fileName}
+            parsed={importing.parsed}
+            pads={padList}
+            global={global}
+            onClose={() => setImporting(null)}
+            onRun={runImport}
+          />
+        )}
 
         {factoryOpen && connected && (
           <FactoryResetDialog onClose={() => setFactoryOpen(false)} onConfirm={factoryReset} />
