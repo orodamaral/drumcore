@@ -2393,3 +2393,60 @@ kbd {
 .pad-row-main .pad-row-name {
   flex: none;
 }
+
+/* restaurar padrão de fábrica */
+
+.btn-danger {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--line));
+  color: var(--danger);
+}
+
+.btn-danger:not(:disabled):hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+}
+
+.btn-danger.solid {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #0c1116;
+  font-weight: 600;
+}
+
+.btn-danger.solid:not(:disabled):hover {
+  background: color-mix(in srgb, var(--danger) 85%, white);
+  color: #0c1116;
+}
+
+.factory-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.factory-table th,
+.factory-table td {
+  text-align: left;
+  padding: 5px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.factory-table th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--txt-dim);
+}
+
+.factory-table td:first-child {
+  white-space: nowrap;
+  color: var(--txt-dim);
+}
+
+.dialog-foot button {
+  white-space: nowrap;
+}

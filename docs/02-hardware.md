@@ -268,20 +268,38 @@ mapeamento completo e o racional, e Fase Z pro pinout atual.
 
 ## Notas
 
-- Pinos livres/sobressalentes: `GPIO10,11,12,13,14` (header esquerdo, onde
-  a tela ficava antes da Fase Z) e `GPIO21` (header direito) — nenhum uso
-  previsto por ora. `GPIO9` (mesmo grupo) está em uso temporário, ver
-  abaixo.
+- Pinos livres/sobressalentes: `GPIO9,10,11,12,13,14` (header esquerdo,
+  onde a tela ficava antes da Fase Z) e `GPIO21` (header direito) — nenhum
+  uso previsto por ora. `GPIO9`/`GPIO10` eram usados pelo bring-up sem
+  jackboard (canais 1 e 2 lidos direto do ESP32), removido em 2026-09-27
+  com a jackboard montada: os 32 canais são lidos pelo MUX.
 - `GPIO43`/`GPIO44` (header direito) **não estão livres**, apesar de
   aparecerem como GPIO genérico na serigrafia: são o UART físico
   (TXD0/RXD0) que o firmware usa pra `Serial` (protocolo NDJSON com o app)
   quando compilado com `ARDUINO_USB_CDC_ON_BOOT=0` — ver
   [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase R).
   Corrige uma nota anterior que os listava como "sem uso previsto".
-- **GPIO9 em uso temporário** (teste do sensor hall, ver
-  `TEST_DIRECT_HEAD_PIN` em `firmware/src/main.cpp`) — antes era GPIO17,
-  migrado na Fase Z porque GPIO17 virou permanente (agora `TFT_DC`, ver
-  ajuste de 2026-09-06 na seção da tela). Volta a ficar livre quando o
-  MUX físico for conectado e esse bloco de teste for removido.
+
+## Mapeamento de fábrica (2026-09-27)
+
+Kit gravado na primeira inicialização da EEPROM e pelo "restaurar padrão
+de fábrica" (comando `factory_reset`, botão na aba Global do ConfigTool,
+GLOBAL > FABRICA na tela do módulo). Função `applyFactoryPreset()` em
+`firmware/src/main.cpp`; notas do keymap do Addictive Drums 2.
+
+| Jack | Tip (canal par) | Ring (canal ímpar) | Notas |
+|---|---|---|---|
+| 1 | desligado | HH Pedal (FSR / VH-10 / VH-11) | 48 |
+| 2 | HiHat simples, ligado ao pedal do jack 1 | desligado | 57 aberto / 49 fechado |
+| 3 | Kick | desligado | 36 |
+| 4 | Snare 3 zonas (tip + ring) | | 38 / 43 borda / 37 aro |
+| 5–8 | Tom 1–4 dual (tip pele, ring aro) | | 71/72, 69/70, 67/68, 65/66 |
+| 9–12 | Cym 1–4 simples | Choke 1–4 | 77/78, 79/80, 81/82, 89/90 |
+| 13 | Ride 1 prato 3 zonas (tip corpo, ring borda/cup) | | 60 / 62 / 61 |
+| 14–16 | desligado | desligado | — |
+
+Sensibilidade/threshold/scan/mask e demais parâmetros ficam nos valores
+iniciais da lib (100/10/10/30, gain 100%, sem crosstalk); canal MIDI 10,
+saída USB + BLE.
 - Esta seção deve ser atualizada com o pinout real assim que o hardware for
   prototipado/testado, incluindo fotos ou diagramas se fizer sentido.

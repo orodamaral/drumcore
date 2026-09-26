@@ -19,6 +19,7 @@ import LogPanel, { LogEntry, LogLevel } from './components/LogPanel'
 import MidiMapSelect from './components/MidiMapSelect'
 import ApplyMapDialog from './components/ApplyMapDialog'
 import ShortcutsDialog from './components/ShortcutsDialog'
+import FactoryResetDialog from './components/FactoryResetDialog'
 import { PadOp, PadSnapshot } from './padActions'
 import { changesFor, fieldLabel, HistoryEntry, pushEntry, redoOps, undoOps } from './history'
 import { loadMidiMapId, MidiMapContext, MidiMapId, MIDI_MAPS, saveMidiMapId } from './midiMaps'
@@ -62,6 +63,7 @@ export default function App() {
   const [applyMapOpen, setApplyMapOpen] = useState(false)
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([])
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [factoryOpen, setFactoryOpen] = useState(false)
   const [redoStack, setRedoStack] = useState<HistoryEntry[]>([])
   const [batch, setBatch] = useState<{ label: string; done: number; total: number } | null>(null)
   const [bleConnected, setBleConnected] = useState(false)
@@ -368,6 +370,18 @@ export default function App() {
 
   function restoreAll(): void {
     send({ cmd: 'restore_all' })
+    // Os valores voltam da memória por fora do histórico - desfazer
+    // depois disso mandaria valores que já não batem.
+    setUndoStack([])
+    setRedoStack([])
+  }
+
+  function factoryReset(): void {
+    send({ cmd: 'factory_reset', confirm: true })
+    setUndoStack([])
+    setRedoStack([])
+    setClipboard(null)
+    setToast('Padrão de fábrica restaurado')
   }
 
   const padList = useMemo(
@@ -630,6 +644,9 @@ export default function App() {
                 <div className="global-actions">
                   <button onClick={saveAll}>Salvar tudo na memória</button>
                   <button onClick={restoreAll}>Restaurar da memória</button>
+                  <button className="btn-danger" onClick={() => setFactoryOpen(true)} disabled={batch !== null}>
+                    Restaurar padrão de fábrica…
+                  </button>
                 </div>
                 <p className="pad-hint">
                   O app já salva cada campo assim que você muda (ver docs/01-decisoes-arquiteturais.md) — estes botões
@@ -683,6 +700,10 @@ export default function App() {
         )}
 
         {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+
+        {factoryOpen && connected && (
+          <FactoryResetDialog onClose={() => setFactoryOpen(false)} onConfirm={factoryReset} />
+        )}
 
         {applyMapOpen && connected && (
           <ApplyMapDialog allPads={padList} onClose={() => setApplyMapOpen(false)} onRun={runOps} />

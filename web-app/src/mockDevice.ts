@@ -79,6 +79,35 @@ export class MockDevice {
   constructor(padCount = 32) {
     this.pads = Array.from({ length: padCount }, (_, i) => this.freshPad(i))
     this.primary = Array.from({ length: padCount }, () => true)
+    // Demo começa como uma placa nova: com o mapeamento de fábrica.
+    this.applyFactoryPreset()
+  }
+
+  // Espelho de applyFactoryPreset() no firmware (main.cpp) - mesmo kit,
+  // mesmas notas (keymap do Addictive Drums 2). Manter os dois em sincronia.
+  private applyFactoryPreset(): void {
+    this.pads = this.pads.map((_, i) => ({ ...this.freshPad(i), enabled: false }))
+    const set = (i: number, pad_type: PadType, label: string, note: number, note_rim = 39, note_cup = 40) => {
+      if (!this.pads[i]) return
+      Object.assign(this.pads[i], { pad_type, label, name: nameFor(i, label), note, note_rim, note_cup, enabled: true })
+      this.pads[i].uses_second_channel = usesSecondChannel(pad_type)
+    }
+    set(1, 6, 'HH Pedal', 48)
+    set(2, 2, 'HiHat', 57, 49)
+    this.pads[2].hihat_pedal_channel = 1
+    set(4, 0, 'Kick', 36)
+    set(6, 8, 'Snare', 38, 43, 37)
+    ;[[71, 72], [69, 70], [67, 68], [65, 66]].forEach(([n, r], t) => set(8 + 2 * t, 1, `Tom ${t + 1}`, n, r))
+    ;[[77, 78], [79, 80], [81, 82], [89, 90]].forEach(([n, c], k) => {
+      set(16 + 2 * k, 0, `Cym ${k + 1}`, n)
+      set(17 + 2 * k, 9, `Choke ${k + 1}`, c)
+    })
+    set(24, 5, 'Ride 1', 60, 62, 61)
+    this.recomputePrimary()
+    this.pads.forEach((p, i) => {
+      if (!this.primary[i]) p.enabled = true
+    })
+    this.global = { midi_channel: 10, midi_output: 2 }
   }
 
   private deviceInfo(): IncomingMessage {
@@ -272,6 +301,17 @@ export class MockDevice {
 
       case 'restore_all':
         this.emit({ type: 'log', message: 'Configuracao restaurada (restore_all). (simulado)' })
+        this.emit(this.deviceInfo())
+        break
+
+      case 'factory_reset':
+        if ((cmd as { confirm?: boolean }).confirm !== true) {
+          this.emit({ type: 'error', cmd: 'factory_reset', message: 'confirm_required' })
+          break
+        }
+        this.applyFactoryPreset()
+        this.pads.forEach((_, i) => this.emitPadConfig(i))
+        this.emit({ type: 'log', message: 'Padrao de fabrica restaurado (factory_reset). (simulado)' })
         this.emit(this.deviceInfo())
         break
 

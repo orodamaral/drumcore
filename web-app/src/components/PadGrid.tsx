@@ -95,7 +95,9 @@ export default function PadGrid({ pads, selectedPad, lastHit, followHits, onFoll
           <>
             <span className="pad-row-main">
               <span className={`pad-row-name${pad?.primary && pad.label ? '' : ' unnamed'}`}>
-                {pad?.primary ? pad.label || gm || 'Sem nome' : '…'}
+                {/* Canal desligado sem nome: "livre" - o nome do instrumento
+                    da nota que sobrou nele só confundia. */}
+                {pad?.primary ? pad.label || (off ? 'livre' : gm) || 'Sem nome' : '…'}
               </span>
               {zones && (
                 <span className="pad-row-sub">

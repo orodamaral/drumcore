@@ -205,17 +205,6 @@ void bringUpNativeUsbHardware()
 #define MUX0_Z 1 // SIG do HW-178 #0 (pads 0-15) - ADC1_0
 #define MUX1_Z 2 // SIG do HW-178 #1 (pads 16-31) - ADC1_1
 
-// BRING-UP SEM JACKBOARD (2026-09-11, a pedido do Rodrigo): a jackboard
-// (MUX fisico) ainda nao foi montada, entao os 2 canais de teste (canal 1
-// e 2, "Pad 1"/"Pad 2" na UI) sao lidos direto de 2 pinos do ESP32-S3,
-// sem passar pelo MUX (ver leitura em loop(), sobrescreve rawValue[0]/[1]
-// depois do scan dos MUX, e em setup(), habilita os pads 0/1). GPIO9/10:
-// livres, ambos ADC1 (CH8/CH9) - ver docs/02-hardware.md ("Notas" - pinos
-// livres/sobressalentes). Remover (e voltar a ler pelos pads 0/1 do MUX0)
-// quando a jackboard for montada e conectada de verdade.
-#define TEST_DIRECT_PIN_0 9  // canal 1 ("Pad 1")
-#define TEST_DIRECT_PIN_1 10 // canal 2 ("Pad 2")
-
 #define NUM_MUX 2
 #define PADS_PER_MUX 16
 #define NUM_PADS (NUM_MUX * PADS_PER_MUX) // 32
@@ -858,7 +847,13 @@ bool globalEditing = false;
 #define GLOBAL_ROW_OUTPUT 1
 #define GLOBAL_ROW_SAVE 2
 #define GLOBAL_ROW_RESTORE 3
-#define GLOBAL_ROW_COUNT 4
+#define GLOBAL_ROW_FACTORY 4
+#define GLOBAL_ROW_COUNT 5
+// GLOBAL > FABRICA pede um 2o clique pra confirmar - armado pelo 1o clique,
+// desarmado ao girar o encoder ou apos FACTORY_CONFIRM_MS.
+bool factoryArmed = false;
+unsigned long factoryArmedAtMs = 0;
+#define FACTORY_CONFIRM_MS 5000
 
 char toastLine1[16] = "";
 char toastLine2[24] = "";
@@ -1106,6 +1101,112 @@ void loadAllFromEeprom()
         midiOutput = OUTPUT_USB_BLE;
     }
     unsavedChanges = false;
+}
+
+// Nota de cada zona - mesmo espelhamento que handleSetPad() faz nos campos
+// note/note_rim/note_cup (a lib usa nomes diferentes por tipo de sensor).
+void setPadNotes(byte i, byte note, byte noteRim, byte noteCup)
+{
+    pads[i].note = note;
+    pads[i].noteOpen = note;
+    pads[i].noteRim = noteRim;
+    pads[i].noteEdge = noteRim;
+    pads[i].noteClose = noteRim;
+    pads[i].noteOpenEdge = noteRim;
+    pads[i].noteCup = noteCup;
+    pads[i].noteCloseEdge = noteCup;
+    pads[i].noteCross = noteCup;
+}
+
+void setFactoryPad(byte i, byte type, const char *label, byte note, byte noteRim, byte noteCup)
+{
+    padTypes[i] = type;
+    padEnabled[i] = true;
+    strncpy(padLabels[i], label, PAD_LABEL_MAX_LEN - 1);
+    padLabels[i][PAD_LABEL_MAX_LEN - 1] = '\0';
+    setPadNotes(i, note, noteRim, noteCup);
+}
+
+// Mapeamento de fabrica (2026-09-27, definido pelo Rodrigo): um kit
+// completo na ordem dos jacks da jackboard - canal par (0-based) = TIP,
+// impar = RING (ver padIsJackTip()). Notas do keymap do Addictive Drums 2,
+// mapa padrao do ConfigTool (web-app/src/drumRoles.ts). Usado na primeira
+// inicializacao da EEPROM e no "restaurar padrao de fabrica" (comando
+// factory_reset / GLOBAL > FABRICA). So' monta o estado em RAM - quem chama
+// grava com saveAllToEeprom().
+//
+//   Jack  1  tip: desligado          ring: HH Pedal (FSR/VH)   48
+//   Jack  2  tip: HiHat (-> pedal)   ring: desligado           57 aberto / 49 fechado
+//   Jack  3  tip: Kick               ring: desligado           36
+//   Jack  4  Snare 3 zonas (tip + ring)                        38 / 43 borda / 37 aro
+//   Jack 5-8 Tom 1-4 dual (tip pele, ring aro)                 71/72 69/70 67/68 65/66
+//   Jack 9-12 tip: Cym 1-4           ring: Choke 1-4           77/78 79/80 81/82 89/90
+//   Jack 13 Ride 1 prato 3 zonas (tip corpo, ring borda/cup)   60 / 62 / 61
+//   Jack 14-16 desligados (tip e ring simples)
+void applyFactoryPreset()
+{
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        padTypes[i] = PAD_SINGLE;
+        padEnabled[i] = false; // slot sem instrumento no kit de fabrica
+        padLabels[i][0] = '\0';
+        setPadNotes(i, FIRST_TEST_NOTE + i, 39, 40);
+        hihatPedalChannel[i] = PAD_NO_LINK;
+        // Mesmos valores iniciais do construtor da lib (HelloDrum::begin()).
+        pads[i].sensitivity = 100;
+        pads[i].threshold1 = 10;
+        pads[i].scantime = 10;
+        pads[i].masktime = 30;
+        pads[i].rimSensitivity = 20;
+        pads[i].rimThreshold = 3;
+        pads[i].curvetype = 0;
+        pads[i].retrigger = 0;  // Fase P - 0 = desligado
+        padGain[i] = 100;       // 1.00x, neutro
+        padXtalk[i] = 0;        // sem supressao de crosstalk
+        padXtalkGroup[i] = 0;   // sem grupo
+        padHihatInvert[i] = false;
+    }
+
+    setFactoryPad(1, PAD_HIHAT_PEDAL, "HH Pedal", 48, 39, 40);
+    setFactoryPad(2, PAD_HIHAT_SINGLE, "HiHat", 57, 49, 40);
+    hihatPedalChannel[2] = 1;
+    setFactoryPad(4, PAD_SINGLE, "Kick", 36, 39, 40);
+    setFactoryPad(6, PAD_SNARE_3ZONE, "Snare", 38, 43, 37);
+
+    static const byte TOM_NOTES[4][2] = {{71, 72}, {69, 70}, {67, 68}, {65, 66}};
+    for (byte t = 0; t < 4; t++)
+    {
+        char label[8];
+        snprintf(label, sizeof(label), "Tom %d", t + 1);
+        setFactoryPad(8 + 2 * t, PAD_DUAL, label, TOM_NOTES[t][0], TOM_NOTES[t][1], 40);
+    }
+
+    static const byte CYM_NOTES[4][2] = {{77, 78}, {79, 80}, {81, 82}, {89, 90}};
+    for (byte c = 0; c < 4; c++)
+    {
+        char label[10];
+        snprintf(label, sizeof(label), "Cym %d", c + 1);
+        setFactoryPad(16 + 2 * c, PAD_SINGLE, label, CYM_NOTES[c][0], 39, 40);
+        snprintf(label, sizeof(label), "Choke %d", c + 1);
+        setFactoryPad(17 + 2 * c, PAD_CHOKE, label, CYM_NOTES[c][1], 39, 40);
+    }
+
+    setFactoryPad(24, PAD_CYMBAL_3ZONE, "Ride 1", 60, 62, 61);
+
+    // O 2o canal dos pads de 2 zonas (Snare, Toms, Ride) fica consumido -
+    // enabled nao importa pra ele (so' o do primario conta).
+    recomputeChannelPrimary();
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (!channelPrimary[i])
+        {
+            padEnabled[i] = true;
+        }
+        rebuildPadName(i);
+    }
+
+    midiChannel = DEFAULT_MIDI_CHANNEL;
+    midiOutput = OUTPUT_USB_BLE;
 }
 
 // Aplica um campo de configuracao a um pad via o PROTOCOLO SERIAL. Esse
@@ -1434,6 +1535,26 @@ void handleSerialCommand(const String &line)
             sendPadConfig(i);
         }
         sendLog("Configuracao restaurada (restore_all).");
+        sendDeviceInfo();
+    }
+    else if (strcmp(cmd, "factory_reset") == 0)
+    {
+        // Apaga a configuracao atual e volta ao mapeamento de fabrica
+        // (applyFactoryPreset()). Exige "confirm": true pra nao disparar
+        // por engano.
+        if (!(doc["confirm"] | false))
+        {
+            sendError(cmd, "confirm_required");
+            return;
+        }
+        applyFactoryPreset();
+        saveAllToEeprom();
+        forceScreenRedraw = true;
+        for (byte i = 0; i < NUM_PADS; i++)
+        {
+            sendPadConfig(i);
+        }
+        sendLog("Padrao de fabrica restaurado (factory_reset).");
         sendDeviceInfo();
     }
     else if (strcmp(cmd, "start_autotune") == 0)
@@ -3082,6 +3203,7 @@ void onEncRotate(int delta)
         }
         if (!globalEditing)
         {
+            factoryArmed = false;
             int next = (int)globalSelection + delta;
             if (next < 0) next = 0;
             if (next > GLOBAL_ROW_COUNT - 1) next = GLOBAL_ROW_COUNT - 1;
@@ -3222,6 +3344,21 @@ void onEncClick()
         {
             loadAllFromEeprom();
             showToast("RESTAURADO", "32 PADS DA NVS");
+        }
+        else if (globalSelection == GLOBAL_ROW_FACTORY)
+        {
+            if (factoryArmed && millis() - factoryArmedAtMs < FACTORY_CONFIRM_MS)
+            {
+                factoryArmed = false;
+                applyFactoryPreset();
+                saveAllToEeprom();
+                showToast("FABRICA", "KIT PADRAO");
+            }
+            else
+            {
+                factoryArmed = true; // 1o clique so' arma - ver renderGlobal()
+                factoryArmedAtMs = millis();
+            }
         }
         else
         {
@@ -3926,6 +4063,8 @@ bool renderGlobal()
 
     drawValueRow(40, "SALVAR", unsavedChanges ? "*" : ">", globalSelection == GLOBAL_ROW_SAVE, false);
     drawValueRow(54, "RESTAURAR", ">", globalSelection == GLOBAL_ROW_RESTORE, false);
+    bool armed = factoryArmed && millis() - factoryArmedAtMs < FACTORY_CONFIRM_MS;
+    drawValueRow(68, "FABRICA", armed ? "CONFIRMA?" : ">", globalSelection == GLOBAL_ROW_FACTORY, armed);
 
     if (showingToast)
     {
@@ -4328,34 +4467,9 @@ void setup()
     bool eepromFirstBoot = EEPROM_ESP.read(EEPROM_INIT_FLAG_ADDR) != EEPROM_INIT_MAGIC;
     if (eepromFirstBoot)
     {
-        sendLog("EEPROM: primeira inicializacao - gravando valores padrao.");
-        for (byte i = 0; i < NUM_PADS; i++)
-        {
-            pads[i].note = FIRST_TEST_NOTE + i;
-            padLabels[i][0] = '\0';
-            padTypes[i] = PAD_SINGLE;
-            hihatPedalChannel[i] = PAD_NO_LINK;
-            padEnabled[i] = true; // todo canal comeca habilitado por padrao
-            pads[i].retrigger = 0; // Fase P - 0 = desligado (comportamento original)
-            padGain[i] = 100;       // 1.00x, neutro
-            padXtalk[i] = 0;        // sem supressao de crosstalk
-            padXtalkGroup[i] = 0;   // sem grupo
-            padHihatInvert[i] = false; // Fase X - nao invertido por padrao
-            rebuildPadName(i);
-            pads[i].initMemory();
-            EEPROM_ESP.writeBytes(padLabelEepromAddr(i), padLabels[i], PAD_LABEL_MAX_LEN);
-            EEPROM_ESP.write(EEPROM_TYPES_ADDR + i, padTypes[i]);
-            EEPROM_ESP.write(EEPROM_HIHAT_LINK_ADDR + i, hihatPedalChannel[i]);
-            EEPROM_ESP.write(EEPROM_ENABLED_ADDR + i, 1);
-            EEPROM_ESP.write(EEPROM_RETRIGGER_ADDR + i, 0);
-            EEPROM_ESP.write(EEPROM_GAIN_ADDR + i, 100);
-            EEPROM_ESP.write(EEPROM_XTALK_ADDR + i, 0);
-            EEPROM_ESP.write(EEPROM_XTALK_GROUP_ADDR + i, 0);
-            EEPROM_ESP.write(EEPROM_HIHAT_INVERT_ADDR + i, 0);
-        }
-        recomputeChannelPrimary();
-        EEPROM_ESP.write(EEPROM_GLOBAL_ADDR, midiChannel);
-        EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 1, midiOutput);
+        sendLog("EEPROM: primeira inicializacao - gravando o mapeamento de fabrica.");
+        applyFactoryPreset();
+        saveAllToEeprom();
         EEPROM_ESP.write(EEPROM_INIT_FLAG_ADDR, EEPROM_INIT_MAGIC);
         EEPROM_ESP.commit();
     }
@@ -4363,31 +4477,6 @@ void setup()
     {
         loadAllFromEeprom();
     }
-
-    // BRING-UP SEM JACKBOARD (2026-09-11): so' os canais 1 e 2 ("Pad 1"/
-    // "Pad 2") tem sensor conectado por enquanto, lidos direto de 2 pinos
-    // do ESP32-S3 (ver TEST_DIRECT_PIN_0/1 acima, jackboard ainda nao
-    // montada). Os demais 30 canais ficam desabilitados aqui (so' em RAM,
-    // nao mexe na EEPROM) pra evitar que ruido/flutuacao dos canais sem
-    // sensor dispare "hit" espalhados pela tela LIVE.
-    //
-    // TESTE (2026-09-12, a pedido do Rodrigo): canal 1 (GPIO9) agora e'
-    // PAD_HIHAT_PEDAL em vez de PAD_SINGLE - o sensor hall (SS49E) ligado
-    // ali e' de posicao continua (igual um FSR), entao serve pra validar
-    // o controlador de chimbal (hihatControlMUX()/FSRSensing(), saida via
-    // CC + "chick" ao fechar rapido). Canal 2 (GPIO10) continua
-    // PAD_SINGLE (sem sensor conectado por enquanto).
-    for (byte i = 0; i < NUM_PADS; i++)
-    {
-        padEnabled[i] = false;
-    }
-    padTypes[0] = PAD_HIHAT_PEDAL;
-    padTypes[1] = PAD_SINGLE;
-    padEnabled[0] = true;
-    padEnabled[1] = true;
-    recomputeChannelPrimary();
-    rebuildPadName(0);
-    rebuildPadName(1);
 
     renderBootProgress(80);
 
@@ -4415,13 +4504,6 @@ void loop()
     {
         mux[m].scan();
     }
-
-    // BRING-UP SEM JACKBOARD - ver TEST_DIRECT_PIN_0/1 acima. Sobrescreve
-    // de proposito o que mux[0].scan() acabou de escrever em rawValue[0]/
-    // [1] (lixo/flutuando, MUX0 nao conectado de verdade ainda) com a
-    // leitura real dos 2 pinos diretos. Remover quando a jackboard chegar.
-    rawValue[0] = analogRead(TEST_DIRECT_PIN_0);
-    rawValue[1] = analogRead(TEST_DIRECT_PIN_1);
 
     applyPadGain(); // Fase P - antes do dispatch, pra ja ler o rawValue calibrado
 

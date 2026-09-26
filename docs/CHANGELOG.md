@@ -2,6 +2,24 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-27 — Mapeamento de fábrica, restaurar padrão de fábrica e fim do bring-up sem jackboard
+
+- **Kit de fábrica** (`applyFactoryPreset()`): HH Pedal, HiHat, Kick,
+  Snare 3 zonas, Tom 1–4, Cym 1–4 com choke no ring, Ride 1 3 zonas e 3
+  jacks livres, com notas do Addictive Drums 2. Tabela completa em
+  [02-hardware.md](02-hardware.md). Gravado na primeira inicialização da
+  EEPROM.
+- **Restaurar padrão de fábrica**: comando `factory_reset` (exige
+  `"confirm": true`), botão com confirmação na aba Global do ConfigTool e
+  item GLOBAL > FABRICA na tela do módulo (2 cliques para confirmar). Apaga
+  a configuração atual.
+- **Bring-up sem jackboard removido**: o firmware não desliga mais os
+  canais 3–32 a cada boot nem lê os canais 1–2 direto dos GPIO 9/10 — os
+  32 canais voltam a ser lidos pelo MUX. `GPIO9`/`GPIO10` ficam livres.
+- ConfigTool: o modo demo começa com o kit de fábrica; canal desligado sem
+  nome aparece como "livre"; Restaurar da memória e fábrica limpam o
+  histórico de desfazer.
+
 ## 2026-09-27 — Firmware: regra do tip e telas agrupadas por jack
 
 - **Regra**: sensor de 2 zonas só pode começar no **tip** do jack (canal
