@@ -1377,23 +1377,32 @@ void handleSerialCommand(const String &line)
             sendPadConfig(i);
         }
     }
+    // Comandos que mudam o que a tela mostra (nome/nota/tipo/valores do pad,
+    // canal/saida MIDI, indicador "*" do SALVAR) pedem redesenho - sem isso
+    // a tela so' atualizava no proximo movimento do encoder ou troca de
+    // pagina. Varios set_pad seguidos (acoes em lote do app) viram 1
+    // redesenho so' na proxima volta do loop().
     else if (strcmp(cmd, "set_pad") == 0)
     {
         handleSetPad(doc);
+        forceScreenRedraw = true;
     }
     else if (strcmp(cmd, "set_global") == 0)
     {
         handleSetGlobal(doc);
+        forceScreenRedraw = true;
     }
     else if (strcmp(cmd, "save_all") == 0)
     {
         saveAllToEeprom();
+        forceScreenRedraw = true;
         sendLog("Configuracao salva (save_all).");
         sendDeviceInfo();
     }
     else if (strcmp(cmd, "restore_all") == 0)
     {
         loadAllFromEeprom();
+        forceScreenRedraw = true;
         for (byte i = 0; i < NUM_PADS; i++)
         {
             sendPadConfig(i);

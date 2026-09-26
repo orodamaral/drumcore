@@ -2,6 +2,17 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-27 — Bug corrigido: tela não atualizava após mudanças feitas pelo app
+
+- Renomear um pad pelo app (e também mudar nota, tipo, ativo, valores,
+  canal/saída MIDI ou usar Salvar/Restaurar) não redesenhava a tela
+  física, e a mudança só aparecia no próximo movimento do encoder ou na
+  troca de página. O despacho de `set_pad`/`set_global`/`save_all`/
+  `restore_all` agora marca `forceScreenRedraw`. Vários comandos seguidos
+  (ações em lote) viram um único redesenho.
+- Primeira release de teste com a correção do `apply_autotune`
+  persistente (abaixo): `fw-v0.0.5-test`.
+
 ## 2026-09-26 — ConfigTool: aba Pads redesenhada, mapas MIDI (GM + Addictive Drums 2) e ações em lote
 
 - **Parâmetros**: sliders com trilha preenchida e campo numérico,
