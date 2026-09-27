@@ -69,6 +69,8 @@ completo e o racional de cada decisão. Resumo:
   canais cada um usa, e como o link pedal↔chimbal funciona.
 - **docs/06-edicao-arduino.md** — ideia (não implementada) de uma edição para
   Arduino Mega/Uno, incluindo uma versão lite com 16 canais diretos.
+- **docs/07-estudo-prato-3-zonas.md** — estudo de como os módulos comerciais
+  leem um ride de 3 zonas, e o caminho escolhido (prato de 2 piezos).
 - **docs/CHANGELOG.md** — o que foi feito, em ordem cronológica.
 
 Sempre que uma decisão relevante for tomada ou algo novo for aprendido sobre a
