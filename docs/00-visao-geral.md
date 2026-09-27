@@ -67,6 +67,8 @@ completo e o racional de cada decisão. Resumo:
   firmware e o app.
 - **docs/05-tipos-de-sensor.md** — os 9 tipos de sensor suportados, quantos
   canais cada um usa, e como o link pedal↔chimbal funciona.
+- **docs/06-edicao-arduino.md** — ideia (não implementada) de uma edição para
+  Arduino Mega/Uno, incluindo uma versão lite com 16 canais diretos.
 - **docs/CHANGELOG.md** — o que foi feito, em ordem cronológica.
 
 Sempre que uma decisão relevante for tomada ou algo novo for aprendido sobre a
