@@ -15,6 +15,7 @@ import {
   PAD_TYPES
 } from './protocol'
 import { MidiMapId, MIDI_MAPS } from './midiMaps'
+import { sanitizeJackLabel } from './jacks'
 
 export const CONFIG_FORMAT = 'drumcore-config'
 export const CONFIG_VERSION = 1
@@ -47,11 +48,14 @@ export interface ConfigFile {
   global: ConfigGlobal
   app?: { midi_map?: MidiMapId }
   pads: ConfigFilePad[]
+  /** Apelidos dos jacks na tela LIVE (2026-09-27; ausente em arquivos anteriores). */
+  jacks?: Array<{ jack: number; label: string }>
 }
 
 /** Uma escrita da fila em lote (App.runOps). */
 export interface BatchOp {
-  cmd?: 'set_pad' | 'set_global'
+  /** set_jack: `pad` leva o índice do jack. */
+  cmd?: 'set_pad' | 'set_global' | 'set_jack'
   pad: number
   field: string
   value: number | string
@@ -83,7 +87,8 @@ export function buildConfigFile(
   pads: Array<PadConfig | undefined>,
   global: GlobalConfig,
   firmwareVersion: string | undefined,
-  midiMap: MidiMapId
+  midiMap: MidiMapId,
+  jackLabels: Record<number, string> = {}
 ): ConfigFile {
   const out: ConfigFilePad[] = []
   for (const p of pads) {
@@ -108,7 +113,8 @@ export function buildConfigFile(
     pad_count: pads.length,
     global: { ...global },
     app: { midi_map: midiMap },
-    pads: out
+    pads: out,
+    jacks: Object.entries(jackLabels).map(([j, label]) => ({ jack: Number(j), label }))
   }
 }
 
@@ -192,6 +198,18 @@ export function parseConfigFile(text: string, padCount: number): ParseResult {
     midi_channel: isInt(g.midi_channel) && g.midi_channel >= 1 && g.midi_channel <= 16 ? g.midi_channel : -1,
     midi_output: (MIDI_OUTPUTS as readonly unknown[]).includes(g.midi_output) ? (g.midi_output as number) : -1
   }
+  let jacks: Array<{ jack: number; label: string }> | undefined
+  if (Array.isArray(obj.jacks)) {
+    jacks = []
+    for (const item of obj.jacks) {
+      const e = item as Record<string, unknown>
+      if (!e || !isInt(e.jack) || e.jack < 0 || e.jack >= padCount / 2 || typeof e.label !== 'string') continue
+      const label = sanitizeJackLabel(e.label)
+      if (label !== e.label) warnings.push(`Jack ${e.jack + 1}: apelido ajustado para "${label}" (máx. 6 caracteres, sem acento).`)
+      jacks.push({ jack: e.jack, label })
+    }
+  }
+
   const app = (obj.app ?? {}) as Record<string, unknown>
   const midiMap = typeof app.midi_map === 'string' && app.midi_map in MIDI_MAPS ? (app.midi_map as MidiMapId) : undefined
 
@@ -206,7 +224,8 @@ export function parseConfigFile(text: string, padCount: number): ParseResult {
         pad_count: isInt(obj.pad_count) ? obj.pad_count : padCount,
         global,
         app: midiMap ? { midi_map: midiMap } : undefined,
-        pads
+        pads,
+        jacks
       },
       warnings
     }
@@ -245,7 +264,8 @@ export function planImport(
   file: ConfigFile,
   current: Array<PadConfig | undefined>,
   currentGlobal: GlobalConfig,
-  opts: ImportOptions
+  opts: ImportOptions,
+  currentJacks: Record<number, string> = {}
 ): ImportPlan {
   const warnings: string[] = []
   const count = current.length
@@ -328,6 +348,18 @@ export function planImport(
     warnings.push(`${missing.length} pad(s) sem dados no arquivo continuam como estão: ${missing.map((i) => i + 1).join(', ')}.`)
   }
 
-  const ops = [...typeOps, ...fieldOps, ...linkOps, ...globalOps]
-  return { ops, padsTouched: new Set(ops.filter((o) => o.pad >= 0).map((o) => o.pad)).size, warnings }
+  // Apelidos dos jacks entram junto com os nomes dos pads.
+  const jackOps: BatchOp[] = []
+  if (opts.names && file.jacks) {
+    for (const { jack, label } of file.jacks) {
+      if ((currentJacks[jack] ?? '') !== label) jackOps.push({ cmd: 'set_jack', pad: jack, field: 'label', value: label })
+    }
+  }
+
+  const ops = [...typeOps, ...fieldOps, ...linkOps, ...jackOps, ...globalOps]
+  return {
+    ops,
+    padsTouched: new Set(ops.filter((o) => (o.cmd ?? 'set_pad') === 'set_pad').map((o) => o.pad)).size,
+    warnings
+  }
 }

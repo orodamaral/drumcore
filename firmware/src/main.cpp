@@ -390,7 +390,9 @@ const char *padTypeShortName(byte type)
 // loadAllFromEeprom()).
 #define EEPROM_PEDAL_NOTE_ADDR (EEPROM_GLOBAL_ADDR + 2)
 #define EEPROM_PEDAL_CC_ADDR (EEPROM_PEDAL_NOTE_ADDR + NUM_PADS)
-#define EEPROM_SIZE (EEPROM_PEDAL_CC_ADDR + NUM_PADS)
+#define EEPROM_JACK_LABELS_ADDR (EEPROM_PEDAL_CC_ADDR + NUM_PADS)
+#define EEPROM_SIZE (EEPROM_JACK_LABELS_ADDR + JACK_COUNT * (JACK_LABEL_MAX_LEN + 1))
+#define jackLabelEepromAddr(j) (EEPROM_JACK_LABELS_ADDR + (j) * (JACK_LABEL_MAX_LEN + 1))
 #define EEPROM_INIT_MAGIC 0xA5
 
 #define padLabelEepromAddr(i) (EEPROM_NAMES_ADDR + (i) * PAD_LABEL_MAX_LEN)
@@ -505,6 +507,14 @@ bool padHihatInvert[NUM_PADS];
 bool padPedalNote[NUM_PADS];
 byte padPedalCC[NUM_PADS];
 #define DEFAULT_PEDAL_CC 4
+
+// Apelido de cada jack (2026-09-27) - aparece na tela LIVE, que mostra 1
+// celula por jack (tip + ring). 6 caracteres e' o maximo que cabe na
+// celula de 39px com a fonte 6x8 (6*6-1 = 35px + 1px de respiro de cada
+// lado). So' ASCII imprimivel (a fonte da tela nao tem acentos).
+#define JACK_COUNT (NUM_PADS / 2)
+#define JACK_LABEL_MAX_LEN 6
+char jackLabels[JACK_COUNT][JACK_LABEL_MAX_LEN + 1];
 
 // chokeTouched[i]: estado atual do sensor de contato (PAD_CHOKE) - so'
 // dispara nota na borda de subida (nao tocado -> tocado), pra segurar a
@@ -1095,6 +1105,41 @@ void persistPadPedalCC(byte i)
     EEPROM_ESP.commit();
 }
 
+// Aceita so' ASCII imprimivel ate' JACK_LABEL_MAX_LEN - qualquer outra
+// coisa (ex: 0xFF de uma EEPROM gravada antes desse campo existir) vira
+// apelido vazio.
+bool jackLabelValid(const char *label)
+{
+    size_t n = strlen(label);
+    if (n > JACK_LABEL_MAX_LEN)
+    {
+        return false;
+    }
+    for (size_t k = 0; k < n; k++)
+    {
+        if (label[k] < 0x20 || label[k] > 0x7E)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void persistJackLabel(byte j)
+{
+    EEPROM_ESP.writeBytes(jackLabelEepromAddr(j), jackLabels[j], JACK_LABEL_MAX_LEN + 1);
+    EEPROM_ESP.commit();
+}
+
+void sendJackConfig(byte j)
+{
+    JsonDocument doc;
+    doc["type"] = "jack_config";
+    doc["jack"] = j;
+    doc["label"] = jackLabels[j];
+    sendJsonLine(doc);
+}
+
 void saveAllToEeprom()
 {
     for (byte i = 0; i < NUM_PADS; i++)
@@ -1111,6 +1156,10 @@ void saveAllToEeprom()
         EEPROM_ESP.write(EEPROM_HIHAT_INVERT_ADDR + i, padHihatInvert[i] ? 1 : 0);
         EEPROM_ESP.write(EEPROM_PEDAL_NOTE_ADDR + i, padPedalNote[i] ? 1 : 0);
         EEPROM_ESP.write(EEPROM_PEDAL_CC_ADDR + i, padPedalCC[i]);
+    }
+    for (byte j = 0; j < JACK_COUNT; j++)
+    {
+        EEPROM_ESP.writeBytes(jackLabelEepromAddr(j), jackLabels[j], JACK_LABEL_MAX_LEN + 1);
     }
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR, midiChannel);
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 1, midiOutput);
@@ -1154,6 +1203,15 @@ void loadAllFromEeprom()
             padPedalCC[i] = DEFAULT_PEDAL_CC;
         }
         rebuildPadName(i);
+    }
+    for (byte j = 0; j < JACK_COUNT; j++)
+    {
+        EEPROM_ESP.readBytes(jackLabelEepromAddr(j), jackLabels[j], JACK_LABEL_MAX_LEN + 1);
+        jackLabels[j][JACK_LABEL_MAX_LEN] = '\0';
+        if (!jackLabelValid(jackLabels[j]))
+        {
+            jackLabels[j][0] = '\0';
+        }
     }
     recomputeChannelPrimary();
 
@@ -1264,6 +1322,16 @@ void applyFactoryPreset()
     }
 
     setFactoryPad(24, PAD_CYMBAL_3ZONE, "Ride 1", 60, 62, 61);
+
+    // Apelidos dos jacks na tela LIVE (max JACK_LABEL_MAX_LEN = 6).
+    static const char *JACK_NAMES[JACK_COUNT] = {
+        "HHC", "HH", "KICK", "SNARE", "TOM1", "TOM2", "TOM3", "TOM4",
+        "CYM1", "CYM2", "CYM3", "CYM4", "RIDE", "XTRA1", "XTRA2", "XTRA3"};
+    for (byte j = 0; j < JACK_COUNT; j++)
+    {
+        strncpy(jackLabels[j], JACK_NAMES[j], JACK_LABEL_MAX_LEN);
+        jackLabels[j][JACK_LABEL_MAX_LEN] = '\0';
+    }
 
     // O 2o canal dos pads de 2 zonas (Snare, Toms, Ride) fica consumido -
     // enabled nao importa pra ele (so' o do primario conta).
@@ -1591,6 +1659,41 @@ void handleSerialCommand(const String &line)
         }
         sendPadConfig(pad);
     }
+    else if (strcmp(cmd, "get_jacks") == 0)
+    {
+        for (byte j = 0; j < JACK_COUNT; j++)
+        {
+            sendJackConfig(j);
+        }
+    }
+    else if (strcmp(cmd, "set_jack") == 0)
+    {
+        // {"cmd":"set_jack","jack":0,"field":"label","value":"Caixa"} -
+        // apelido do jack na tela LIVE. Resposta: jack_config.
+        int jack = doc["jack"] | -1;
+        const char *field = doc["field"] | "";
+        const char *label = doc["value"] | "";
+        if (jack < 0 || jack >= JACK_COUNT)
+        {
+            sendError(cmd, "invalid_jack");
+            return;
+        }
+        if (strcmp(field, "label") != 0)
+        {
+            sendError(cmd, "unknown_field");
+            return;
+        }
+        if (!jackLabelValid(label))
+        {
+            sendError(cmd, "invalid_label");
+            return;
+        }
+        strncpy(jackLabels[jack], label, JACK_LABEL_MAX_LEN);
+        jackLabels[jack][JACK_LABEL_MAX_LEN] = '\0';
+        persistJackLabel(jack);
+        forceScreenRedraw = true;
+        sendJackConfig(jack);
+    }
     else if (strcmp(cmd, "get_all_pads") == 0)
     {
         for (byte i = 0; i < NUM_PADS; i++)
@@ -1628,6 +1731,10 @@ void handleSerialCommand(const String &line)
         {
             sendPadConfig(i);
         }
+        for (byte j = 0; j < JACK_COUNT; j++)
+        {
+            sendJackConfig(j);
+        }
         sendLog("Configuracao restaurada (restore_all).");
         sendDeviceInfo();
     }
@@ -1647,6 +1754,10 @@ void handleSerialCommand(const String &line)
         for (byte i = 0; i < NUM_PADS; i++)
         {
             sendPadConfig(i);
+        }
+        for (byte j = 0; j < JACK_COUNT; j++)
+        {
+            sendJackConfig(j);
         }
         sendLog("Padrao de fabrica restaurado (factory_reset).");
         sendDeviceInfo();
@@ -1793,6 +1904,11 @@ void fireControlChange(byte cc, byte value)
 #define PAD_DECAY_MS 180 // ...decaindo (borda) ate 180ms
 
 unsigned long padHitAtMs[NUM_PADS] = {0};
+// Ultima batida por CANAL fisico (tip/ring) - a LIVE mostra 1 celula por
+// jack com um indicador pra cada canal. Num pad de 2 zonas a zona principal
+// (hit) e' o proprio canal (tip) e as outras (hitRim/hitCup) vem do sensor
+// do 2o canal (ring).
+unsigned long chanHitAtMs[NUM_PADS] = {0};
 
 // Le o resultado do metodo de sensing ja chamado pra esse pad (ver
 // dispatchSensing()) e decide o que enviar via hit/MIDI, de acordo com o
@@ -1805,6 +1921,15 @@ void handlePadResult(byte i)
     if (pad.hit || pad.hitRim || pad.hitCup)
     {
         padHitAtMs[i] = millis();
+    }
+    if (pad.hit)
+    {
+        chanHitAtMs[i] = millis();
+    }
+    if (pad.hitRim || pad.hitCup)
+    {
+        byte ch = (padTypeUsesSecondChannel(type) && i + 1 < NUM_PADS) ? i + 1 : i;
+        chanHitAtMs[ch] = millis();
     }
 
     switch (type)
@@ -3699,19 +3824,17 @@ void renderBoot()
     printCentered(versionLine, 110);
 }
 
-// Grade 8x4 ocupando a tela em paisagem (160x116 abaixo da barra de
-// titulo), agrupada como a jackboard (2026-09-27): os 2 canais de cada jack
-// (tip + ring) ficam colados, com um respiro maior entre jacks e entre as
-// 2 placas (linhas 1-2 = placa A, pads 1-16; linhas 3-4 = placa B). Pad de
-// 2 zonas comecando no tip vira uma celula larga ocupando o jack inteiro.
-#define LIVE_GRID_CELL_W 17
-#define LIVE_GRID_INNER 1  // folga entre tip e ring do mesmo jack
-#define LIVE_PAIR_PITCH 40 // 2 celulas + folga interna + 5px entre jacks
-#define LIVE_GRID_X0 2
-#define LIVE_GRID_Y0 14
-#define LIVE_GRID_PITCH_Y 27
-#define LIVE_GRID_CELL_H 24
-#define LIVE_BOARD_GAP 4 // respiro extra entre a placa A e a placa B
+// Grade 4x4 - 1 celula por JACK (tip + ring), 2026-09-27. Linhas 1-2 =
+// placa A (jacks 1-8), linhas 3-4 = placa B (jacks 9-16), com um respiro
+// extra entre elas. Cada celula: numero do jack + 2 indicadores (tip/ring)
+// na linha de cima e o apelido (jackLabels[], max 6 chars) embaixo.
+#define LIVE_CELL_W 39
+#define LIVE_PITCH_X 40
+#define LIVE_X0 0
+#define LIVE_CELL_H 25
+#define LIVE_PITCH_Y 27
+#define LIVE_Y0 14
+#define LIVE_BOARD_GAP 4
 
 // Pad primario de 2 zonas comecando num RING - configuracao salva antes da
 // regra do tip (padTypeAllowedAt()) existir. Continua funcionando, mas a 2a
@@ -3746,48 +3869,95 @@ const char *secondZoneName(byte type)
     }
 }
 
-void renderLivePad(byte i)
+// Texto da celula do jack: apelido; sem apelido, o nome do pad do tip (ou
+// do ring); sem nada, "--". Sempre cortado em JACK_LABEL_MAX_LEN.
+void jackDisplayName(byte j, char *out)
 {
-    // Ring de um pad de 2 zonas bem configurado: ja' desenhado dentro da
-    // celula larga do tip.
-    if (i > 0 && !channelPrimary[i] && !padConsumedAcrossJacks(i))
+    byte tip = 2 * j;
+    byte ring = tip + 1;
+    const char *src = "--";
+    if (jackLabels[j][0] != '\0')
     {
-        return;
+        src = jackLabels[j];
     }
+    else if (channelPrimary[tip] && padLabels[tip][0] != '\0')
+    {
+        src = padLabels[tip];
+    }
+    else if (ring < NUM_PADS && channelPrimary[ring] && padLabels[ring][0] != '\0')
+    {
+        src = padLabels[ring];
+    }
+    strncpy(out, src, JACK_LABEL_MAX_LEN);
+    out[JACK_LABEL_MAX_LEN] = '\0';
+}
 
-    byte col = i % 8;
-    byte row = i / 8;
-    int x = LIVE_GRID_X0 + (col / 2) * LIVE_PAIR_PITCH + (col % 2) * (LIVE_GRID_CELL_W + LIVE_GRID_INNER);
-    int y = LIVE_GRID_Y0 + row * LIVE_GRID_PITCH_Y + (row >= 2 ? LIVE_BOARD_GAP : 0);
-    bool wide = channelPrimary[i] && padTypeUsesSecondChannel(padTypes[i]) && padIsJackTip(i);
-    int w = wide ? 2 * LIVE_GRID_CELL_W + LIVE_GRID_INNER : LIVE_GRID_CELL_W;
+// Jack "ligado" se algum dos 2 canais tem um pad primario habilitado.
+bool jackActive(byte j)
+{
+    byte tip = 2 * j;
+    byte ring = tip + 1;
+    return (channelPrimary[tip] && padEnabled[tip]) || (ring < NUM_PADS && channelPrimary[ring] && padEnabled[ring]);
+}
 
-    unsigned long since = millis() - padHitAtMs[i];
-    bool solid = padHitAtMs[i] != 0 && since < PAD_FLASH_MS;
-    bool decay = padHitAtMs[i] != 0 && since >= PAD_FLASH_MS && since < PAD_DECAY_MS;
+void renderLiveJack(byte j)
+{
+    byte col = j % 4;
+    byte row = j / 4;
+    int x = LIVE_X0 + col * LIVE_PITCH_X;
+    int y = LIVE_Y0 + row * LIVE_PITCH_Y + (row >= 2 ? LIVE_BOARD_GAP : 0);
+    byte tip = 2 * j;
+    byte ring = tip + 1;
 
-    // Canal desligado (padEnabled[i] == false): nunca acende (nunca chega
-    // a ter hit), so' desenha "apagado" - sem borda visivel, numero bem
-    // fraco - pra distinguir de um canal ligado que so' esta' ocioso.
-    bool off = channelPrimary[i] && !padEnabled[i];
-    bool warn = padCrossesJacks(i) || padConsumedAcrossJacks(i);
-    bool consumed = !channelPrimary[i];
+    unsigned long now = millis();
+    unsigned long last = max(chanHitAtMs[tip], chanHitAtMs[ring]);
+    unsigned long since = now - last;
+    bool solid = last != 0 && since < PAD_FLASH_MS;
+    bool decay = last != 0 && since >= PAD_FLASH_MS && since < PAD_DECAY_MS;
+    bool tipOn = chanHitAtMs[tip] != 0 && now - chanHitAtMs[tip] < PAD_DECAY_MS;
+    bool ringOn = chanHitAtMs[ring] != 0 && now - chanHitAtMs[ring] < PAD_DECAY_MS;
+
+    // Jack sem nenhum canal ligado: "apagado" (sem borda, texto fraco).
+    bool off = !jackActive(j);
+    bool warn = padCrossesJacks(tip) || padConsumedAcrossJacks(tip) || padCrossesJacks(ring) || padConsumedAcrossJacks(ring);
 
     uint16_t bg = solid ? COL_HIT : COL_BG;
-    uint16_t border = off ? COL_BG : solid ? COL_HIT : decay ? COL_HIT : warn ? COL_EDIT : COL_LINE;
-    uint16_t fg = off || consumed ? COL_LINE : solid ? COL_BG : decay ? COL_HIT : COL_TXT_DIM;
+    uint16_t border = off ? COL_BG : (solid || decay) ? COL_HIT : warn ? COL_EDIT : COL_LINE;
+    uint16_t numColor = solid ? COL_BG : off ? COL_LINE : COL_TXT_DIM;
+    uint16_t nameColor = solid ? COL_BG : off ? COL_LINE : COL_TXT;
 
-    canvas.fillRect(x, y, w, LIVE_GRID_CELL_H, bg);
-    canvas.drawRect(x, y, w, LIVE_GRID_CELL_H, border);
+    canvas.fillRect(x, y, LIVE_CELL_W, LIVE_CELL_H, bg);
+    canvas.drawRect(x, y, LIVE_CELL_W, LIVE_CELL_H, border);
 
-    char buf[3];
-    snprintf(buf, sizeof(buf), "%02d", i + 1);
     canvas.setTextSize(1);
-    canvas.setTextColor(fg);
-    // "01".."32" (2 chars, textSize 1) mede uns 11px de largura - centraliza
-    // na celula (normal ou larga).
-    canvas.setCursor(x + (w - 11) / 2, y + (LIVE_GRID_CELL_H - 8) / 2);
-    canvas.print(buf);
+    char num[3];
+    snprintf(num, sizeof(num), "%02d", j + 1);
+    canvas.setTextColor(numColor);
+    canvas.setCursor(x + 3, y + 3);
+    canvas.print(num);
+
+    // Indicadores tip / ring (canto superior direito): cheio = batida
+    // recente naquele canal.
+    for (byte k = 0; k < 2; k++)
+    {
+        bool on = k == 0 ? tipOn : ringOn;
+        int ix = x + LIVE_CELL_W - 13 + k * 6;
+        if (on)
+        {
+            canvas.fillRect(ix, y + 4, 4, 4, solid ? COL_BG : COL_HIT);
+        }
+        else
+        {
+            canvas.drawRect(ix, y + 4, 4, 4, solid ? COL_BG : COL_LINE);
+        }
+    }
+
+    char name[JACK_LABEL_MAX_LEN + 1];
+    jackDisplayName(j, name);
+    int textW = 6 * (int)strlen(name) - 1;
+    canvas.setTextColor(nameColor);
+    canvas.setCursor(x + (LIVE_CELL_W - textW) / 2, y + 14);
+    canvas.print(name);
 }
 
 // Retorna true se algo foi desenhado nesse frame (o canvas precisa ser
@@ -3805,24 +3975,24 @@ bool renderLive()
         canvas.setTextColor(bleMidiConnected ? COL_OK : COL_LINE);
         canvas.setCursor(canvas.width() - 10, 2);
         canvas.print("B");
-        for (byte i = 0; i < NUM_PADS; i++)
+        for (byte j = 0; j < JACK_COUNT; j++)
         {
-            renderLivePad(i);
+            renderLiveJack(j);
         }
         forceScreenRedraw = false;
         return true;
     }
 
-    // Nunca redesenha a grade inteira - so' os pads cujo estado (solido /
+    // Nunca redesenha a grade inteira - so' os jacks cujo estado (solido /
     // decaindo / idle) pode ter mudado desde o ultimo frame.
     bool any = false;
     unsigned long now = millis();
-    for (byte i = 0; i < NUM_PADS; i++)
+    for (byte j = 0; j < JACK_COUNT; j++)
     {
-        unsigned long since = now - padHitAtMs[i];
-        if (padHitAtMs[i] != 0 && since <= PAD_DECAY_MS + 20)
+        unsigned long last = max(chanHitAtMs[2 * j], chanHitAtMs[2 * j + 1]);
+        if (last != 0 && now - last <= PAD_DECAY_MS + 20)
         {
-            renderLivePad(i);
+            renderLiveJack(j);
             any = true;
         }
     }

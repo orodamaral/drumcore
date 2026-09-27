@@ -10,7 +10,7 @@
 // no 1º canal do jack (tip) - e aí tip = pele/corpo, ring = aro/borda, o
 // padrão dos pads de mercado. Começando no ring eles "atravessam" pro jack
 // seguinte, o que não funciona com um cabo estéreo só.
-import { PadConfig, PadType, PAD_TYPE_META } from './protocol'
+import { JACK_LABEL_MAX_LEN, PadConfig, PadType, PAD_TYPE_META } from './protocol'
 
 export const JACKS_PER_BOARD = 8
 
@@ -54,4 +54,21 @@ const TWO_CHANNEL_ZONES: Partial<Record<PadType, [string, string]>> = {
 
 export function twoChannelZones(type: PadType): [string, string] {
   return TWO_CHANNEL_ZONES[type] ?? ['zona 1', 'zona 2']
+}
+
+/** Só ASCII imprimível (a fonte da tela não tem acentos): "Condução" -> "Conduc". */
+export function sanitizeJackLabel(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7e]/g, '')
+    .slice(0, JACK_LABEL_MAX_LEN)
+}
+
+/** O que a LIVE mostra sem apelido: nome do pad do tip (ou do ring), cortado em 6. */
+export function jackFallbackName(pads: Array<PadConfig | undefined>, jack: number): string {
+  const tip = pads[2 * jack]
+  const ring = pads[2 * jack + 1]
+  const name = (tip?.primary && tip.label) || (ring?.primary && ring.label) || ''
+  return sanitizeJackLabel(name)
 }

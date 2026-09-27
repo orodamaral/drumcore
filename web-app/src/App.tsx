@@ -66,6 +66,7 @@ export default function App() {
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([])
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [factoryOpen, setFactoryOpen] = useState(false)
+  const [jackLabels, setJackLabels] = useState<Record<number, string>>({})
   const [importing, setImporting] = useState<{ fileName: string; parsed: ParsedConfig } | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const [redoStack, setRedoStack] = useState<HistoryEntry[]>([])
@@ -88,7 +89,7 @@ export default function App() {
   // pad_config (label/pad_type/enabled/hihat_*) ou error; set_global responde
   // ack. O próximo comando só sai depois dessa resposta (ou do timeout), pra
   // não estourar o buffer serial.
-  const pendingReply = useRef<{ expect: 'ack' | 'config' | 'global'; pad: number; resolve: () => void } | null>(null)
+  const pendingReply = useRef<{ expect: 'ack' | 'config' | 'global' | 'jack'; pad: number; resolve: () => void } | null>(null)
   const batchErrors = useRef(0)
   const padsRef = useRef(pads)
   padsRef.current = pads
@@ -111,10 +112,10 @@ export default function App() {
     return () => clearTimeout(t)
   }, [toast])
 
-  function resolveReply(kind?: 'ack' | 'config' | 'global' | 'error', pad?: number): void {
+  function resolveReply(kind?: 'ack' | 'config' | 'global' | 'jack' | 'error', pad?: number): void {
     const r = pendingReply.current
     if (!r) return
-    if (kind && kind !== 'error' && (kind !== r.expect || (kind === 'config' && pad !== r.pad))) return
+    if (kind && kind !== 'error' && (kind !== r.expect || ((kind === 'config' || kind === 'jack') && pad !== r.pad))) return
     if (kind === 'error') batchErrors.current++
     pendingReply.current = null
     r.resolve()
@@ -145,6 +146,10 @@ export default function App() {
         }))
         if (followRef.current) setSelectedPad(message.pad)
         break
+      case 'jack_config':
+        setJackLabels((prev) => ({ ...prev, [message.jack]: message.label }))
+        resolveReply('jack', message.jack)
+        break
       case 'autotune_status':
         setAutoTune(message)
         break
@@ -153,7 +158,7 @@ export default function App() {
         break
       case 'error':
         appendLog(`Erro (${message.cmd}): ${message.message}`, 'error')
-        if (message.cmd === 'set_pad' || message.cmd === 'set_global') resolveReply('error')
+        if (message.cmd === 'set_pad' || message.cmd === 'set_global' || message.cmd === 'set_jack') resolveReply('error')
         break
       case 'ack': {
         appendLog(`OK: pad ${message.pad + 1} ${message.field} = ${message.value}`)
@@ -213,6 +218,7 @@ export default function App() {
       mockDeviceRef.current = mock
       setConnected(true)
       send({ cmd: 'get_all_pads' })
+      send({ cmd: 'get_jacks' })
       send({ cmd: 'get_device_info' })
       return
     }
@@ -234,6 +240,7 @@ export default function App() {
     }
     setConnected(true)
     send({ cmd: 'get_all_pads' })
+    send({ cmd: 'get_jacks' })
     send({ cmd: 'get_device_info' })
   }
 
@@ -250,6 +257,7 @@ export default function App() {
     setPads({})
     setLastHit(null)
     setHitHistory({})
+    setJackLabels({})
     setUndoStack([])
     setRedoStack([])
     setBleConnected(false)
@@ -308,6 +316,10 @@ export default function App() {
 
   function setPadHihatInvert(pad: number, invert: boolean): void {
     send({ cmd: 'set_pad', pad, field: 'hihat_invert', value: invert ? 1 : 0 })
+  }
+
+  function setJackLabel(jack: number, label: string): void {
+    send({ cmd: 'set_jack', jack, field: 'label', value: label })
   }
 
   function setPadPedalNote(pad: number, enabled: boolean): void {
@@ -372,14 +384,20 @@ export default function App() {
         }, 1500)
         const cmd = op.cmd ?? 'set_pad'
         pendingReply.current = {
-          expect: cmd === 'set_global' ? 'global' : repliesWithPadConfig(op.field) ? 'config' : 'ack',
+          expect: cmd === 'set_global' ? 'global' : cmd === 'set_jack' ? 'jack' : repliesWithPadConfig(op.field) ? 'config' : 'ack',
           pad: op.pad,
           resolve: () => {
             clearTimeout(timer)
             resolve()
           }
         }
-        send(cmd === 'set_global' ? { cmd, field: op.field, value: op.value } : { cmd, pad: op.pad, field: op.field, value: op.value })
+        send(
+          cmd === 'set_global'
+            ? { cmd, field: op.field, value: op.value }
+            : cmd === 'set_jack'
+              ? { cmd, jack: op.pad, field: op.field, value: op.value }
+              : { cmd, pad: op.pad, field: op.field, value: op.value }
+        )
       })
       done++
       setBatch((b) => (b ? { ...b, done } : b))
@@ -412,7 +430,7 @@ export default function App() {
   }
 
   function exportConfig(): void {
-    const data = buildConfigFile(padList, global, firmwareVersion, midiMapId)
+    const data = buildConfigFile(padList, global, firmwareVersion, midiMapId, jackLabels)
     const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -764,6 +782,7 @@ export default function App() {
               followHits={followHits}
               onFollowHitsChange={setFollowHits}
               onSelect={setSelectedPad}
+              jackLabels={jackLabels}
             />
             <PadEditor
               pad={pads[selectedPad]}
@@ -791,6 +810,8 @@ export default function App() {
               onChangeEnabled={(enabled) => setPadEnabled(selectedPad, enabled)}
               onChangeHihatInvert={(invert) => setPadHihatInvert(selectedPad, invert)}
               onChangePedalNote={(enabled) => setPadPedalNote(selectedPad, enabled)}
+              jackLabels={jackLabels}
+              onRenameJack={setJackLabel}
               autoTune={autoTune?.pad === selectedPad ? autoTune : null}
               onStartAutoTune={() => startAutoTune(selectedPad)}
               onCancelAutoTune={cancelAutoTune}
@@ -808,6 +829,7 @@ export default function App() {
             parsed={importing.parsed}
             pads={padList}
             global={global}
+            jackLabels={jackLabels}
             onClose={() => setImporting(null)}
             onRun={runImport}
           />

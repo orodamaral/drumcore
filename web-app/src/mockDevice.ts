@@ -42,6 +42,8 @@ export class MockDevice {
   private bleTimer: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout> | null = null
   private bleConnected = false
   private global = { midi_channel: 10, midi_output: 2 as 0 | 1 | 2 }
+  // Apelidos dos jacks (tela LIVE) - espelho de jackLabels[] no firmware.
+  private jackLabels: string[] = Array.from({ length: 16 }, () => '')
 
   // Simulacao do assistente de auto-tune (Fase O) - so' pra demonstrar a UI,
   // nao ha' ADC de verdade pra medir. Ver docs/01-decisoes-arquiteturais.md.
@@ -105,6 +107,7 @@ export class MockDevice {
       set(17 + 2 * k, 9, `Choke ${k + 1}`, c)
     })
     set(24, 5, 'Ride 1', 60, 62, 61)
+    this.jackLabels = ['HHC', 'HH', 'KICK', 'SNARE', 'TOM1', 'TOM2', 'TOM3', 'TOM4', 'CYM1', 'CYM2', 'CYM3', 'CYM4', 'RIDE', 'XTRA1', 'XTRA2', 'XTRA3']
     this.recomputePrimary()
     this.pads.forEach((p, i) => {
       if (!this.primary[i]) p.enabled = true
@@ -308,6 +311,25 @@ export class MockDevice {
         this.emit(this.deviceInfo())
         break
 
+      case 'get_jacks':
+        this.jackLabels.forEach((label, jack) => this.emit({ type: 'jack_config', jack, label }))
+        break
+
+      case 'set_jack': {
+        const c = cmd as { jack?: number; field?: string; value?: unknown }
+        if (typeof c.jack !== 'number' || c.jack < 0 || c.jack >= this.jackLabels.length) {
+          this.emit({ type: 'error', cmd: 'set_jack', message: 'invalid_jack' })
+          break
+        }
+        if (typeof c.value !== 'string' || c.value.length > 6 || !/^[\x20-\x7e]*$/.test(c.value)) {
+          this.emit({ type: 'error', cmd: 'set_jack', message: 'invalid_label' })
+          break
+        }
+        this.jackLabels[c.jack] = c.value
+        this.emit({ type: 'jack_config', jack: c.jack, label: c.value })
+        break
+      }
+
       case 'factory_reset':
         if ((cmd as { confirm?: boolean }).confirm !== true) {
           this.emit({ type: 'error', cmd: 'factory_reset', message: 'confirm_required' })
@@ -315,6 +337,7 @@ export class MockDevice {
         }
         this.applyFactoryPreset()
         this.pads.forEach((_, i) => this.emitPadConfig(i))
+        this.jackLabels.forEach((label, jack) => this.emit({ type: 'jack_config', jack, label }))
         this.emit({ type: 'log', message: 'Padrao de fabrica restaurado (factory_reset). (simulado)' })
         this.emit(this.deviceInfo())
         break

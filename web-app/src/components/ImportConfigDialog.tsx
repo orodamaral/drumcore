@@ -8,6 +8,7 @@ interface Props {
   parsed: ParsedConfig
   pads: Array<PadConfig | undefined>
   global: GlobalConfig
+  jackLabels: Record<number, string>
   onClose: () => void
   onRun: (ops: BatchOp[], label: string) => void
 }
@@ -17,7 +18,7 @@ function formatDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-export default function ImportConfigDialog({ fileName, parsed, pads, global, onClose, onRun }: Props) {
+export default function ImportConfigDialog({ fileName, parsed, pads, global, jackLabels, onClose, onRun }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
   const currentMap = useMidiMap()
   const setMapId = useSetMidiMap()
@@ -32,8 +33,8 @@ export default function ImportConfigDialog({ fileName, parsed, pads, global, onC
   }, [])
 
   const plan = useMemo(
-    () => planImport(file, pads, global, { names, global: withGlobal }),
-    [file, pads, global, names, withGlobal]
+    () => planImport(file, pads, global, { names, global: withGlobal }, jackLabels),
+    [file, pads, global, names, withGlobal, jackLabels]
   )
   const warnings = [...parsed.warnings, ...plan.warnings]
   const named = file.pads.filter((p) => p.label).map((p) => p.label)
@@ -87,7 +88,7 @@ export default function ImportConfigDialog({ fileName, parsed, pads, global, onC
           </label>
           <label className="check">
             <input type="checkbox" checked={names} onChange={(e) => setNames(e.target.checked)} />
-            Nomes dos pads
+            Nomes dos pads e apelidos dos jacks
           </label>
           <label className="check">
             <input type="checkbox" checked={withGlobal} onChange={(e) => setWithGlobal(e.target.checked)} />

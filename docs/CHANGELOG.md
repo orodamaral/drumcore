@@ -2,6 +2,23 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-27 — Tela LIVE com 1 célula por jack e apelido do jack
+
+- **LIVE**: grade 4×4 com os **16 jacks** (antes 32 canais), placa A nas
+  linhas 1–2 e B nas 3–4. Cada célula mostra o número do jack, 2
+  indicadores (tip / ring — acendem no canal que recebeu a batida; num pad
+  de 2 zonas o aro/borda conta como ring) e o **apelido**.
+- **Apelido do jack**: até **6 caracteres** ASCII — o máximo que cabe na
+  célula de 39 px com a fonte 6×8 (6 × 6 − 1 = 35 px + 1 px de respiro de
+  cada lado). Sem apelido, a tela usa o nome do pad do tip (ou do ring).
+  Comandos novos `get_jacks` / `set_jack` e mensagem `jack_config`;
+  gravado numa área nova no fim da EEPROM (placas em uso começam sem
+  apelido).
+- ConfigTool: campo "Apelido do jack (tela LIVE)" no editor do pad (tira
+  acentos sozinho), apelido no cabeçalho de cada jack na lista, e
+  export/import levando os apelidos. Kit de fábrica com apelidos HHC, HH,
+  KICK, SNARE, TOM1–TOM4, CYM1–CYM4, RIDE e XTRA1–XTRA3.
+
 ## 2026-09-27 — Chimbal no padrão do Addictive Drums (CC de posição + nota fixa)
 
 - **Tipos "chimbal simples" e "chimbal 2 zonas" ocultos** (firmware e

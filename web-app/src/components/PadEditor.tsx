@@ -19,7 +19,8 @@ import {
 import { CURVE_NAMES, FIELD_UI, NOTE_FIELDS, padTypeLabel, SectionKey, SECTION_TITLES } from '../uiMeta'
 import { noteName, useMidiMap } from '../midiMaps'
 import MidiMapSelect from './MidiMapSelect'
-import { canStartTwoChannel, crossesJacks, jackLabel, jackOf, jackPos, twoChannelZones } from '../jacks'
+import JackLabelField from './JackLabelField'
+import { canStartTwoChannel, crossesJacks, jackFallbackName, jackLabel, jackOf, jackPos, twoChannelZones } from '../jacks'
 import PadActions from './PadActions'
 import { PadOp, PadSnapshot } from '../padActions'
 import ParamSlider, { InfoTip } from './ParamSlider'
@@ -51,6 +52,8 @@ interface Props {
   onChangeEnabled: (enabled: boolean) => void
   onChangeHihatInvert: (invert: boolean) => void
   onChangePedalNote: (enabled: boolean) => void
+  jackLabels: Record<number, string>
+  onRenameJack: (jack: number, label: string) => void
   /** Status do assistente de auto-calibração pra ESTE pad - null se não estiver rodando aqui. */
   autoTune: AutoTuneStatus | null
   onStartAutoTune: () => void
@@ -144,6 +147,8 @@ export default function PadEditor({
   onChangeEnabled,
   onChangeHihatInvert,
   onChangePedalNote,
+  jackLabels,
+  onRenameJack,
   autoTune,
   onStartAutoTune,
   onCancelAutoTune,
@@ -398,6 +403,12 @@ export default function PadEditor({
       <div className="editor-columns" key={activePad.pad}>
         <div className="editor-col">
           <Section title="Identificação">
+            <JackLabelField
+              jack={jackOf(activePad.pad)}
+              label={jackLabels[jackOf(activePad.pad)] ?? ''}
+              fallback={jackFallbackName(allPads, jackOf(activePad.pad))}
+              onCommit={(label) => onRenameJack(jackOf(activePad.pad), label)}
+            />
             <div className="param">
               <div className="param-head">
                 <label htmlFor="pad-type-select" className="param-label">

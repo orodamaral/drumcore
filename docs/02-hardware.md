@@ -298,6 +298,9 @@ GLOBAL > FABRICA na tela do módulo). Função `applyFactoryPreset()` em
 | 13 | Ride 1 prato 3 zonas (tip corpo, ring borda/cup) | | 60 / 62 / 61 |
 | 14–16 | desligado | desligado | — |
 
+Apelidos dos jacks na tela LIVE (até 6 caracteres): HHC, HH, KICK, SNARE,
+TOM1–TOM4, CYM1–CYM4, RIDE, XTRA1–XTRA3.
+
 Sensibilidade/threshold/scan/mask e demais parâmetros ficam nos valores
 iniciais da lib (100/10/10/30, gain 100%, sem crosstalk); canal MIDI 10,
 saída USB + BLE.

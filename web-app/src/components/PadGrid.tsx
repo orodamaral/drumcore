@@ -17,6 +17,8 @@ interface Props {
   followHits: boolean
   onFollowHitsChange: (follow: boolean) => void
   onSelect: (pad: number) => void
+  /** Apelidos dos jacks (tela LIVE) - aparecem no cabeçalho de cada bloco. */
+  jackLabels: Record<number, string>
 }
 
 export function isSelectable(pad: PadConfig | undefined): boolean {
@@ -31,7 +33,7 @@ export function stepPad(pads: Array<PadConfig | undefined>, from: number, dir: 1
   return from
 }
 
-export default function PadGrid({ pads, selectedPad, lastHit, followHits, onFollowHitsChange, onSelect }: Props) {
+export default function PadGrid({ pads, selectedPad, lastHit, followHits, onFollowHitsChange, onSelect, jackLabels }: Props) {
   const listRef = useRef<HTMLDivElement>(null)
   const map = useMidiMap()
 
@@ -169,6 +171,7 @@ export default function PadGrid({ pads, selectedPad, lastHit, followHits, onFoll
               >
                 <div className="jack-head">
                   <span>{jackLabel(j)}</span>
+                  {jackLabels[j] && <span className="jack-nick">{jackLabels[j]}</span>}
                   {warn && (
                     <span className="jack-warn" title={warn} aria-label={warn}>
                       ⚠

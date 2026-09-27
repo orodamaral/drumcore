@@ -23,6 +23,10 @@ export type PadField = (typeof PAD_FIELDS)[number]
 
 export const PAD_LABEL_MAX_LEN = 19
 
+// Apelido de cada jack (tip + ring) na tela LIVE do módulo - 6 caracteres
+// é o máximo que cabe na célula (ver JACK_LABEL_MAX_LEN em main.cpp).
+export const JACK_LABEL_MAX_LEN = 6
+
 // Tipos de sensor - ver docs/05-tipos-de-sensor.md. Nenhum tipo usa mais de
 // 2 canais (limitação da própria lib base).
 export const PAD_TYPES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const
@@ -365,6 +369,7 @@ export type IncomingMessage =
   | { type: 'ack'; cmd: string; pad: number; field: string; value: number }
   | { type: 'error'; cmd: string; message: string }
   | { type: 'log'; message: string }
+  | { type: 'jack_config'; jack: number; label: string }
 
 export function parseIncoming(line: string): IncomingMessage | null {
   try {

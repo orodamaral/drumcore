@@ -2493,3 +2493,18 @@ kbd {
 .pedal-note-switch {
   margin-top: 14px;
 }
+
+/* apelido do jack */
+
+.jack-label-input {
+  width: 140px;
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 0.04em;
+}
+
+.jack-nick {
+  color: var(--txt);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+}
