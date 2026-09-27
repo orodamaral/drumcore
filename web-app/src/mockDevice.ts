@@ -92,9 +92,11 @@ export class MockDevice {
       Object.assign(this.pads[i], { pad_type, label, name: nameFor(i, label), note, note_rim, note_cup, enabled: true })
       this.pads[i].uses_second_channel = usesSecondChannel(pad_type)
     }
+    // HH Pedal só com CC4 (sem chick) e HiHat como pad comum na nota 8 -
+    // o Addictive Drums decide aberto/fechado e o chick pelo CC.
     set(1, 6, 'HH Pedal', 48)
-    set(2, 2, 'HiHat', 57, 49)
-    this.pads[2].hihat_pedal_channel = 1
+    this.pads[1].pedal_note = false
+    set(2, 0, 'HiHat', 8)
     set(4, 0, 'Kick', 36)
     set(6, 8, 'Snare', 38, 43, 37)
     ;[[71, 72], [69, 70], [67, 68], [65, 66]].forEach(([n, r], t) => set(8 + 2 * t, 1, `Tom ${t + 1}`, n, r))
@@ -147,6 +149,8 @@ export class MockDevice {
       hihat_pedal_channel: -1,
       enabled: true,
       hihat_invert: false,
+      pedal_note: true,
+      pedal_cc: 4,
       openHH: true
     }
   }
@@ -645,6 +649,17 @@ export class MockDevice {
         return
       }
       pad.enabled = value === 1
+      this.emitPadConfig(pad.pad)
+      return
+    }
+
+    if (cmd.field === 'pedal_note') {
+      const value = typeof cmd.value === 'number' ? cmd.value : -1
+      if (value !== 0 && value !== 1) {
+        this.emit({ type: 'error', cmd: 'set_pad', message: 'value_out_of_range' })
+        return
+      }
+      pad.pedal_note = value === 1
       this.emitPadConfig(pad.pad)
       return
     }

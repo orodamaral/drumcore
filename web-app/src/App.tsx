@@ -310,6 +310,10 @@ export default function App() {
     send({ cmd: 'set_pad', pad, field: 'hihat_invert', value: invert ? 1 : 0 })
   }
 
+  function setPadPedalNote(pad: number, enabled: boolean): void {
+    send({ cmd: 'set_pad', pad, field: 'pedal_note', value: enabled ? 1 : 0 })
+  }
+
   function startAutoTune(pad: number): void {
     send({ cmd: 'start_autotune', pad })
   }
@@ -786,6 +790,7 @@ export default function App() {
               onChangeHihatLink={(channel) => changeHihatLink(selectedPad, channel)}
               onChangeEnabled={(enabled) => setPadEnabled(selectedPad, enabled)}
               onChangeHihatInvert={(invert) => setPadHihatInvert(selectedPad, invert)}
+              onChangePedalNote={(enabled) => setPadPedalNote(selectedPad, enabled)}
               autoTune={autoTune?.pad === selectedPad ? autoTune : null}
               onStartAutoTune={() => startAutoTune(selectedPad)}
               onCancelAutoTune={cancelAutoTune}

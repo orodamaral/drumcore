@@ -3,8 +3,8 @@ import { useEffect, useRef } from 'react'
 // Resumo do kit de fábrica - espelha applyFactoryPreset() no firmware
 // (main.cpp) e no mockDevice.ts. Notas do keymap do Addictive Drums 2.
 const KIT: Array<[string, string, string]> = [
-  ['1', 'desligado', 'HH Pedal (FSR / VH)'],
-  ['2', 'HiHat (ligado ao pedal)', 'desligado'],
+  ['1', 'desligado', 'HH Pedal (CC4, sem chick)'],
+  ['2', 'HiHat (nota 8)', 'desligado'],
   ['3', 'Kick', 'desligado'],
   ['4', 'Snare 3 zonas', '(borda / aro)'],
   ['5–8', 'Tom 1–4 (pele)', '(aro)'],

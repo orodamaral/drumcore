@@ -230,7 +230,6 @@ void bringUpNativeUsbHardware()
 // CC usado para a posicao do pedal de chimbal (pad.pedalCC, ja vem 0-127 da
 // lib). 4 = "Foot Controller" no GM - ajustar se o software do outro lado
 // esperar outro numero de CC.
-#define HIHAT_PEDAL_CC 4
 
 // Primeira nota MIDI usada (pad 0) - so para identificar cada canal nos
 // testes iniciais. O usuario pode reatribuir por pad via a tela ou o app.
@@ -291,6 +290,17 @@ bool padTypeUsesSecondChannel(byte type)
 bool padIsJackTip(byte pad)
 {
     return (pad % 2) == 0;
+}
+
+// Tipos "chimbal simples" / "chimbal 2 zonas" (nota muda com o pedal
+// linkado) ficam OCULTOS desde 2026-09-27: com softwares como o Addictive
+// Drums 2 o chimbal e' um pad comum com nota fixa e o software decide
+// aberto/fechado pelo CC do pedal. O codigo continua aqui e configs antigas
+// seguem funcionando - so' nao da' pra escolher esses tipos na tela (e o
+// app tambem nao oferece). set_pad ainda aceita (import de backups).
+bool padTypeHidden(byte type)
+{
+    return type == PAD_HIHAT_SINGLE || type == PAD_HIHAT_2ZONE;
 }
 
 bool padTypeAllowedAt(byte pad, byte type)
@@ -374,7 +384,13 @@ const char *padTypeShortName(byte type)
 #define EEPROM_XTALK_GROUP_ADDR (EEPROM_XTALK_ADDR + NUM_PADS)
 #define EEPROM_HIHAT_INVERT_ADDR (EEPROM_XTALK_GROUP_ADDR + NUM_PADS)
 #define EEPROM_GLOBAL_ADDR (EEPROM_HIHAT_INVERT_ADDR + NUM_PADS)
-#define EEPROM_SIZE (EEPROM_GLOBAL_ADDR + 2)
+// 2026-09-27: 2 areas novas no FIM do layout - os enderecos antigos nao
+// mudam, e EEPROM.begin() com tamanho maior preserva o conteudo e preenche
+// os bytes novos com 0xFF (placa ja' em uso le 0xFF = valor padrao, ver
+// loadAllFromEeprom()).
+#define EEPROM_PEDAL_NOTE_ADDR (EEPROM_GLOBAL_ADDR + 2)
+#define EEPROM_PEDAL_CC_ADDR (EEPROM_PEDAL_NOTE_ADDR + NUM_PADS)
+#define EEPROM_SIZE (EEPROM_PEDAL_CC_ADDR + NUM_PADS)
 #define EEPROM_INIT_MAGIC 0xA5
 
 #define padLabelEepromAddr(i) (EEPROM_NAMES_ADDR + (i) * PAD_LABEL_MAX_LEN)
@@ -481,6 +497,15 @@ byte padXtalkGroup[NUM_PADS];
 // handlePadResult(). Fase X - ver docs/01-decisoes-arquiteturais.md.
 bool padHihatInvert[NUM_PADS];
 
+// So' relevantes pra padTypeIsHihatPedal() (controlador de pedal, 2026-09-27).
+// padPedalNote: false = o pedal nao manda a nota de "chick" ao fechar, so'
+// o CC de posicao - softwares como o Addictive Drums 2 geram o chick sozinhos
+// a partir do CC. padPedalCC: numero do CC de posicao (4 = Foot Controller,
+// padrao de quase todo software de bateria).
+bool padPedalNote[NUM_PADS];
+byte padPedalCC[NUM_PADS];
+#define DEFAULT_PEDAL_CC 4
+
 // chokeTouched[i]: estado atual do sensor de contato (PAD_CHOKE) - so'
 // dispara nota na borda de subida (nao tocado -> tocado), pra segurar a
 // fita encostada nao repetir a nota. Ver dispatchChoke(). Fase Choke -
@@ -573,6 +598,8 @@ enum FieldId
     FIELD_XTALK,
     FIELD_XTALK_GROUP,
     FIELD_HIHAT_INVERT,
+    FIELD_PEDAL_NOTE,
+    FIELD_PEDAL_CC,
     FIELD_VIEW_SIGNAL, // Fase Y - clicar aqui abre a tela SIGNAL (antes era o click do ENC1)
 };
 
@@ -585,7 +612,7 @@ struct FieldDef
     bool accelerates; // true pros campos 1-127 (design/SPEC.md: acelera >8 detents/s)
 };
 
-#define MAX_FIELDS_PER_PAD 18
+#define MAX_FIELDS_PER_PAD 20
 
 byte getFieldsForType(byte padType, FieldDef *out)
 {
@@ -641,6 +668,12 @@ byte getFieldsForType(byte padType, FieldDef *out)
 
     out[n++] = {FIELD_CURVE, "CURVA", 0, 4, false};
     out[n++] = {FIELD_NOTE, "NOTA", 0, 127, true};
+
+    if (padTypeIsHihatPedal(padType))
+    {
+        out[n++] = {FIELD_PEDAL_NOTE, "CHICK", 0, 1, false};
+        out[n++] = {FIELD_PEDAL_CC, "CC", 0, 127, true};
+    }
 
     if (padType == PAD_DUAL)
     {
@@ -727,6 +760,10 @@ int getFieldValue(byte padIndex, FieldId id)
         return hihatPedalChannel[padIndex] == PAD_NO_LINK ? -1 : hihatPedalChannel[padIndex];
     case FIELD_HIHAT_INVERT:
         return padHihatInvert[padIndex] ? 1 : 0;
+    case FIELD_PEDAL_NOTE:
+        return padPedalNote[padIndex] ? 1 : 0;
+    case FIELD_PEDAL_CC:
+        return padPedalCC[padIndex];
     }
     return 0;
 }
@@ -804,6 +841,12 @@ void setFieldValue(byte padIndex, FieldId id, int value)
         break;
     case FIELD_HIHAT_INVERT:
         padHihatInvert[padIndex] = (value != 0);
+        break;
+    case FIELD_PEDAL_NOTE:
+        padPedalNote[padIndex] = (value != 0);
+        break;
+    case FIELD_PEDAL_CC:
+        padPedalCC[padIndex] = constrain(value, 0, 127);
         break;
     }
     unsavedChanges = true;
@@ -987,6 +1030,8 @@ void sendPadConfig(byte padIndex)
     doc["xtalk"] = padXtalk[padIndex];
     doc["xtalk_group"] = padXtalkGroup[padIndex];
     doc["hihat_invert"] = padHihatInvert[padIndex];
+    doc["pedal_note"] = padPedalNote[padIndex];
+    doc["pedal_cc"] = padPedalCC[padIndex];
     sendJsonLine(doc);
 }
 
@@ -1038,6 +1083,18 @@ void persistPadHihatInvert(byte i)
     EEPROM_ESP.commit();
 }
 
+void persistPadPedalNote(byte i)
+{
+    EEPROM_ESP.write(EEPROM_PEDAL_NOTE_ADDR + i, padPedalNote[i] ? 1 : 0);
+    EEPROM_ESP.commit();
+}
+
+void persistPadPedalCC(byte i)
+{
+    EEPROM_ESP.write(EEPROM_PEDAL_CC_ADDR + i, padPedalCC[i]);
+    EEPROM_ESP.commit();
+}
+
 void saveAllToEeprom()
 {
     for (byte i = 0; i < NUM_PADS; i++)
@@ -1052,6 +1109,8 @@ void saveAllToEeprom()
         EEPROM_ESP.write(EEPROM_XTALK_ADDR + i, padXtalk[i]);
         EEPROM_ESP.write(EEPROM_XTALK_GROUP_ADDR + i, padXtalkGroup[i]);
         EEPROM_ESP.write(EEPROM_HIHAT_INVERT_ADDR + i, padHihatInvert[i] ? 1 : 0);
+        EEPROM_ESP.write(EEPROM_PEDAL_NOTE_ADDR + i, padPedalNote[i] ? 1 : 0);
+        EEPROM_ESP.write(EEPROM_PEDAL_CC_ADDR + i, padPedalCC[i]);
     }
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR, midiChannel);
     EEPROM_ESP.write(EEPROM_GLOBAL_ADDR + 1, midiOutput);
@@ -1086,6 +1145,14 @@ void loadAllFromEeprom()
             padXtalkGroup[i] = 0;
         }
         padHihatInvert[i] = EEPROM_ESP.read(EEPROM_HIHAT_INVERT_ADDR + i) != 0;
+        // 0xFF = byte novo numa placa gravada antes desses campos existirem -
+        // mantem o comportamento antigo (manda o chick, CC 4).
+        padPedalNote[i] = EEPROM_ESP.read(EEPROM_PEDAL_NOTE_ADDR + i) != 0;
+        padPedalCC[i] = EEPROM_ESP.read(EEPROM_PEDAL_CC_ADDR + i);
+        if (padPedalCC[i] > 127)
+        {
+            padPedalCC[i] = DEFAULT_PEDAL_CC;
+        }
         rebuildPadName(i);
     }
     recomputeChannelPrimary();
@@ -1135,8 +1202,8 @@ void setFactoryPad(byte i, byte type, const char *label, byte note, byte noteRim
 // factory_reset / GLOBAL > FABRICA). So' monta o estado em RAM - quem chama
 // grava com saveAllToEeprom().
 //
-//   Jack  1  tip: desligado          ring: HH Pedal (FSR/VH)   48
-//   Jack  2  tip: HiHat (-> pedal)   ring: desligado           57 aberto / 49 fechado
+//   Jack  1  tip: desligado          ring: HH Pedal (FSR/VH)   CC4, sem chick (48 se ligar)
+//   Jack  2  tip: HiHat simples      ring: desligado           8 (AD2 "HiHat CC Tip")
 //   Jack  3  tip: Kick               ring: desligado           36
 //   Jack  4  Snare 3 zonas (tip + ring)                        38 / 43 borda / 37 aro
 //   Jack 5-8 Tom 1-4 dual (tip pele, ring aro)                 71/72 69/70 67/68 65/66
@@ -1165,11 +1232,16 @@ void applyFactoryPreset()
         padXtalk[i] = 0;        // sem supressao de crosstalk
         padXtalkGroup[i] = 0;   // sem grupo
         padHihatInvert[i] = false;
+        padPedalNote[i] = true;
+        padPedalCC[i] = DEFAULT_PEDAL_CC;
     }
 
+    // HH Pedal so' com CC4 (sem chick) e HiHat como pad comum na nota 8
+    // ("HiHat CC Tip" do AD2) - o Addictive Drums decide aberto/fechado e o
+    // chick pelo CC do pedal.
     setFactoryPad(1, PAD_HIHAT_PEDAL, "HH Pedal", 48, 39, 40);
-    setFactoryPad(2, PAD_HIHAT_SINGLE, "HiHat", 57, 49, 40);
-    hihatPedalChannel[2] = 1;
+    padPedalNote[1] = false;
+    setFactoryPad(2, PAD_SINGLE, "HiHat", 8, 39, 40);
     setFactoryPad(4, PAD_SINGLE, "Kick", 36, 39, 40);
     setFactoryPad(6, PAD_SNARE_3ZONE, "Snare", 38, 43, 37);
 
@@ -1336,6 +1408,20 @@ void handleSetPad(JsonDocument &doc)
         return;
     }
 
+    if (strcmp(field, "pedal_note") == 0)
+    {
+        long v = doc["value"] | -1;
+        if (v != 0 && v != 1)
+        {
+            sendError("set_pad", "value_out_of_range");
+            return;
+        }
+        padPedalNote[pad] = (v == 1);
+        persistPadPedalNote(pad);
+        sendPadConfig(pad);
+        return;
+    }
+
     long value = doc["value"] | -1;
 
     if (strcmp(field, "sensitivity") == 0)
@@ -1415,6 +1501,14 @@ void handleSetPad(JsonDocument &doc)
         if (value < 0 || value > 100) { sendError("set_pad", "value_out_of_range"); return; }
         padXtalk[pad] = value;
         persistPadXtalk(pad);
+        sendAck("set_pad", pad, field, value);
+        return;
+    }
+    else if (strcmp(field, "pedal_cc") == 0)
+    {
+        if (value < 0 || value > 127) { sendError("set_pad", "value_out_of_range"); return; }
+        padPedalCC[pad] = value;
+        persistPadPedalCC(pad);
         sendAck("set_pad", pad, field, value);
         return;
     }
@@ -1844,7 +1938,9 @@ void handlePadResult(byte i)
     case PAD_HIHAT_PEDAL:
     case PAD_HIHAT_OPTICAL:
     {
-        if (pad.hit)
+        // Chick ao fechar: desligavel (padPedalNote) - no Addictive Drums 2
+        // quem gera o chick e' o proprio software, a partir do CC.
+        if (pad.hit && padPedalNote[i])
         {
             sendHitEvent(i, "pedal", pad.note, pad.velocity);
             fireNote(pad.note, pad.velocity);
@@ -1860,7 +1956,7 @@ void handlePadResult(byte i)
         if (cc != lastPedalCC[i])
         {
             lastPedalCC[i] = cc;
-            fireControlChange(HIHAT_PEDAL_CC, cc);
+            fireControlChange(padPedalCC[i], cc);
         }
         break;
     }
@@ -3252,7 +3348,8 @@ void onEncRotate(int delta)
                 // Pula os tipos de 2 zonas num pad do RING (em vez de "travar"
                 // o encoder no tipo anterior) - ver padTypeAllowedAt().
                 int dir = delta > 0 ? 1 : -1;
-                while (value >= f.minVal && value <= f.maxVal && !padTypeAllowedAt(editPadIndex, (byte)value))
+                while (value >= f.minVal && value <= f.maxVal &&
+                       (!padTypeAllowedAt(editPadIndex, (byte)value) || padTypeHidden((byte)value)))
                 {
                     value += dir;
                 }
@@ -3938,7 +4035,7 @@ bool renderPadEdit()
             strncpy(valueBuf, "ABRIR>", sizeof(valueBuf) - 1);
             valueBuf[sizeof(valueBuf) - 1] = '\0';
         }
-        else if (fields[idx].id == FIELD_ENABLED || fields[idx].id == FIELD_HIHAT_INVERT)
+        else if (fields[idx].id == FIELD_ENABLED || fields[idx].id == FIELD_HIHAT_INVERT || fields[idx].id == FIELD_PEDAL_NOTE)
         {
             strncpy(valueBuf, getFieldValue(editPadIndex, fields[idx].id) ? "SIM" : "NAO", sizeof(valueBuf) - 1);
             valueBuf[sizeof(valueBuf) - 1] = '\0';

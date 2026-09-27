@@ -289,8 +289,8 @@ GLOBAL > FABRICA na tela do módulo). Função `applyFactoryPreset()` em
 
 | Jack | Tip (canal par) | Ring (canal ímpar) | Notas |
 |---|---|---|---|
-| 1 | desligado | HH Pedal (FSR / VH-10 / VH-11) | 48 |
-| 2 | HiHat simples, ligado ao pedal do jack 1 | desligado | 57 aberto / 49 fechado |
+| 1 | desligado | HH Pedal (FSR / VH-10 / VH-11) — só CC4, sem chick | (48 se ligar o chick) |
+| 2 | HiHat (pad simples, nota fixa) | desligado | 8 ("HiHat CC Tip") |
 | 3 | Kick | desligado | 36 |
 | 4 | Snare 3 zonas (tip + ring) | | 38 / 43 borda / 37 aro |
 | 5–8 | Tom 1–4 dual (tip pele, ring aro) | | 71/72, 69/70, 67/68, 65/66 |

@@ -2,6 +2,23 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-09-27 — Chimbal no padrão do Addictive Drums (CC de posição + nota fixa)
+
+- **Tipos "chimbal simples" e "chimbal 2 zonas" ocultos** (firmware e
+  ConfigTool): o chimbal passa a ser um pad comum com nota fixa — no AD2,
+  8 (tip) / 7 (borda) / 9 (bell) — e o software decide aberto/fechado pelo
+  CC do pedal. O código continua no firmware, configs antigas seguem
+  funcionando e `set_pad` ainda aceita (import de backups).
+- **Pedal de chimbal**: novo `pedal_note` (liga/desliga a nota de chick ao
+  fechar — no AD2 quem gera o chick é o software) e `pedal_cc` (número do
+  CC de posição, padrão 4). Na tela: itens CHICK e CC no editor do pedal.
+  Gravados em 2 áreas novas no fim da EEPROM (placas já em uso leem o
+  padrão antigo: chick ligado, CC 4).
+- **Kit de fábrica**: HH Pedal só com CC4 (sem chick); HiHat como pad
+  simples na nota 8.
+- ConfigTool: mapa AD2 com 8/7/9 no grupo HiHat e "Aplicar mapa aos pads"
+  usando essas notas; export/import com `pedal_note`/`pedal_cc`.
+
 ## 2026-09-27 — ConfigTool: exportar e importar configuração (JSON)
 
 - Aba Global > **Backup e compartilhamento**: "Exportar configuração

@@ -25,9 +25,9 @@ esse único valor contra dois limiares diferentes (`Edge Threshold` e
 |---|---|---|---|---|
 | 0 | Simples | 1 | `singlePiezoMUX()` | 1 (bow) |
 | 1 | Aro / Dual | 2 | `dualPiezoMUX()` | head + rim |
-| 2 | Chimbal simples | 1 | `HHMUX()` | 1 zona, nota varia com aberto/fechado |
+| 2 | Chimbal simples *(oculto)* | 1 | `HHMUX()` | 1 zona, nota varia com aberto/fechado |
 | 3 | Prato 2 zonas | 2 | `cymbal2zoneMUX()` | bow + edge |
-| 4 | Chimbal 2 zonas | 2 | `HH2zoneMUX()` | bow + edge, nota varia com aberto/fechado |
+| 4 | Chimbal 2 zonas *(oculto)* | 2 | `HH2zoneMUX()` | bow + edge, nota varia com aberto/fechado |
 | 5 | Prato 3 zonas | 2 | `cymbal3zoneMUX()` | bow + edge + cup (mesmo canal do edge, por threshold) |
 | 6 | Pedal de chimbal (FSR/VH-10/VH-11) | 1 | `hihatControlMUX()` | posição (CC) + "chick" ao fechar rápido |
 | 7 | Pedal de chimbal óptico (TCRT5000) | 1 | `TCRT5000MUX()` | igual ao 6, sensor diferente |
@@ -165,6 +165,22 @@ sempre `note_rim`, em qualquer estado. Ver `handlePadResult()` em
 `firmware/src/main.cpp` pro código exato.
 
 ## Chimbal: o pedal e o prato/chimbal são pads separados, linkados
+
+> **2026-09-27 — tipos 2 e 4 ocultos.** Softwares como o Addictive Drums 2
+> (e EZdrummer, Superior, SSD, BFD) esperam o chimbal como um **pad comum
+> com nota fixa** — no AD2, 8 = "HiHat CC Tip", 7 = "CC Shaft" (borda), 9
+> = "CC Bell" — e decidem aberto/fechado (e o chick) sozinhos pelo **CC de
+> posição** do pedal. Por isso o chimbal agora se configura como tipo 0
+> (1 zona), 3 (2 zonas) ou 5 (3 zonas) com essas notas, e os tipos 2/4 (a
+> nota muda pelo pedal linkado, descritos abaixo) **não aparecem mais para
+> escolher** — nem no ConfigTool nem na tela do módulo (`padTypeHidden()`
+> em `main.cpp`). O código continua no firmware e configurações antigas
+> seguem funcionando; `set_pad` ainda aceita os dois (import de backups).
+>
+> O pedal (tipos 6/7) ganhou 2 campos: **`pedal_note`** (liga/desliga a
+> nota de chick ao fechar — no AD2 fica desligado) e **`pedal_cc`**
+> (número do CC de posição, padrão 4 = Foot Controller). O CC vai de 0
+> (aberto) a 127 (fechado); se o sensor sair invertido, `hihat_invert`.
 
 Um "chimbal" completo, em termos de sensor, é sempre **dois pads físicos
 diferentes**: o **pedal** (posição aberto/fechado, tipos 6/7) e o

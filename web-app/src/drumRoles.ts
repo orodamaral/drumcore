@@ -70,6 +70,9 @@ const GM_SLOTS: Record<Exclude<DrumRole, 'none'>, Slots> = {
 
 // Addictive Drums 2 - notas do keymap (ver midiMaps.ts). Splash/China usam
 // os slots Cymbal 3/4 do AD2 (o kit define qual prato está em cada slot).
+// Chimbal: notas "CC" (8 tip / 7 shaft / 9 bell) - nota fixa, o AD2 decide
+// aberto/fechado pelo CC do pedal (os tipos "chimbal" que trocavam a nota
+// pelo pedal estão ocultos, ver HIDDEN_PAD_TYPES em protocol.ts).
 const AD2_SLOTS: Record<Exclude<DrumRole, 'none'>, Slots> = {
   kick: { main: 36 },
   snare: { main: 38, rim: 37, edge: 43 },
@@ -77,7 +80,7 @@ const AD2_SLOTS: Record<Exclude<DrumRole, 'none'>, Slots> = {
   tom2: { main: 69, rim: 70 },
   tom3: { main: 67, rim: 68 },
   tom4: { main: 65, rim: 66 },
-  hihat: { main: 49, closed: 49, open: 57 },
+  hihat: { main: 8, edge: 7, bell: 9 },
   hihat_pedal: { main: 48 },
   ride: { main: 60, edge: 62, bell: 61 },
   crash1: { main: 77, choke: 78 },

@@ -13,7 +13,8 @@ import {
   PadType,
   PAD_LABEL_MAX_LEN,
   PAD_TYPE_META,
-  PAD_TYPES
+  PAD_TYPES,
+  HIDDEN_PAD_TYPES
 } from '../protocol'
 import { CURVE_NAMES, FIELD_UI, NOTE_FIELDS, padTypeLabel, SectionKey, SECTION_TITLES } from '../uiMeta'
 import { noteName, useMidiMap } from '../midiMaps'
@@ -49,6 +50,7 @@ interface Props {
   onChangeHihatLink: (channel: number) => void
   onChangeEnabled: (enabled: boolean) => void
   onChangeHihatInvert: (invert: boolean) => void
+  onChangePedalNote: (enabled: boolean) => void
   /** Status do assistente de auto-calibração pra ESTE pad - null se não estiver rodando aqui. */
   autoTune: AutoTuneStatus | null
   onStartAutoTune: () => void
@@ -141,6 +143,7 @@ export default function PadEditor({
   onChangeHihatLink,
   onChangeEnabled,
   onChangeHihatInvert,
+  onChangePedalNote,
   autoTune,
   onStartAutoTune,
   onCancelAutoTune,
@@ -203,7 +206,8 @@ export default function PadEditor({
           label={spec.label}
           help={ui.help}
           value={activePad[spec.field]}
-          disabled={disabled}
+          // Pedal com o chick desligado: a nota não é enviada - campo fica inativo.
+          disabled={disabled || (meta.isHihatPedal && spec.field === 'note' && !activePad.pedal_note)}
           sharedWith={notesSharedWith(allPads, activePad, spec.field, activePad[spec.field])}
           onCommit={(v) => onChange(spec.field, v)}
         />
@@ -406,7 +410,7 @@ export default function PadEditor({
                 value={activePad.pad_type}
                 onChange={(event) => onChangeType(Number(event.target.value) as PadType)}
               >
-                {PAD_TYPES.map((type) => {
+                {PAD_TYPES.filter((type) => !HIDDEN_PAD_TYPES.includes(type) || type === activePad.pad_type).map((type) => {
                   // Sensor de 2 canais só no tip (pad ímpar): no ring a 2ª
                   // zona cairia no jack seguinte - ver jacks.ts.
                   const blocked =
@@ -476,6 +480,20 @@ export default function PadEditor({
                 <p className="param-note">
                   Alguns sensores mandam a posição invertida (pedal fechado = CC baixo, quando deveria ser alto, ou
                   vice-versa) — liga isso pra corrigir. Não precisa recalibrar depois de mudar.
+                </p>
+                <label className="switch pedal-note-switch">
+                  <input
+                    type="checkbox"
+                    checked={activePad.pedal_note}
+                    onChange={(event) => onChangePedalNote(event.target.checked)}
+                  />
+                  <span className="switch-track" aria-hidden />
+                  Enviar nota ao fechar (chick)
+                </label>
+                <p className="param-note">
+                  {activePad.pedal_note
+                    ? 'Ao fechar o pedal rápido, manda a nota de chick (seção MIDI), além do CC de posição.'
+                    : 'Só o CC de posição é enviado — o software (ex: Addictive Drums 2) decide o chick e a abertura do chimbal.'}
                 </p>
               </div>
             )}

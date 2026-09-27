@@ -26,8 +26,10 @@ export interface ConfigFilePad {
   enabled: boolean
   hihat_pedal_channel: number
   hihat_invert: boolean
-  // + os 14 campos numéricos de PAD_FIELDS
-  [field: string]: number | string | boolean
+  /** Ausente em arquivos anteriores a 2026-09-27 - nesse caso não é importado. */
+  pedal_note?: boolean
+  // + os campos numéricos de PAD_FIELDS
+  [field: string]: number | string | boolean | undefined
 }
 
 /** Globais do arquivo - -1 = ausente/inválido no arquivo (não é importado). */
@@ -71,7 +73,8 @@ const FIELD_RANGE: Record<PadField, [number, number]> = {
   rim_threshold: [0, 100],
   note: [0, 127],
   note_rim: [0, 127],
-  note_cup: [0, 127]
+  note_cup: [0, 127],
+  pedal_cc: [0, 127]
 }
 
 // ------------------------------------------------------------ exportar
@@ -91,7 +94,8 @@ export function buildConfigFile(
       label: p.label,
       enabled: p.enabled,
       hihat_pedal_channel: p.hihat_pedal_channel,
-      hihat_invert: p.hihat_invert
+      hihat_invert: p.hihat_invert,
+      pedal_note: p.pedal_note
     }
     for (const f of PAD_FIELDS) entry[f] = p[f]
     out.push(entry)
@@ -163,7 +167,8 @@ export function parseConfigFile(text: string, padCount: number): ParseResult {
       label: typeof e.label === 'string' ? e.label.slice(0, PAD_LABEL_MAX_LEN) : '',
       enabled: typeof e.enabled === 'boolean' ? e.enabled : true,
       hihat_pedal_channel: isInt(e.hihat_pedal_channel) ? e.hihat_pedal_channel : -1,
-      hihat_invert: typeof e.hihat_invert === 'boolean' ? e.hihat_invert : false
+      hihat_invert: typeof e.hihat_invert === 'boolean' ? e.hihat_invert : false,
+      pedal_note: typeof e.pedal_note === 'boolean' ? e.pedal_note : undefined
     }
     if (typeof e.label === 'string' && e.label.length > PAD_LABEL_MAX_LEN) {
       warnings.push(`Pad ${n}: nome cortado em ${PAD_LABEL_MAX_LEN} caracteres.`)
@@ -221,7 +226,7 @@ export interface ImportPlan {
   warnings: string[]
 }
 
-const CONFIG_REPLY_FIELDS = ['pad_type', 'label', 'enabled', 'hihat_pedal_channel', 'hihat_invert']
+const CONFIG_REPLY_FIELDS = ['pad_type', 'label', 'enabled', 'hihat_pedal_channel', 'hihat_invert', 'pedal_note']
 
 /** Campos cujo set_pad responde com pad_config (e não ack) - ver docs/04-protocolo-serial.md. */
 export function repliesWithPadConfig(field: string): boolean {
@@ -287,6 +292,9 @@ export function planImport(
     if (differs('enabled', want.enabled)) fieldOps.push({ pad: i, field: 'enabled', value: want.enabled ? 1 : 0 })
     if (PAD_TYPE_META[effType[i]].isHihatPedal && differs('hihat_invert', want.hihat_invert)) {
       fieldOps.push({ pad: i, field: 'hihat_invert', value: want.hihat_invert ? 1 : 0 })
+    }
+    if (PAD_TYPE_META[effType[i]].isHihatPedal && want.pedal_note !== undefined && differs('pedal_note', want.pedal_note)) {
+      fieldOps.push({ pad: i, field: 'pedal_note', value: want.pedal_note ? 1 : 0 })
     }
     for (const spec of PAD_TYPE_META[effType[i]].fields) {
       const v = want[spec.field]

@@ -100,7 +100,13 @@ export const FIELD_UI: Record<PadField, FieldUi> = {
   },
   note: { section: 'midi', order: 0, help: 'Nota enviada quando o pad é tocado.' },
   note_rim: { section: 'midi', order: 1, help: 'Nota enviada pela 2ª zona.' },
-  note_cup: { section: 'midi', order: 2, help: 'Nota enviada pela 3ª zona.' }
+  note_cup: { section: 'midi', order: 2, help: 'Nota enviada pela 3ª zona.' },
+  pedal_cc: {
+    section: 'midi',
+    order: 3,
+    help: 'Número do CC que leva a posição do pedal (0 = aberto, 127 = fechado). 4 (Foot Controller) é o padrão do Addictive Drums, EZdrummer e da maioria dos softwares.',
+    defaultValue: 4
+  }
 }
 
 export const NOTE_FIELDS: PadField[] = ['note', 'note_rim', 'note_cup']

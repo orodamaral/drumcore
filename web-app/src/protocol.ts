@@ -15,7 +15,9 @@ export const PAD_FIELDS = [
   'rim_threshold',
   'note',
   'note_rim',
-  'note_cup'
+  'note_cup',
+  // Só pedal de chimbal (tipos 6/7): número do CC de posição - 2026-09-27.
+  'pedal_cc'
 ] as const
 export type PadField = (typeof PAD_FIELDS)[number]
 
@@ -45,6 +47,14 @@ const SENSING_FIELDS: FieldSpec[] = [
   { field: 'xtalk', label: 'Crosstalk', min: 0, max: 100 },
   { field: 'xtalk_group', label: 'Grupo de crosstalk', min: 0, max: 4 }
 ]
+
+// Tipos de chimbal "a nota muda com o pedal" (2 = chimbal simples, 4 =
+// chimbal 2 zonas) ficam OCULTOS desde 2026-09-27: com softwares como o
+// Addictive Drums 2 o chimbal é um pad comum com nota fixa (ex: 8 = "HiHat
+// CC Tip") e o software decide aberto/fechado pelo CC do pedal. Continuam
+// no firmware e configs antigas seguem funcionando - só não aparecem pra
+// escolher (padTypeHidden() em main.cpp).
+export const HIDDEN_PAD_TYPES: readonly PadType[] = [2, 4]
 
 export interface PadTypeMeta {
   label: string
@@ -134,7 +144,8 @@ export const PAD_TYPE_META: Record<PadType, PadTypeMeta> = {
     fields: [
       ...SENSING_FIELDS,
       { field: 'rim_sensitivity', label: 'Sensibilidade do pedal', min: 0, max: 100 },
-      { field: 'note', label: 'Nota (pedal chick)', min: 0, max: 127 }
+      { field: 'note', label: 'Nota (pedal chick)', min: 0, max: 127 },
+      { field: 'pedal_cc', label: 'CC do pedal', min: 0, max: 127 }
     ]
   },
   7: {
@@ -145,7 +156,8 @@ export const PAD_TYPE_META: Record<PadType, PadTypeMeta> = {
     fields: [
       ...SENSING_FIELDS,
       { field: 'rim_sensitivity', label: 'Sensibilidade do pedal', min: 0, max: 100 },
-      { field: 'note', label: 'Nota (pedal chick)', min: 0, max: 127 }
+      { field: 'note', label: 'Nota (pedal chick)', min: 0, max: 127 },
+      { field: 'pedal_cc', label: 'CC do pedal', min: 0, max: 127 }
     ]
   },
   8: {
@@ -212,6 +224,10 @@ export interface PadConfigPrimary {
   enabled: boolean
   /** Só relevante pra pad_type 6/7 (controlador de pedal FSR/óptico) - inverte o CC final (127-CC). Fase X. */
   hihat_invert: boolean
+  /** Só pad_type 6/7: false = não manda a nota de chick ao fechar, só o CC (ex: Addictive Drums 2 gera o chick sozinho). */
+  pedal_note: boolean
+  /** Só pad_type 6/7: número do CC de posição do pedal (4 = Foot Controller). */
+  pedal_cc: number
 }
 
 export interface PadConfigConsumed {

@@ -195,14 +195,14 @@ const AD2: MidiMap = {
   groups: [
     { label: 'Kick', notes: [36] },
     { label: 'Snare', notes: [38, 37, 42, 44, 43, 41, 40, 39, 75] },
-    { label: 'HiHat', notes: [49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 48, 59] },
+    { label: 'HiHat', notes: [8, 7, 9, 48, 59, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58] },
     { label: 'Toms', notes: [71, 72, 69, 70, 67, 68, 65, 66] },
     { label: 'Ride 1', notes: [60, 62, 61, 63, 45] },
     { label: 'Ride 2', notes: [84, 86, 85, 87] },
     { label: 'Cymbals', notes: [77, 78, 46, 79, 80, 81, 82, 89, 90, 91, 92, 93, 94] },
     { label: 'Flexi', notes: [47, 73, 74, 76, 96, 97, 98, 99, 100, 101, 102, 103] },
     { label: 'Snare (brushes)', notes: [35, 34, 26, 28, 29, 30, 31, 32, 33] },
-    { label: 'Posição por CC', notes: [3, 4, 5, 6, 7, 8, 9] }
+    { label: 'Posição por CC', notes: [3, 4, 5, 6] }
   ],
   octaveOfZero: -2
 }

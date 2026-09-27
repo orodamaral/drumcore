@@ -78,10 +78,12 @@ significa em cada tipo de pad):
 | `hihat_pedal_channel` | número | índice de outro pad (`6`/`7`), ou `-1` pra remover o link | `pad_config` |
 | `enabled` | número | `0` ou `1` | `pad_config` |
 | `hihat_invert` | número | `0` ou `1` (só pad_type `6`/`7`, Fase X) | `pad_config` |
+| `pedal_note` | número | `0` ou `1` (só pad_type `6`/`7`): `0` = não manda a nota de chick ao fechar, só o CC de posição (2026-09-27) | `pad_config` |
+| `pedal_cc` | número | `0-127` (só pad_type `6`/`7`): número do CC de posição do pedal, padrão `4` (2026-09-27) | `ack` |
 
 Todos os campos exigem que o pad seja `primary` (`error` com
 `channel_consumed` caso contrário). `pad_type`/`hihat_pedal_channel`/
-`enabled`/`hihat_invert` e `label` respondem com o `pad_config` inteiro
+`enabled`/`hihat_invert`/`pedal_note` e `label` respondem com o `pad_config` inteiro
 (mais direto o app já receber o estado recalculado) em vez de `ack`.
 
 `retrigger`/`gain`/`xtalk`/`xtalk_group` (Fase P, ver
@@ -120,7 +122,7 @@ Cada linha enviada pelo módulo é um objeto com um campo `type`.
 |---|---|---|
 | `pong` | — | Resposta a `ping`. |
 | `device_info` | `pads`, `muxes`, `midi_channel`, `midi_output`, `ble_connected`, `firmware_phase` | Resposta a `get_device_info`, `set_global`, `save_all` e `restore_all`. `ble_connected` indica se há um dispositivo pareado via BLE-MIDI naquele momento (ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md)). `midi_output` controla se o MIDI sai por USB, BLE ou os dois — antes (Fase H) saía sempre pelos dois simultaneamente; agora é configurável via `set_global`. |
-| `pad_config` | Ver abaixo | Resposta a `get_pad`/`get_all_pads`, e a `set_pad` bem-sucedido em `label`/`pad_type`/`hihat_pedal_channel`/`enabled`/`hihat_invert`, e a `apply_autotune`. |
+| `pad_config` | Ver abaixo | Resposta a `get_pad`/`get_all_pads`, e a `set_pad` bem-sucedido em `label`/`pad_type`/`hihat_pedal_channel`/`enabled`/`hihat_invert`/`pedal_note`, e a `apply_autotune`. |
 | `hit` | `pad`, `zone`, `note`, `velocity` | Sempre que um pad é atingido (telemetria em tempo real). `zone` varia por tipo: `"bow"`, `"head"`, `"rim"`, `"edge"`, `"cup"`, `"open"`, `"closed"`, `"pedal"`, `"choke"` (abafamento de prato/aro, `pad_type` 3/5) ou `"touch"` (`pad_type` 9 — `PAD_CHOKE`, sensor de contato; `velocity` sempre `127`) — ver [05-tipos-de-sensor.md](05-tipos-de-sensor.md). |
 | `ack` | `cmd`, `pad`, `field`, `value` | Confirmação de um `set_pad` com campo numérico simples. |
 | `autotune_status` | `pad`, `state`, `hit_count`, e (`state == "collecting"`) `tier`/`tier_index`/`tier_count`/`tier_elapsed_ms`/`tier_target_ms`/`zone`? **ou** `phase`/`hold_elapsed_ms`/`hold_target_ms` (pedal, ver abaixo), e (`state == "done"`) `sensitivity`/`threshold`/`scan_time`/`mask_time`/`rim_sensitivity`?/`rim_threshold`?/`curve_type`?/`retrigger`?/`mode`?, ou (`state == "aborted"`) `reason` | Progresso do assistente de auto-calibração (Fase O, 3 níveis de força desde a Fase T, 2ª/3ª zona pra pads de mais de 1 canal desde a Fase U/V, fluxo de posição contínua pro controlador de pedal desde a Fase X, coleta por janela de tempo desde a Fase AA, `curve_type`/`retrigger` inferidos desde a Fase AB) — emitido a cada mudança de fase relevante, não só em resposta a comando (dá pra acompanhar em tempo real: contagem regressiva do ruído, janela de tempo do nível, golpes capturados, etc). `state`: `"idle"` (parado/cancelado/aplicado), `"noise"` (medindo ruído de fundo — não acontece pro pedal, ver abaixo), `"collecting"` (esperando/processando golpes, ou segurando o pedal numa posição), `"done"` (resultado calculado, esperando `apply_autotune`/`cancel_autotune`), `"aborted"` (timeout de 15s sem pancada, ou canal desligado — ver `reason`: `"timeout"` ou `"channel_disabled"`). Em `"collecting"`, `tier` indica qual nível está em coleta agora — `"weak"`, `"medium"` ou `"strong"` — e `tier_index`/`tier_count` (ex: `2`/`3`) dão o progresso entre níveis; `tier_elapsed_ms`/`tier_target_ms` dão o progresso *dentro* do nível atual (mesmo padrão do `hold_elapsed_ms`/`hold_target_ms` do pedal, ver abaixo). `hit_count` conta as batidas capturadas *na zona/nível atual* (só informativo — não é mais alvo de nada). Cada zona pede 10s de golpes fracos, depois 10s de médios, depois 10s de fortes ([Fase AA](01-decisoes-arquiteturais.md), substitui a meta fixa de 8 golpes por nível usada até então — mais amostras por nível, média mais confiável) — ver [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md). `zone` só aparece quando o pad calibrado tem mais de 1 canal, e reaproveita o MESMO vocabulário do evento `hit` (não é um nome genérico): `"head"`/`"rim"` pra `pad_type` 1 (`PAD_DUAL`, 1 rodada extra); `"bow"`/`"edge"`/`"cup"` pra `pad_type` 5 (`PAD_CYMBAL_3ZONE`, 2 rodadas extras); `"head"`/`"edge"`/`"rim"` pra `pad_type` 8 (`PAD_SNARE_3ZONE`, 2 rodadas extras) — a 1ª zona de cada lista já aparece na 1ª rodada (não só nas extras). O resultado final em `"done"` ganha `rim_sensitivity`/`rim_threshold` também nesses casos (mesmos campos do `pad_config`, reaproveitados com significado diferente por `pad_type` — ver tabela de campos por tipo em [05-tipos-de-sensor.md](05-tipos-de-sensor.md)). `curve_type` (0-4, mesma escala do campo `CURVA` do `pad_config`) e `retrigger` (0-100, mesma escala do campo `RETRIG`) vêm inferidos automaticamente a partir da própria coleta ([Fase AB](01-decisoes-arquiteturais.md)) — presentes em todo resultado de pad de impacto, ausentes quando `mode === "hihat_range"` (não fazem sentido pro pedal). **Controlador de pedal** (`pad_type` 6/7, Fase X, fora das mudanças da Fase AA/AB): fluxo totalmente diferente — sensor de posição contínua, sem "golpes"/níveis. Pula direto pra `"collecting"` com `phase` (`"hh_open"` = segure o pedal solto, `"hh_closed"` = pressione até o fim) e `hold_elapsed_ms`/`hold_target_ms` (progresso dentro dos 3s de cada posição — `tier`/`tier_elapsed_ms`/`tier_target_ms`/`zone` não se aplicam). O resultado em `"done"` ganha `mode: "hihat_range"`, avisando que `sensitivity`/`threshold` são o teto/piso de posição (pedal fechado/aberto), não pico de pancada — e não ganha `curve_type`/`retrigger`. |
@@ -160,7 +162,9 @@ Cada linha enviada pelo módulo é um objeto com um campo `type`.
   "note_cup": 40,
   "hihat_pedal_channel": -1,
   "enabled": true,
-  "hihat_invert": false
+  "hihat_invert": false,
+  "pedal_note": true,
+  "pedal_cc": 4
 }
 ```
 
@@ -287,11 +291,11 @@ Implementação em `web-app/src/configFile.ts`.
   "pads": [
     {
       "pad": 6, "pad_type": 8, "label": "Snare", "enabled": true,
-      "hihat_pedal_channel": -1, "hihat_invert": false,
+      "hihat_pedal_channel": -1, "hihat_invert": false, "pedal_note": true,
       "sensitivity": 100, "threshold": 10, "scan_time": 10, "mask_time": 30,
       "curve_type": 0, "retrigger": 0, "gain": 100, "xtalk": 0, "xtalk_group": 0,
       "rim_sensitivity": 20, "rim_threshold": 3,
-      "note": 38, "note_rim": 43, "note_cup": 37
+      "note": 38, "note_rim": 43, "note_cup": 37, "pedal_cc": 4
     }
   ]
 }
