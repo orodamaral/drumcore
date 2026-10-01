@@ -5,6 +5,7 @@ Captura as batidas enviadas pelo firmware de teste `rawpad`
 Uso:
     python tools/rawpad_capture.py COM5
     python tools/rawpad_capture.py COM5 --label centro-forte
+    python tools/rawpad_capture.py COM5 --jack 2 --session sessao3 --label aro --count 10
 
 Durante a captura, digite um novo rotulo e Enter pra trocar (ex.: "aro",
 "centro-fraco", "borda-da-pele"). Cada batida vai pra
@@ -23,6 +24,7 @@ import datetime as dt
 import os
 import sys
 import threading
+import time
 
 import serial
 
@@ -58,6 +60,7 @@ def main():
     ap.add_argument("--count", type=int, default=0, help="encerra depois de N batidas (0 = sem limite)")
     ap.add_argument("--session", help="nome da pasta de sessao (reusa uma existente pra juntar rodadas)")
     ap.add_argument("--threshold", type=int, help="limiar de disparo enviado ao firmware no inicio")
+    ap.add_argument("--jack", type=int, help="jack a capturar (1-8), enviado ao firmware no inicio (comando 'j')")
     args = ap.parse_args()
 
     session = args.session or dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -76,7 +79,17 @@ def main():
              "peak0", "t_onset0_ms", "t_peak0_ms", "t_tail0_ms",
              "peak1", "t_onset1_ms", "t_peak1_ms", "t_tail1_ms", "file"])
 
-    ser = serial.Serial(args.port, args.baud, timeout=1)
+    # Abre sem mexer em DTR/RTS: com eles ativos o auto-reset do ESP32
+    # reinicia a placa ao abrir a porta e os comandos abaixo se perdiam no boot.
+    ser = serial.Serial()
+    ser.port, ser.baudrate, ser.timeout = args.port, args.baud, 1
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    time.sleep(0.3)
+    if args.jack:
+        ser.write(f"j {args.jack}\n".encode())
+        time.sleep(0.2)  # o firmware refaz o baseline do jack novo
     if args.threshold:
         ser.write(f"t {args.threshold}\n".encode())
     state = {"label": args.label}
