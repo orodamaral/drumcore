@@ -2,6 +2,23 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-01 — Caixa 3 zonas só com 2 piezos (razões) e varredura só dos canais em uso
+
+- **Caixa 3 zonas** (`pad_type` 8) com sensing novo, `snare3zoneSensing()`:
+  **aro** quando pico ring ÷ pico tip ≥ `rim_threshold` % (padrão 30);
+  **borda da pele** quando o piezo central tem um pico tardio (3,5–9 ms) ≥
+  `rim_sensitivity` % do pico cedo (0–2,5 ms) (padrão 80, experimental);
+  **centro** no resto. Regras tiradas da sessão 3 do `rawpad`. Antes o
+  tipo reusava a rotina de prato com chaves, que não servia para piezo.
+- **Varredura só dos canais em uso**: o loop deixou de ler os 32 canais em
+  toda volta — com menos canais, cada um é lido mais vezes, o que a
+  detecção de zonas precisa. Comando novo **`get_timing`** informa o tempo
+  médio/máximo do loop.
+- Calibração automática da caixa 3 zonas passa a calibrar só a pele. Kit de
+  fábrica com as razões 80 / 30 no Snare. ConfigTool: campos "Borda da pele
+  (razão)" e "Aro (razão)" em %, com ajuda e padrão próprios.
+- Detalhes em [05-tipos-de-sensor.md](05-tipos-de-sensor.md).
+
 ## 2026-10-01 — Controlador de chimbal (SS49E) funcionando no jack 1
 
 - Jackboard A montada parcialmente (J1 e J2). O SS49E no jack 1 só funcionou

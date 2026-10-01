@@ -37,6 +37,11 @@ export interface FieldSpec {
   label: string
   min: number
   max: number
+  /** Sobrescrevem FIELD_UI (uiMeta.ts) só pra este tipo - ex: os campos da caixa 3 zonas, que lá são razões em %. */
+  help?: string
+  unit?: string
+  defaultValue?: number
+  zeroLabel?: string
 }
 
 const SENSING_FIELDS: FieldSpec[] = [
@@ -171,8 +176,29 @@ export const PAD_TYPE_META: Record<PadType, PadTypeMeta> = {
     isHihatPedal: false,
     fields: [
       ...SENSING_FIELDS,
-      { field: 'rim_sensitivity', label: 'Threshold da borda (edge)', min: 0, max: 100 },
-      { field: 'rim_threshold', label: 'Threshold do aro (rim)', min: 0, max: 100 },
+      // 2026-10-01: só 2 piezos (tip = centro, ring = borda/aro) - as 2
+      // zonas extras saem de RAZÕES entre os sinais, não de limiares (ver
+      // snare3zoneSensing() na lib do firmware e docs/05-tipos-de-sensor.md).
+      {
+        field: 'rim_sensitivity',
+        label: 'Borda da pele (razão)',
+        min: 0,
+        max: 100,
+        unit: '%',
+        defaultValue: 80,
+        zeroLabel: 'desl.',
+        help: 'Batida na borda da pele: o piezo central tem um 2º pico, mais tardio (3,5–9 ms). É borda quando esse pico tardio passa deste % do pico inicial. Suba se o centro estiver saindo como borda; desça se a borda estiver saindo como centro. 0 = desliga a borda.'
+      },
+      {
+        field: 'rim_threshold',
+        label: 'Aro (razão)',
+        min: 0,
+        max: 100,
+        unit: '%',
+        defaultValue: 30,
+        zeroLabel: 'desl.',
+        help: 'Batida no aro: o piezo da borda (ring) passa deste % do pico do piezo central. Suba se pancadas fortes no centro estiverem saindo como aro; desça se o aro estiver saindo como pele. 0 = desliga o aro.'
+      },
       { field: 'note', label: 'Nota (centro)', min: 0, max: 127 },
       { field: 'note_rim', label: 'Nota (borda)', min: 0, max: 127 },
       { field: 'note_cup', label: 'Nota (aro)', min: 0, max: 127 }
@@ -300,7 +326,9 @@ export type AutoTuneShape = 'single' | 'dual' | 'tri'
 
 export function autoTuneShapeFor(padType: PadType): AutoTuneShape {
   if (padType === 1) return 'dual'
-  if (padType === 5 || padType === 8) return 'tri'
+  // 8 (caixa 3 zonas) calibra só a pele desde 2026-10-01: as 2 zonas extras
+  // usam razões (rim_sensitivity/rim_threshold em %), não limiares.
+  if (padType === 5) return 'tri'
   return 'single'
 }
 
@@ -309,7 +337,6 @@ export function autoTuneShapeFor(padType: PadType): AutoTuneShape {
 export function autoTuneZonesFor(padType: PadType): AutoTuneZone[] {
   if (padType === 1) return ['head', 'rim']
   if (padType === 5) return ['bow', 'edge', 'cup']
-  if (padType === 8) return ['head', 'edge', 'rim']
   return []
 }
 // Fase X: controlador de pedal (HHC, pad_type 6/7) usa um assistente

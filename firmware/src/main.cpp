@@ -260,14 +260,13 @@ void bringUpNativeUsbHardware()
 #define PAD_CYMBAL_3ZONE 5  // 2 canais - prato 3 zonas (bow + edge/cup por threshold, ex: PCY135/155)
 #define PAD_HIHAT_PEDAL 6   // 1 canal - controlador de pedal FSR/VH-10/VH-11
 #define PAD_HIHAT_OPTICAL 7 // 1 canal - controlador de pedal optico (TCRT5000)
-// 2 canais - caixa 3 zonas (centro/pele=head, borda da pele=edge, aro=rim).
-// Reusa cymbal3zoneMUX()/cymbal3zoneSensing() da lib (mesma tecnica do prato
-// 3 zonas: 2 piezos, o segundo com 2 thresholds em sequencia) - o segundo
-// piezo (aro) e' o mesmo lugar onde o PAD_DUAL ja poe o sensor de aro; a
-// diferenca e' que aqui distinguimos "vibrou pouco no aro" (edge, hit perto
-// da borda da pele) de "vibrou muito no aro" (rim, aro de verdade), em vez
-// de tratar qualquer vibracao no aro como uma unica zona. Ver
-// docs/01-decisoes-arquiteturais.md e docs/05-tipos-de-sensor.md.
+// 2 canais - caixa 3 zonas (centro/pele=head, borda da pele=edge, aro=rim),
+// so' com 2 piezos: tip = piezo central, ring = piezo da borda/aro.
+// 2026-10-01: usa snare3zoneMUX()/snare3zoneSensing() (lib vendorizada) -
+// aro pela RAZAO pico ring / pico tip (rim_threshold = %), borda da pele
+// pela razao pico tardio / pico cedo do piezo central (rim_sensitivity = %).
+// Antes reusava cymbal3zoneSensing() (esquema Yamaha de chaves, espera
+// pull-up - nao servia pra piezo). Ver docs/05-tipos-de-sensor.md.
 #define PAD_SNARE_3ZONE 8
 // 1 canal - sensor de contato (fita de aluminio ligada direto no pino
 // analogico, sem piezo). Nao usa envelope/threshold de vibracao da lib -
@@ -532,6 +531,9 @@ bool chokeTouched[NUM_PADS];
 void startAutoTune(byte pad);
 void cancelAutoTune();
 bool applyAutoTuneResult(); // false = ainda nao terminou de calibrar (ver AT_DONE)
+bool channelInUse(byte c);  // ver scanActiveChannels(), perto do loop()
+extern unsigned long loopAvgUs; // ver measureLoop()
+extern unsigned long loopMaxUs;
 
 // Forward decls - encoder fisico unico (Fase Y - antes eram 6 funcoes pra
 // 2 encoders, ver docs/01-decisoes-arquiteturais.md). Mesmo motivo das de
@@ -671,8 +673,9 @@ byte getFieldsForType(byte padType, FieldDef *out)
     }
     else if (padType == PAD_SNARE_3ZONE)
     {
-        out[n++] = {FIELD_RIM_SENS, "EDGETHR", 1, 100, true};
-        out[n++] = {FIELD_RIM_THRESH, "RIMTHR", 1, 100, true};
+        // Razoes em % (0 = desliga a zona) - ver snare3zoneSensing().
+        out[n++] = {FIELD_RIM_SENS, "BORDA%", 0, 100, true};
+        out[n++] = {FIELD_RIM_THRESH, "ARO%", 0, 100, true};
     }
     else if (padTypeIsHihatPedal(padType))
     {
@@ -1306,6 +1309,10 @@ void applyFactoryPreset()
     setFactoryPad(2, PAD_SINGLE, "HiHat", 8, 39, 40);
     setFactoryPad(4, PAD_SINGLE, "Kick", 36, 39, 40);
     setFactoryPad(6, PAD_SNARE_3ZONE, "Snare", 38, 43, 37);
+    // Razoes da caixa 3 zonas (sessao 3 do rawpad): borda >= 80% (tardio/
+    // cedo do piezo central), aro >= 30% (pico ring / pico tip).
+    pads[6].rimSensitivity = 80;
+    pads[6].rimThreshold = 30;
 
     static const byte TOM_NOTES[4][2] = {{71, 72}, {69, 70}, {67, 68}, {65, 66}};
     for (byte t = 0; t < 4; t++)
@@ -1662,6 +1669,20 @@ void handleSerialCommand(const String &line)
             return;
         }
         sendPadConfig(pad);
+    }
+    else if (strcmp(cmd, "get_timing") == 0)
+    {
+        // Diagnostico: tempo medio/maximo de uma volta do loop na ultima
+        // janela de 1 s - e' o intervalo entre 2 leituras do mesmo canal.
+        byte active = 0;
+        for (byte c = 0; c < NUM_PADS; c++)
+        {
+            active += channelInUse(c) ? 1 : 0;
+        }
+        char msg[120];
+        snprintf(msg, sizeof(msg), "loop: media %lu us, max %lu us, %u canais em uso (~%lu leituras/s por canal)",
+                 loopAvgUs, loopMaxUs, active, loopAvgUs ? 1000000UL / loopAvgUs : 0);
+        sendLog(msg);
     }
     else if (strcmp(cmd, "get_jacks") == 0)
     {
@@ -2122,7 +2143,7 @@ void dispatchSensing(byte i)
         pads[i].cymbal3zoneMUX();
         break;
     case PAD_SNARE_3ZONE:
-        pads[i].cymbal3zoneMUX(); // mesma sensing do prato 3 zonas - ver define de PAD_SNARE_3ZONE
+        pads[i].snare3zoneMUX(); // razoes entre os 2 piezos - ver define de PAD_SNARE_3ZONE
         break;
     case PAD_HIHAT_PEDAL:
         pads[i].hihatControlMUX();
@@ -2677,10 +2698,14 @@ void startAutoTune(byte pad)
     {
         atShape = AT_SHAPE_DUAL;
     }
-    else if (padTypes[pad] == PAD_CYMBAL_3ZONE || padTypes[pad] == PAD_SNARE_3ZONE)
+    else if (padTypes[pad] == PAD_CYMBAL_3ZONE)
     {
         atShape = AT_SHAPE_TRI;
     }
+    // PAD_SNARE_3ZONE (2026-10-01): calibra so' a pele (sens/thresh/scan/
+    // mask/curva/retrigger). rim_sensitivity/rim_threshold desse tipo viraram
+    // RAZOES (%), nao limiares - as rodadas extras de AT_SHAPE_TRI gravariam
+    // limiares neles.
     else
     {
         atShape = AT_SHAPE_SINGLE;
@@ -4765,16 +4790,83 @@ void setup()
     goToLive();
 }
 
+// Canal em uso: primario e ligado, ou 2o canal de um pad de 2 zonas ligado.
+bool channelInUse(byte c)
+{
+    if (channelPrimary[c])
+    {
+        return padEnabled[c];
+    }
+    return c > 0 && padEnabled[c - 1];
+}
+
+// 2026-10-01: varre SO' os canais em uso (antes os 32 em toda volta do
+// loop). Cada analogRead leva ~60us; com menos canais, cada um e' lido mais
+// vezes por segundo - o que a deteccao de zonas da caixa 3 zonas precisa
+// (ver tools/rawpad_analyze.py: ~97% de acerto lendo a cada 0,5 ms, ~83% a
+// cada 2 ms). Canais fora de uso ficam com rawValue = 0.
+void scanActiveChannels()
+{
+    static const byte SIG[NUM_MUX] = {MUX0_Z, MUX1_Z};
+    for (byte m = 0; m < NUM_MUX; m++)
+    {
+        for (byte ch = 0; ch < PADS_PER_MUX; ch++)
+        {
+            byte c = m * PADS_PER_MUX + ch;
+            if (!channelInUse(c))
+            {
+                rawValue[c] = 0;
+                continue;
+            }
+            digitalWrite(MUX_S0, ch & 1);
+            digitalWrite(MUX_S1, (ch >> 1) & 1);
+            digitalWrite(MUX_S2, (ch >> 2) & 1);
+            digitalWrite(MUX_S3, (ch >> 3) & 1);
+            rawValue[c] = analogRead(SIG[m]);
+        }
+    }
+}
+
+// Medicao do tempo de cada volta do loop (= de quanto em quanto tempo cada
+// canal e' lido) - consultada pelo comando get_timing.
+unsigned long loopLastUs = 0;
+unsigned long loopWinStartMs = 0;
+unsigned long loopWinCount = 0;
+unsigned long loopWinMaxUs = 0;
+unsigned long loopAvgUs = 0; // da ultima janela de 1 s
+unsigned long loopMaxUs = 0;
+
+void measureLoop()
+{
+    unsigned long now = micros();
+    if (loopLastUs != 0)
+    {
+        unsigned long dt = now - loopLastUs;
+        loopWinCount++;
+        if (dt > loopWinMaxUs)
+        {
+            loopWinMaxUs = dt;
+        }
+    }
+    loopLastUs = now;
+    if (millis() - loopWinStartMs >= 1000)
+    {
+        loopAvgUs = loopWinCount ? (millis() - loopWinStartMs) * 1000UL / loopWinCount : 0;
+        loopMaxUs = loopWinMaxUs;
+        loopWinStartMs = millis();
+        loopWinCount = 0;
+        loopWinMaxUs = 0;
+    }
+}
+
 void loop()
 {
 #ifdef TINYUSB_NEED_POLLING_TASK
     TinyUSBDevice.task();
 #endif
 
-    for (byte m = 0; m < NUM_MUX; m++)
-    {
-        mux[m].scan();
-    }
+    measureLoop();
+    scanActiveChannels();
 
     applyPadGain(); // Fase P - antes do dispatch, pra ja ler o rawValue calibrado
 

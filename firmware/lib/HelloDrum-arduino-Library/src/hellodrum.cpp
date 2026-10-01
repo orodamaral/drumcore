@@ -1483,6 +1483,143 @@ void HelloDrum::cymbal3zoneMUX()
   cymbal3zoneSensing(sensitivity, threshold1, scantime, masktime, rimSensitivity, rimThreshold);
 }
 
+// [MODIFICADO - projeto DrumCore, 2026-10-01] Caixa 3 zonas (centro / borda
+// da pele / aro) so' com 2 PIEZOS - pin_1 = piezo central (tip do jack),
+// pin_2 = piezo da borda/aro (ring). Substitui o uso de cymbal3zoneSensing()
+// pra caixa, que e' o esquema Yamaha de CHAVES (le o canal invertido e
+// espera pull-up - nao funciona com piezo na jackboard, que tem pull-down).
+// Regras tiradas das capturas reais do pad dual (captures/rawpad/sessao3,
+// tools/rawpad_analyze.py):
+//   - ARO: pico do piezo da borda / pico do central >= rimRatio/100
+//     (aro 0,70-2,22; pele no maximo 0,16 -> folga ~4x);
+//   - BORDA DA PELE: nao e' aro e o piezo central tem pico "tardio"
+//     (3,5-9 ms apos o disparo) >= edgeRatio/100 x o pico "cedo" (0-2,5 ms)
+//     (borda 0,86-1,63, centro ate 0,70 - criterio experimental);
+//   - CENTRO: o resto.
+// edgeRatio = 0 desliga a borda (tudo que nao e' aro vira centro); rimRatio =
+// 0 desliga o aro. As janelas usam micros() - funcionam com amostragem
+// irregular, mas precisam de scanTime >= ~9 ms pra ver o pico tardio.
+void HelloDrum::snare3zoneMUX()
+{
+  padType[padNum] = CY3num;
+  piezoValue = rawValue[pin_1];
+  RimPiezoValue = rawValue[pin_2];
+  snare3zoneSensing(sensitivity, threshold1, scantime, masktime, rimSensitivity, rimThreshold);
+}
+
+void HelloDrum::snare3zoneSensing(byte sens, byte thre, byte scanTime, byte maskTime, byte edgeRatio, byte rimRatio)
+{
+#ifdef ESP32
+  // mesma normalizacao de dualPiezoSensing() (so' divide, nao inverte)
+  piezoValue = piezoValue / 4;
+  RimPiezoValue = RimPiezoValue / 4;
+#endif
+
+  int Threshold = thre * 10;
+  int Sensitivity = sens * 10;
+
+  hit = false;
+  hitRim = false;
+  hitCup = false;
+
+  if ((piezoValue > Threshold && loopTimes == 0) || (RimPiezoValue > Threshold && loopTimes == 0))
+  {
+    time_hit = millis();
+
+    if (time_hit - time_end < maskTime)
+    {
+      // Mesmo retrigger de dualPiezoSensing() (Fase P): o maior entre pele
+      // e aro, dos dois lados (anterior/novo), com picos BRUTOS.
+      bool allowRetrigger = false;
+      if (retrigger > 0)
+      {
+        int prevPeak = lastRawVelocity > lastRawVelocityRim ? lastRawVelocity : lastRawVelocityRim;
+        int newPeak = piezoValue > RimPiezoValue ? piezoValue : RimPiezoValue;
+        int decayFloor = prevPeak - (int)((time_hit - time_end) * (retrigger + 1) / 16);
+        allowRetrigger = decayFloor > 0 && newPeak > decayFloor;
+      }
+      if (!allowRetrigger)
+      {
+        return;
+      }
+    }
+    time_hit_us = micros();
+    velocity = piezoValue;
+    velocityRim = RimPiezoValue;
+    headEarlyPeak = piezoValue;
+    headLatePeak = 0;
+    loopTimes = 1;
+  }
+
+  if (loopTimes > 0)
+  {
+    if (piezoValue > velocity)
+    {
+      velocity = piezoValue;
+    }
+    if (RimPiezoValue > velocityRim)
+    {
+      velocityRim = RimPiezoValue;
+    }
+    unsigned long dt = micros() - time_hit_us;
+    if (dt <= 2500)
+    {
+      if (piezoValue > headEarlyPeak)
+      {
+        headEarlyPeak = piezoValue;
+      }
+    }
+    else if (dt >= 3500 && dt <= 9000)
+    {
+      if (piezoValue > headLatePeak)
+      {
+        headLatePeak = piezoValue;
+      }
+    }
+    loopTimes++;
+
+    if (millis() - time_hit >= scanTime)
+    {
+      time_end = millis();
+      int headPeak = velocity;
+      int rimPeak = velocityRim;
+      lastRawVelocity = headPeak;
+      lastRawVelocityRim = rimPeak;
+
+      bool isRim = rimRatio > 0 && (headPeak <= 0 || (long)rimPeak * 100 >= (long)rimRatio * headPeak);
+      bool isEdge = !isRim && edgeRatio > 0 && headEarlyPeak > 0 &&
+                    (long)headLatePeak * 100 >= (long)edgeRatio * headEarlyPeak;
+
+      if (isRim)
+      {
+        // Velocity do aro pelo maior dos 2 piezos - o central sozinho
+        // subestima pancadas que pegam so' o aro.
+        int peak = rimPeak > headPeak ? rimPeak : headPeak;
+        velocity = curve(peak, Threshold, Sensitivity, curvetype);
+        hitCup = true;
+      }
+      else
+      {
+        velocity = curve(headPeak, Threshold, Sensitivity, curvetype);
+        if (isEdge)
+        {
+          hitRim = true;
+        }
+        else
+        {
+          hit = true;
+        }
+      }
+      velocityRim = curve(rimPeak, Threshold, Sensitivity, curvetype);
+
+      showVelocity = velocity;
+      showLCD = true;
+      padIndex = padNum;
+      loopTimes = 0;
+    }
+  }
+}
+
 void HelloDrum::TCRT5000MUX()
 {
   padType[padNum] = HHCnum;

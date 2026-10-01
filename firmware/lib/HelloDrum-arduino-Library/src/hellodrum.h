@@ -219,6 +219,9 @@ public:
   void HH2zoneMUX();
   void cymbal3zoneMUX(byte sens, byte thre, byte scan, byte mask, byte edgeThre, byte cupThre);
   void cymbal3zoneMUX();
+  // [MODIFICADO - projeto DrumCore, 2026-10-01] caixa 3 zonas so' com 2
+  // piezos (centro + borda/aro), por razoes - ver snare3zoneSensing().
+  void snare3zoneMUX();
   void cymbal2zoneMUX(byte sens, byte thre, byte scan, byte mask, byte edgeThre);
   void cymbal2zoneMUX();
   void TCRT5000MUX(byte sens, byte thre1, byte thre2, byte scan);
@@ -330,6 +333,11 @@ private:
   int lastRawVelocity = 0;
   int lastRawVelocityRim = 0; // so' usado por dualPiezoSensing()
   unsigned long time_choke;
+  // snare3zoneSensing(): inicio do golpe em us + picos do piezo central nas
+  // janelas "cedo" (0-2,5 ms) e "tardio" (3,5-9 ms).
+  unsigned long time_hit_us = 0;
+  int headEarlyPeak = 0;
+  int headLatePeak = 0;
   unsigned long time_hit_pedal_1;
   unsigned long time_hit_pedal_2;
 
@@ -337,6 +345,7 @@ private:
   void dualPiezoSensing(byte sens, byte thre, byte scanTime, byte maskTime, byte rimSens, byte rimThre);
   void cymbal2zoneSensing(byte sens, byte thre, byte scanTime, byte maskTime, byte edgeThre);
   void cymbal3zoneSensing(byte sens, byte thre, byte scanTime, byte maskTime, byte edgeThre, byte cupThre);
+  void snare3zoneSensing(byte sens, byte thre, byte scanTime, byte maskTime, byte edgeRatio, byte rimRatio);
   void TCRT5000Sensing(byte sens, byte thre1, byte thre2, byte scanTime);
   void FSRSensing(byte sens, byte thre, byte scanStart, byte scanEnd, byte pedalSens);
   int curve(int velocityRaw, int threshold, int sensRaw, byte curveType);

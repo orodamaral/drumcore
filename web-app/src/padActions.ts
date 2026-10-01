@@ -56,8 +56,9 @@ export function resetOps(target: PadConfigPrimary, sections: CopySection[]): Pad
   const ops: PadOp[] = []
   for (const spec of PAD_TYPE_META[target.pad_type].fields) {
     const ui = FIELD_UI[spec.field]
-    if (!sections.includes(ui.section) || ui.defaultValue === undefined) continue
-    const v = Math.min(spec.max, Math.max(spec.min, ui.defaultValue))
+    const def = spec.defaultValue ?? ui.defaultValue
+    if (!sections.includes(ui.section) || def === undefined) continue
+    const v = Math.min(spec.max, Math.max(spec.min, def))
     if (v !== target[spec.field]) ops.push({ pad: target.pad, field: spec.field, value: v })
   }
   return ops

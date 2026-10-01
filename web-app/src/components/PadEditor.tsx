@@ -273,13 +273,13 @@ export default function PadEditor({
         key={spec.field}
         id={id}
         label={spec.label}
-        help={ui.help}
+        help={spec.help ?? ui.help}
         min={spec.min}
         max={spec.max}
         value={activePad[spec.field]}
-        defaultValue={ui.defaultValue}
-        unit={ui.unit}
-        zeroLabel={ui.zeroLabel}
+        defaultValue={spec.defaultValue ?? ui.defaultValue}
+        unit={spec.unit ?? ui.unit}
+        zeroLabel={spec.zeroLabel ?? ui.zeroLabel}
         disabled={disabled}
         proposed={proposed[spec.field]}
         onCommit={(v) => onChange(spec.field, v)}

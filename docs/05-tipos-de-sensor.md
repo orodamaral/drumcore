@@ -31,7 +31,7 @@ esse único valor contra dois limiares diferentes (`Edge Threshold` e
 | 5 | Prato 3 zonas | 2 | `cymbal3zoneMUX()` | bow + edge + cup (mesmo canal do edge, por threshold) |
 | 6 | Pedal de chimbal (FSR/VH-10/VH-11) | 1 | `hihatControlMUX()` | posição (CC) + "chick" ao fechar rápido |
 | 7 | Pedal de chimbal óptico (TCRT5000) | 1 | `TCRT5000MUX()` | igual ao 6, sensor diferente |
-| 8 | Caixa 3 zonas | 2 | `cymbal3zoneMUX()` | centro (head) + borda (edge) + aro (rim), mesma técnica do tipo 5 |
+| 8 | Caixa 3 zonas | 2 | `snare3zoneMUX()` | centro (head) + borda (edge) + aro (rim), por razões entre os 2 piezos |
 | 9 | Choke (fita de contato) | 1 | `dispatchChoke()` (própria, fora da lib) | 1 zona (`"touch"`), gatilho binário, velocity sempre 127 |
 
 ### Tipo 9 — Choke (fita de contato)
@@ -72,28 +72,39 @@ código; o valor default de `threshold` pode precisar de ajuste na bancada.
 
 ### Tipo 8 — Caixa 3 zonas (centro/borda/aro)
 
-Pedido do usuário: uma caixa real costuma distinguir 3 sons (centro da
-pele, perto da borda da pele, e o aro/rimshot), mas isso normalmente **não**
-vem de 3 sensores — vem de 2 (um na pele, um no aro), com o segundo sensor
-sendo lido contra 2 thresholds em sequência (fraco = vibração só bateu perto
-da borda; forte = pancada de verdade no aro). É **exatamente** a mesma
-técnica que o tipo 5 (prato 3 zonas) já usa pra separar "edge" de "cup" —
-por isso o tipo 8 reusa `cymbal3zoneMUX()`/`cymbal3zoneSensing()` sem
-nenhuma mudança na lib vendorizada, só relabelando as zonas:
+**Desde 2026-10-01: só 2 piezos, zonas por razões** (`snare3zoneMUX()` /
+`snare3zoneSensing()`, lib vendorizada). Cabeamento idêntico ao tipo 1:
+**tip = piezo central**, **ring = piezo da borda/aro**. As regras saíram das
+capturas reais do pad dual (`captures/rawpad/sessao3`, analisadas com
+`tools/rawpad_analyze.py`):
 
-| Zona da lib | Zona no protocolo | Campo de nota | Cabeamento |
+| Zona | Regra (dentro da janela de scan) | Campo | Nota |
 |---|---|---|---|
-| `hit` (bow) | `"head"` | `note` | Piezo da pele (`pin_1`, igual ao tipo 1) |
-| `hitRim` (edge) | `"edge"` | `note_rim` (`noteEdge`) | Piezo do aro (`pin_2`), sinal fraco |
-| `hitCup` (cup) | `"rim"` | `note_cup` (`noteCup`) | Piezo do aro (`pin_2`), sinal forte |
+| **Aro** (`"rim"`) | pico do ring ÷ pico do tip ≥ `rim_threshold` % (padrão **30**) | `rim_threshold` ("ARO%" na tela) | `note_cup` |
+| **Borda da pele** (`"edge"`) | não é aro **e** o tip tem um 2º pico "tardio" (3,5–9 ms após o disparo) ≥ `rim_sensitivity` % do pico "cedo" (0–2,5 ms) (padrão **80**) | `rim_sensitivity` ("BORDA%") | `note_rim` |
+| **Centro** (`"head"`) | o resto | — | `note` |
 
-O cabeamento físico é **idêntico** ao do tipo 1 (Aro/Dual) — mesmo piezo na
-pele, mesmo piezo no aro. A diferença é só de software: o tipo 1 decide
-"pele ou aro" comparando as amplitudes dos dois sensores; o tipo 8 usa o
-mesmo sensor de aro, mas com 2 limiares (`EDGETHR`/`RIMTHR` na tela,
-`rim_sensitivity`/`rim_threshold` no protocolo) pra separar "vibrou pouco no
-aro" de "vibrou muito no aro". Trocar entre os dois tipos não exige
-recabear nada — é só mudar `pad_type` e ajustar os thresholds.
+- `0` em qualquer um dos dois **desliga** aquela zona.
+- Velocity: do pico do tip (centro/borda) ou do maior dos 2 picos (aro).
+- **Números da sessão 3** (piezo da borda subido, mais perto da pele): aro
+  com razão ring/tip 0,70–2,22; pele no máximo 0,16 (folga ~4×). Borda da
+  pele com tardio/cedo 0,86–1,63 (uma exceção, 0,37); centro até 0,70 — a
+  borda é **experimental**, com folga bem menor que a do aro.
+- **Depende da taxa de leitura**: simulando a varredura do MUX, o acerto
+  geral cai de ~97% (leitura a cada 0,5 ms) para ~83% (a cada 2 ms), quase
+  todo na borda. Por isso o firmware passou a varrer só os canais em uso;
+  o comando `get_timing` mostra o intervalo real do loop.
+- O `scan_time` precisa ser **≥ ~9 ms** para o pico tardio caber na janela.
+- O assistente de calibração calibra **só a pele** neste tipo
+  (sens/thresh/scan/mask/curva/retrigger); as razões se ajustam à mão.
+- Configurações antigas desse tipo guardavam **limiares** nesses 2 campos
+  (padrão 20 / 3) — agora são lidos como razões. Ajustar para 80 / 30 (ou
+  rodar o restaurar fábrica).
+
+Antes desta data o tipo 8 reusava `cymbal3zoneSensing()` (esquema Yamaha de
+chaves com 2 limiares no mesmo canal). Isso não servia para piezo: a rotina
+lê o canal invertido e espera pull-up, e a jackboard tem pull-down — ver
+[07-estudo-prato-3-zonas.md](07-estudo-prato-3-zonas.md).
 
 Canal físico: cada "canal" é uma entrada de um dos 2x CD4067/HW-178 (0-31). Um pad
 de 2 canais consome o seu próprio canal **e o canal seguinte** (adjacente) —

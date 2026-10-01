@@ -101,6 +101,9 @@ export class MockDevice {
     set(2, 0, 'HiHat', 8)
     set(4, 0, 'Kick', 36)
     set(6, 8, 'Snare', 38, 43, 37)
+    // Razões da caixa 3 zonas (igual ao firmware): borda 80%, aro 30%.
+    this.pads[6].rim_sensitivity = 80
+    this.pads[6].rim_threshold = 30
     ;[[71, 72], [69, 70], [67, 68], [65, 66]].forEach(([n, r], t) => set(8 + 2 * t, 1, `Tom ${t + 1}`, n, r))
     ;[[77, 78], [79, 80], [81, 82], [89, 90]].forEach(([n, c], k) => {
       set(16 + 2 * k, 0, `Cym ${k + 1}`, n)
