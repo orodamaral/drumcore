@@ -4,9 +4,13 @@
   na barra perto do aro) e decidir a melhor estrategia de sensing. Sem
   MUX/tela/USB-MIDI/BLE/EEPROM do firmware principal.
 
-  Pinos (mesmos do bring-up sem jackboard em main.cpp, ambos ADC1):
-    GPIO9  (ADC1_CH8) - canal 0 = piezo central (head)
-    GPIO10 (ADC1_CH9) - canal 1 = piezo da borda (rim)
+  Leitura pela jackboard A (2026-10-01; antes lia GPIO9/10 direto, do
+  bring-up sem jackboard): MUX S0=39 S1=40 S2=41 S3=42, SIG=GPIO2 (ADC1_CH1),
+  mesmos pinos de main.cpp. Le o TIP e o RING de um jack (padrao jack 1):
+    c0 = tip  (canal 2(N-1) do MUX) = piezo central (head)
+    c1 = ring (canal 2(N-1)+1)      = piezo da borda (rim)
+  Cada frame troca o endereco do MUX 2x (tip, ring) e espera SETTLE_US antes
+  de ler - por isso 5 kHz por canal (era 8 kHz lendo 2 pinos direto).
 
   Como funciona: amostra os 2 canais continuamente a cada SAMPLE_PERIOD_US
   num buffer circular. Quando qualquer canal passa de (baseline + limiar),
@@ -25,6 +29,7 @@
   Comandos (terminar com Enter):
     t <n>   limiar de disparo em contagens de ADC acima do baseline (def. 60)
     w <ms>  janela pos-disparo em ms (def. 100, max ~ POST_MAX_MS)
+    j <n>   jack a capturar, 1-8 (def. 1) - refaz o baseline
     ?       mostra a configuracao atual
 
   Uso: pio run -e rawpad -t upload --upload-port COM5
@@ -33,10 +38,16 @@
 
 #include <Arduino.h>
 
-#define PIN_HEAD 9
-#define PIN_RIM 10
+#define MUX_S0 39
+#define MUX_S1 40
+#define MUX_S2 41
+#define MUX_S3 42
+#define MUX_SIG 2
+#define SETTLE_US 20 // SIG estabilizar depois de trocar o endereco (4,7k no SIG descarrega rapido)
 
-#define SAMPLE_PERIOD_US 125 // 8 kHz por canal - cada analogRead leva ~60us no S3, o par nao cabe em 100us
+// 5 kHz por canal: cada leitura = troca de endereco + SETTLE_US + analogRead
+// (~60us no S3); o par (tip + ring) leva ~160us.
+#define SAMPLE_PERIOD_US 200
 #define PRE_MS 10
 #define POST_MAX_MS 250
 #define PRE_FRAMES (PRE_MS * 1000 / SAMPLE_PERIOD_US)
@@ -49,6 +60,7 @@ static uint16_t ringPos = 0;
 static uint16_t capture[PRE_FRAMES + POST_MAX_FRAMES][2];
 
 static int threshold = 60;
+static int jack = 1; // 1-8 - tip = canal 2(jack-1), ring = canal 2(jack-1)+1
 static int postMs = 100;
 static uint32_t hitCount = 0;
 
@@ -62,6 +74,8 @@ static uint16_t vMin[2], vMax[2];
 static uint32_t statStartMs = 0;
 
 static char cmdBuf[24];
+
+void captureBaseline();
 static uint8_t cmdLen = 0;
 
 static void resetStats()
@@ -79,8 +93,8 @@ static void resetStats()
 
 static void printConfig()
 {
-    Serial.printf("# rawpad head=GPIO%d rim=GPIO%d period_us=%d pre_ms=%d post_ms=%d threshold=%d\n",
-                  PIN_HEAD, PIN_RIM, SAMPLE_PERIOD_US, PRE_MS, postMs, threshold);
+    Serial.printf("# rawpad jack=%d (mux ch tip=%d ring=%d, SIG=GPIO%d) period_us=%d pre_ms=%d post_ms=%d threshold=%d\n",
+                  jack, 2 * (jack - 1), 2 * (jack - 1) + 1, MUX_SIG, SAMPLE_PERIOD_US, PRE_MS, postMs, threshold);
 }
 
 static void handleCommand()
@@ -91,6 +105,11 @@ static void handleCommand()
         threshold = v;
     else if (sscanf(cmdBuf, "w %d", &v) == 1 && v >= 10 && v <= POST_MAX_MS)
         postMs = v;
+    else if (sscanf(cmdBuf, "j %d", &v) == 1 && v >= 1 && v <= 8)
+    {
+        jack = v;
+        captureBaseline();
+    }
     else if (cmdBuf[0] != '?')
         Serial.printf("# comando invalido: '%s'\n", cmdBuf);
     printConfig();
@@ -112,20 +131,28 @@ static void pollSerial()
     }
 }
 
-static inline void readPair(uint16_t &h, uint16_t &r)
+static inline void selectChannel(uint8_t ch)
 {
-    h = analogRead(PIN_HEAD);
-    r = analogRead(PIN_RIM);
+    digitalWrite(MUX_S0, ch & 1);
+    digitalWrite(MUX_S1, (ch >> 1) & 1);
+    digitalWrite(MUX_S2, (ch >> 2) & 1);
+    digitalWrite(MUX_S3, (ch >> 3) & 1);
 }
 
-void setup()
+static inline void readPair(uint16_t &h, uint16_t &r)
 {
-    Serial.begin(921600);
-    analogReadResolution(12);
-    analogSetAttenuation(ADC_11db); // faixa ~0-3.1V
-    delay(300);
+    uint8_t tip = 2 * (jack - 1);
+    selectChannel(tip);
+    delayMicroseconds(SETTLE_US);
+    h = analogRead(MUX_SIG);
+    selectChannel(tip + 1);
+    delayMicroseconds(SETTLE_US);
+    r = analogRead(MUX_SIG);
+}
 
-    // Baseline inicial: media de 256 leituras.
+// Baseline inicial: media de 256 leituras.
+void captureBaseline()
+{
     uint32_t acc[2] = {0, 0};
     for (int i = 0; i < 256; i++)
     {
@@ -137,6 +164,20 @@ void setup()
     }
     for (int c = 0; c < 2; c++)
         baseFx[c] = (int32_t)(acc[c] / 256) << BASELINE_SHIFT;
+}
+
+void setup()
+{
+    Serial.begin(921600);
+    pinMode(MUX_S0, OUTPUT);
+    pinMode(MUX_S1, OUTPUT);
+    pinMode(MUX_S2, OUTPUT);
+    pinMode(MUX_S3, OUTPUT);
+    analogReadResolution(12);
+    analogSetAttenuation(ADC_11db); // faixa ~0-3.1V
+    delay(300);
+
+    captureBaseline();
 
     printConfig();
     Serial.println("# pronto - pode bater no pad");

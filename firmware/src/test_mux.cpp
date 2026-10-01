@@ -4,7 +4,9 @@
   confirmar que o endereçamento S0-S3 e o SIG estão certos: com um sensor
   ligado num canal, so' aquele canal deve reagir.
 
-  Pinos (mesmos de main.cpp): S0=42, S1=41, S2=40, S3=39, SIG=GPIO1 (ADC1_CH0).
+  Pinos (mesmos de main.cpp, 2026-10-01): S0=39, S1=40, S2=41, S3=42,
+  SIG=GPIO2 (ADC1_CH1) - jackboard A (jacks 1-8). Jack N: tip = canal
+  2(N-1), ring = canal 2(N-1)+1.
   Sem tela/encoder/USB-MIDI/BLE/EEPROM.
 
   Formato no Serial:
@@ -15,11 +17,11 @@
 
 #include <Arduino.h>
 
-#define MUX_S0 42
-#define MUX_S1 41
-#define MUX_S2 40
-#define MUX_S3 39
-#define MUX_SIG 1
+#define MUX_S0 39
+#define MUX_S1 40
+#define MUX_S2 41
+#define MUX_S3 42
+#define MUX_SIG 2
 
 #define SETTLE_US 50 // tempo pro SIG estabilizar depois de trocar o endereco
 
@@ -41,7 +43,7 @@ void setup()
     analogReadResolution(12);
     analogSetAttenuation(ADC_11db);
     delay(300);
-    Serial.println("# mux_test: MUX0 S0=42 S1=41 S2=40 S3=39 SIG=GPIO1");
+    Serial.println("# mux_test: MUX0 S0=39 S1=40 S2=41 S3=42 SIG=GPIO2");
 }
 
 void loop()

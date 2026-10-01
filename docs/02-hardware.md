@@ -184,15 +184,24 @@ GND    ------------ GND
 
 | Sinal | GPIO (ESP32-S3) |
 |---|---|
-| S0 (compartilhado) | 42 |
-| S1 (compartilhado) | 41 |
-| S2 (compartilhado) | 40 |
-| S3 (compartilhado) | 39 |
-| SIG — MUX 0 (pads 0-15) | 1 |
-| SIG — MUX 1 (pads 16-31) | 2 |
+| S0 (compartilhado) | 39 |
+| S1 (compartilhado) | 40 |
+| S2 (compartilhado) | 41 |
+| S3 (compartilhado) | 42 |
+| SIG — MUX 0 / jackboard A (jacks 1-8, pads 0-15) | 2 (ADC1_CH1) |
+| SIG — MUX 1 / jackboard B (jacks 9-16, pads 16-31) | 1 (ADC1_CH0) |
 
-Atualizar esta tabela (e o `main.cpp`) quando o pinout for validado/ajustado no
-hardware real.
+**Ajustado em 2026-10-01** com a jackboard A montada (Rodrigo): a ordem do
+S0-S3 inverteu (antes S0=42 … S3=39) e os SIGs trocaram de lugar. GPIO39-42
+são os pinos de JTAG por pino (MTCK/MTDO/MTDI/MTMS) — livres como GPIO, porque
+o ESP32-S3 usa por padrão o JTAG pelo USB (GPIO19/20) — e nenhum deles é de
+strapping (0, 3, 45, 46). A ordem do S0-S3 precisa bater exatamente com a
+fiação: invertida, o endereço sai com os bits ao contrário e os canais
+embaralham (canal 1 lido como 8, 2 como 4...).
+
+Enquanto só a jackboard A estiver montada, o SIG do MUX 1 (GPIO1) fica
+flutuando: os pads 17-32 podem ler ruído como batida — desligar esses canais
+no ConfigTool até a placa B ser montada.
 
 ## Tela TFT (ST7735, SPI) — header ESQUERDO
 
@@ -279,6 +288,48 @@ mapeamento completo e o racional, e Fase Z pro pinout atual.
   quando compilado com `ARDUINO_USB_CDC_ON_BOOT=0` — ver
   [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase R).
   Corrige uma nota anterior que os listava como "sem uso previsto".
+
+## Jack 1: controlador de chimbal com sensor Hall SS49E (2026-10-01)
+
+Montagem **validada na bancada** (Rodrigo, jackboard A single-layer): o
+controlador de chimbal do kit de fábrica fica no **jack 1** (ring = sinal,
+tip livre), e o SS49E precisa de alimentação pelo cabo.
+
+**Como ficou o jack 1 na placa:**
+
+- **Todos os componentes de proteção dos canais 0 e 1 retirados** (R1, R2,
+  R17, R18, D1, D2).
+- **Jumper do +3,3 V para o tip** do J1 (alimenta o SS49E). Ponto prático: a
+  via de +3,3 V fica logo acima do R1, a ~3 mm do furo de cima dele.
+- **Jumper no lugar do R2**: ring do J1 direto no canal 1 do MUX.
+
+Montado com os componentes do esquemático (1k em série, 100k e diodos), a
+leitura ficou em 0 o tempo todo e a causa não foi identificada; só com os
+jumpers o sinal apareceu. Pela conta, só o 1k + 100k + o 4,7k do SIG deveriam
+atenuar ~20%, não zerar — fica como ponto a investigar se um dia esse jack
+voltar a ter proteção.
+
+**Cabo / pedal (TRS):** tip = VCC do SS49E · ring = OUT · sleeve = GND.
+Opcional: 100 nF entre VCC e GND junto do sensor (reduz o tremor do CC4).
+
+**Leituras (`mux_test`, ADC 12 bits):** repouso ~1850–1860 (±20 de ruído);
+com um ímã à mão, 1228–2443 — ~600 contagens úteis para cada lado do repouso,
+o suficiente para o CC4 (~5 contagens por degrau). No pedal, o ímã deve se
+aproximar **de frente** do sensor, para o percurso aberto→fechado andar num
+sentido só (o SS49E sobe com um polo e desce com o outro).
+
+**Cuidados dessa montagem:**
+
+- **Jack 1 é dedicado ao chimbal.** Sem a proteção, um pad de piezo ligado
+  ali por engano manda picos direto pro MUX/ADC — marcar o jack no painel.
+- **3,3 V direto no tip, sem limitação de corrente:** ao plugar ou desplugar
+  com o módulo ligado, a ponta do plugue encosta um instante no GND e pode
+  reiniciar o ESP32. Plugar o pedal com o módulo desligado (ou trocar o
+  jumper por ~47 Ω).
+- **Perna TN do J1:** com 3,3 V no tip, o contato TN (ligado ao GND) não pode
+  ficar soldado, senão o 3,3 V entra em curto sempre que o jack estiver
+  vazio.
+- **Placa B:** o jack 9 é montado normal, como os outros pads.
 
 ## Mapeamento de fábrica (2026-09-27)
 

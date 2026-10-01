@@ -1,5 +1,6 @@
 /*
-  Teste isolado do sensor hall (SS49E) no GPIO9 - mostra a leitura bruta do
+  Teste isolado do sensor hall (SS49E) no RING do jack 1 (canal 1 do MUX da
+  jackboard A, 2026-10-01 - antes era o GPIO9 direto) - mostra a leitura bruta do
   ADC (0-4095) na tela TFT e no Serial, ao vivo. Sem MUX/encoders/USB-MIDI/
   BLE/EEPROM do firmware principal - so' pra confirmar que o sensor esta'
   ligado certo e respondendo (valor sobe/desce ao aproximar um ima).
@@ -10,8 +11,8 @@
 
   Mesmos pinos de tela do main.cpp (Fase Z + ajuste 2026-09-06, ver
   docs/02-hardware.md): SCL=7, SDA=15, RES=16, DC=17, CS=18, BLK=8.
-  Sensor hall: sinal no GPIO9 (era GPIO17 antes da Fase Z - migrou porque
-  GPIO17 virou sinal permanente da tela), alimentado em 3V3 (nao 5V) e GND.
+  Sensor hall no jack 1: tip = VCC (3V3 via 47R na jackboard), ring = OUT
+  (canal 1 do MUX), sleeve = GND. MUX: S0=39 S1=40 S2=41 S3=42, SIG=GPIO2.
 */
 
 #include <Arduino.h>
@@ -26,7 +27,12 @@
 #define TFT_CS 18
 #define TFT_BLK 8
 
-#define HALL_PIN 9
+#define MUX_S0 39
+#define MUX_S1 40
+#define MUX_S2 41
+#define MUX_S3 42
+#define MUX_SIG 2
+#define HALL_MUX_CH 1 // ring do jack 1
 
 // Mesma paleta do main.cpp (design/SPEC.md) - RGB565.
 #define COL_BG 0x10A3
@@ -39,6 +45,16 @@ Adafruit_ST7735 tft(TFT_CS, TFT_DC, TFT_RST);
 void setup()
 {
     Serial.begin(115200);
+
+    // Endereco fixo no canal do sensor - nao precisa trocar durante o teste.
+    pinMode(MUX_S0, OUTPUT);
+    pinMode(MUX_S1, OUTPUT);
+    pinMode(MUX_S2, OUTPUT);
+    pinMode(MUX_S3, OUTPUT);
+    digitalWrite(MUX_S0, HALL_MUX_CH & 1);
+    digitalWrite(MUX_S1, (HALL_MUX_CH >> 1) & 1);
+    digitalWrite(MUX_S2, (HALL_MUX_CH >> 2) & 1);
+    digitalWrite(MUX_S3, (HALL_MUX_CH >> 3) & 1);
 
     pinMode(TFT_BLK, OUTPUT);
     digitalWrite(TFT_BLK, HIGH); // backlight sempre ligado, sem PWM
@@ -53,12 +69,12 @@ void setup()
     tft.setCursor(14, 20);
     tft.print("TESTE SENSOR HALL");
     tft.setCursor(30, 34);
-    tft.print("GPIO9 - raw ADC");
+    tft.print("J1 ring - raw ADC");
 }
 
 void loop()
 {
-    int raw = analogRead(HALL_PIN); // 0-4095 (ADC de 12 bits)
+    int raw = analogRead(MUX_SIG); // 0-4095 (ADC de 12 bits)
 
     // Redesenha so' a area do numero, pra nao piscar a tela toda.
     tft.fillRect(0, 55, 160, 40, COL_BG);

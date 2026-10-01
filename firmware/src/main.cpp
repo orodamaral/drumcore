@@ -197,13 +197,17 @@ void bringUpNativeUsbHardware()
 #define TFT_BLK 8
 
 // --- CD4067 (2x, 32 canais) - header DIREITO ---
-#define MUX_S0 42
-#define MUX_S1 41
-#define MUX_S2 40
-#define MUX_S3 39
+// 2026-10-01: ordem do S0-S3 invertida (S0=39 ... S3=42) e SIGs trocados
+// pra bater com a fiacao da jackboard A montada (Rodrigo). GPIO39-42 sao os
+// pinos de JTAG por pino (MTCK/MTDO/MTDI/MTMS), livres como GPIO - o S3 usa
+// o JTAG pelo USB (GPIO19/20) por padrao; nenhum deles e' de strapping.
+#define MUX_S0 39
+#define MUX_S1 40
+#define MUX_S2 41
+#define MUX_S3 42
 
-#define MUX0_Z 1 // SIG do HW-178 #0 (pads 0-15) - ADC1_0
-#define MUX1_Z 2 // SIG do HW-178 #1 (pads 16-31) - ADC1_1
+#define MUX0_Z 2 // SIG da jackboard A (jacks 1-8, pads 0-15) - ADC1_1
+#define MUX1_Z 1 // SIG da jackboard B (jacks 9-16, pads 16-31) - ADC1_0
 
 #define NUM_MUX 2
 #define PADS_PER_MUX 16

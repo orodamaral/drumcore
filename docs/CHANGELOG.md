@@ -2,6 +2,27 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-01 — Controlador de chimbal (SS49E) funcionando no jack 1
+
+- Jackboard A montada parcialmente (J1 e J2). O SS49E no jack 1 só funcionou
+  **sem** a rede de proteção dos canais 0 e 1: todos os componentes retirados,
+  jumper do +3,3 V para o tip e jumper no lugar do R2. Com os componentes do
+  esquemático a leitura ficava em 0 (causa não identificada).
+- Leitura: repouso ~1855, com ímã à mão 1228–2443 (~600 contagens úteis de
+  cada lado). Detalhes e cuidados (jack dedicado, plugar desligado, perna TN)
+  em [02-hardware.md](02-hardware.md).
+
+## 2026-10-01 — Pinagem do MUX ajustada para a jackboard A montada
+
+- **S0-S3 = GPIO 39/40/41/42** (ordem invertida em relação à anterior) e
+  **SIGs trocados**: jackboard A (jacks 1-8) no **GPIO 2**, jackboard B
+  (jacks 9-16) no **GPIO 1**. Firmware principal, `mux_test`, `rawpad` e
+  `test_hall` atualizados; tabela em [02-hardware.md](02-hardware.md).
+- `rawpad` agora lê **pelo MUX** o tip e o ring de um jack (comando `j <n>`,
+  padrão jack 1), a **5 kHz por canal** (antes 8 kHz em 2 pinos diretos do
+  bring-up sem jackboard).
+- `test_hall` lê o SS49E pelo ring do jack 1 (canal 1 do MUX).
+
 ## 2026-09-27 — Tela LIVE com 1 célula por jack e apelido do jack
 
 - **LIVE**: grade 4×4 com os **16 jacks** (antes 32 canais), placa A nas
