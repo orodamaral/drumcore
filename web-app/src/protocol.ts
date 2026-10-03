@@ -313,7 +313,7 @@ export interface GlobalConfig {
 // impacto (pads normais) - o fluxo HHC não muda.
 export const AUTOTUNE_TIER_COUNT = 3
 export const AUTOTUNE_TIER_WINDOW_MS = 10000
-export const AUTOTUNE_HH_HOLD_MS = 3000
+export const AUTOTUNE_HH_HOLD_MS = 10000
 export type AutoTuneUiState = 'idle' | 'noise' | 'collecting' | 'done' | 'aborted'
 export type AutoTuneTier = 'weak' | 'medium' | 'strong'
 export type AutoTuneZone = 'head' | 'rim' | 'bow' | 'edge' | 'cup'

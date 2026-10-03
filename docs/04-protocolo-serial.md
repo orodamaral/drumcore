@@ -242,7 +242,7 @@ Auto-tune de um prato 3 zonas (`pad_type` 5) na rodada extra do cup, nível fort
 
 Auto-tune de um controlador de pedal (`pad_type` 6/7) segurando a posição fechada, 1.4s dos 3s (fluxo HHC, fora da mudança da Fase AA — continua por contagem de tempo fixa, não por golpes):
 ```json
-{"type":"autotune_status","pad":12,"state":"collecting","phase":"hh_closed","hold_elapsed_ms":1400,"hold_target_ms":3000,"hit_count":0}
+{"type":"autotune_status","pad":12,"state":"collecting","phase":"hh_closed","hold_elapsed_ms":1400,"hold_target_ms":10000,"hit_count":0}
 ```
 Resultado final desse mesmo pedal (`mode: "hihat_range"` avisa que `sensitivity`/`threshold` são o teto/piso de posição, não pico de pancada):
 ```json

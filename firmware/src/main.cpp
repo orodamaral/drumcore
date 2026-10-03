@@ -1928,6 +1928,104 @@ void fireControlChange(byte cc, byte value)
 #define PAD_FLASH_MS 60  // design/SPEC.md: solido 0-60ms
 #define PAD_DECAY_MS 180 // ...decaindo (borda) ate 180ms
 
+// ---------------------------------------------------------------------------
+// Pedal de chimbal (tipo 6) - rotina propria, 2026-10-02. A FSRSensing() da
+// lib (feita pra FSR) tinha 2 problemas com o sensor Hall SS49E:
+//   - arredondava o CC em degraus de 20 (so' 0/20/40/.../127) - abertura do
+//     chimbal pulando em saltos;
+//   - usava scan_time/mask_time como POSICOES de "fechou/abriu" (100/300 na
+//     escala interna) - com o SS49E (~410-760) o pedal ficava sempre
+//     "fechado".
+// Aqui: posicao = 1023 - raw/4 (mesma escala da calibracao, ver
+// hihatInternalValue()), filtrada (media movel exponencial); CC linear 0-127
+// entre threshold (x10) e sensitivity (x10) calibrados, invertido se
+// hihat_invert; chick quando passa de ~90% (reabre abaixo de ~70%), com a
+// forca pela velocidade de fechamento (rim_sensitivity = "sensibilidade do
+// pedal", mesma escala da lib: ms x 100 pra velocity 1).
+// O optico (tipo 7) continua na TCRT5000Sensing() da lib.
+// ---------------------------------------------------------------------------
+#define PEDAL_FILTER_SHIFT 3 // media movel, alfa = 1/8
+#define PEDAL_CC_HYST 2      // so' manda CC se mudar >= 2 (extremos 0/127 sempre)
+#define PEDAL_CC_CLOSE 114   // ~90% do percurso: fechou (chick)
+#define PEDAL_CC_REOPEN 89   // ~70%: reabriu
+#define PEDAL_CC_START 64    // ~50%: comeca a medir a velocidade do fechamento
+
+struct PedalState
+{
+    int32_t filtFx = 0;
+    bool init = false;
+    byte cc = 0;
+    byte lastSent = 0;
+    bool sentOnce = false;
+    bool closed = false;
+    bool closing = false;
+    unsigned long closeStartMs = 0;
+    byte chickVel = 0; // > 0 so' na volta em que fechou
+};
+PedalState pedalState[NUM_PADS];
+
+void hihatPedalSensing(byte i)
+{
+    HelloDrum &pad = pads[i];
+    PedalState &st = pedalState[i];
+    pad.hit = false; // nao usa a lib - garante que nada antigo vire golpe
+    pad.hitRim = false;
+    pad.hitCup = false;
+
+    int internal = 1023 - rawValue[i] / 4; // = hihatInternalValue(PAD_HIHAT_PEDAL, ...)
+    if (!st.init)
+    {
+        st.filtFx = (int32_t)internal << PEDAL_FILTER_SHIFT;
+        st.init = true;
+    }
+    st.filtFx += internal - (st.filtFx >> PEDAL_FILTER_SHIFT);
+    int pos = (int)(st.filtFx >> PEDAL_FILTER_SHIFT);
+
+    int lo = pad.threshold1 * 10;
+    int hi = pad.sensitivity * 10;
+    if (hi <= lo)
+    {
+        hi = lo + 1;
+    }
+    long cc = (long)(pos - lo) * 127 / (hi - lo);
+    cc = constrain(cc, 0, 127);
+    if (padHihatInvert[i])
+    {
+        cc = 127 - cc;
+    }
+    st.cc = (byte)cc;
+
+    st.chickVel = 0;
+    unsigned long now = millis();
+    if (!st.closed)
+    {
+        if (st.cc >= PEDAL_CC_START && !st.closing)
+        {
+            st.closing = true;
+            st.closeStartMs = now;
+        }
+        else if (st.cc < PEDAL_CC_START)
+        {
+            st.closing = false;
+        }
+        if (st.cc >= PEDAL_CC_CLOSE)
+        {
+            st.closed = true;
+            st.closing = false;
+            long dt = (long)(now - st.closeStartMs);
+            long v = map(dt, (long)pad.rimSensitivity * 100, 0, 1, 127);
+            st.chickVel = (byte)constrain(v, 1, 127);
+        }
+    }
+    else if (st.cc <= PEDAL_CC_REOPEN)
+    {
+        st.closed = false;
+    }
+    // Estado usado pelos tipos de chimbal (ocultos) linkados a este pedal.
+    pad.openHH = !st.closed;
+    pad.closeHH = st.closed;
+}
+
 unsigned long padHitAtMs[NUM_PADS] = {0};
 // Ultima batida por CANAL fisico (tip/ring) - a LIVE mostra 1 celula por
 // jack com um indicador pra cada canal. Num pad de 2 zonas a zona principal
@@ -2086,6 +2184,29 @@ void handlePadResult(byte i)
     }
 
     case PAD_HIHAT_PEDAL:
+    {
+        // CC continuo (0-127) ja filtrado e com histerese - ver
+        // hihatPedalSensing(). Chick: so' no instante em que o pedal fecha.
+        PedalState &st = pedalState[i];
+        if (st.chickVel > 0)
+        {
+            chanHitAtMs[i] = millis(); // acende o indicador na LIVE
+            if (padPedalNote[i])
+            {
+                sendHitEvent(i, "pedal", pad.note, st.chickVel);
+                fireNote(pad.note, st.chickVel);
+            }
+        }
+        bool atEdge = (st.cc == 0 || st.cc == 127) && st.cc != st.lastSent;
+        if (!st.sentOnce || abs((int)st.cc - (int)st.lastSent) >= PEDAL_CC_HYST || atEdge)
+        {
+            st.lastSent = st.cc;
+            st.sentOnce = true;
+            fireControlChange(padPedalCC[i], st.cc);
+        }
+        break;
+    }
+
     case PAD_HIHAT_OPTICAL:
     {
         // Chick ao fechar: desligavel (padPedalNote) - no Addictive Drums 2
@@ -2146,7 +2267,7 @@ void dispatchSensing(byte i)
         pads[i].snare3zoneMUX(); // razoes entre os 2 piezos - ver define de PAD_SNARE_3ZONE
         break;
     case PAD_HIHAT_PEDAL:
-        pads[i].hihatControlMUX();
+        hihatPedalSensing(i); // rotina propria (nao a FSRSensing() da lib) - ver hihatPedalSensing()
         break;
     case PAD_HIHAT_OPTICAL:
         pads[i].TCRT5000MUX();
@@ -2438,8 +2559,10 @@ enum AutoTuneZone : byte
 // depois pressionado) por AUTOTUNE_HH_HOLD_MS cada, e amostra so' o
 // ultimo AUTOTUNE_HH_SAMPLE_MS de cada uma (da tempo do usuario chegar na
 // posicao e o sinal assentar antes de comecar a contar).
-#define AUTOTUNE_HH_HOLD_MS 3000
-#define AUTOTUNE_HH_SAMPLE_MS 1000
+// 2026-10-02: 10 s por posicao (eram 3 s - pouco tempo pra posicionar o
+// pedal, pedido do Rodrigo); media dos ultimos 3 s de cada uma.
+#define AUTOTUNE_HH_HOLD_MS 10000
+#define AUTOTUNE_HH_SAMPLE_MS 3000
 
 AutoTuneState atState = AT_IDLE;
 AutoTuneTier atTier = AT_TIER_WEAK;

@@ -2175,8 +2175,8 @@ sempre foi ajuste manual, no escuro.
 `autoTuneTick()`)**: sensor de posição contínua não tem "golpe" pra
 esperar — o assistente pula direto pra essas 2 fases (sem `AT_NOISE`,
 sem tiers/zonas). Pede pra segurar o pedal **solto** por
-`AUTOTUNE_HH_HOLD_MS` (3s), amostrando só o último `AUTOTUNE_HH_SAMPLE_MS`
-(1s) — dá tempo do usuário chegar na posição e o sinal assentar antes de
+`AUTOTUNE_HH_HOLD_MS` (10 s desde 2026-10-02; eram 3 s), amostrando só o último `AUTOTUNE_HH_SAMPLE_MS`
+(3 s; era 1 s) — dá tempo do usuário chegar na posição e o sinal assentar antes de
 contar — depois **pressionado até o fim**, mesma lógica.
 `hihatInternalValue()`/`hihatFieldMultiplier()` replicam a MESMA
 transformação que `FSRSensing()`/`TCRT5000Sensing()` fazem no valor bruto
@@ -2433,7 +2433,7 @@ dá uma média mais confiável, principalmente pra quem não consegue manter
 uma força de batida constante golpe a golpe. Explicitamente **fora de
 escopo**: o fluxo de calibração do controlador de pedal (HHC,
 `AT_HH_OPEN`/`AT_HH_CLOSED`, Fase X) — continua com o próprio esquema de
-segurar 2 posições por `AUTOTUNE_HH_HOLD_MS` (3s fixos), não é um sensor
+segurar 2 posições por `AUTOTUNE_HH_HOLD_MS` (10 s fixos), não é um sensor
 de impacto e não faz sentido "colher mais golpes" dele.
 
 **`AUTOTUNE_HIT_TARGET` (8) → `AUTOTUNE_TIER_WINDOW_MS` (10000)**: a
