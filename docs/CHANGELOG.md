@@ -2,6 +2,31 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-03 — Mapa MIDI do Superior Drummer 3 no ConfigTool
+
+- Novo mapa **Superior Drummer 3** (layout padrão da Toontrack, 36 = C1) no
+  seletor de mapas e em "Aplicar mapa aos pads". O padrão continua sendo o
+  Addictive Drums 2.
+- Notas por instrumento: caixa 38 / aro 40 / borda 33; toms Racktom 1–3 e
+  Floortom 1 (48/47/45/43, rimshot 82/80/78/75); chimbal pelas notas "Trig"
+  controladas pelo CC do pedal (8 tip / 7 edge / 9 bell), chick 21 (Closed
+  Pedal); condução 51 / borda 59 / cúpula 53; pratos nos slots que coincidem
+  com o GM (Cymbal 2 = 49, Cymbal 4 = 57, Cymbal 3 = 55 splash, Cymbal 5 = 52
+  china), com choke na nota "Muted".
+
+## 2026-10-02 — Pedal de chimbal (tipo 6) com CC contínuo e calibração de 10 s
+
+- **Pedal de chimbal** (`pad_type` 6) com rotina própria no firmware, no
+  lugar da `FSRSensing()` da lib. A rotina da lib arredondava o CC em degraus
+  de 20 e usava `scan_time`/`mask_time` como posições de "fechou/abriu", o que
+  deixava o SS49E sempre "fechado". Agora o CC vai de 0 a 127 em passos
+  contínuos entre os pontos calibrados (respeitando "Inverter"), com filtro
+  suave e histerese de 2. O chick sai quando o pedal passa de ~90% do
+  percurso e só rearma abaixo de ~70%. A força do chick vem da velocidade de
+  fechamento ("sensibilidade do pedal"). O óptico (tipo 7) não mudou.
+- **Calibração do pedal**: 10 s em cada posição (eram 3 s), com média dos
+  últimos 3 s de cada uma.
+
 ## 2026-10-01 — Caixa 3 zonas só com 2 piezos (razões) e varredura só dos canais em uso
 
 - **Caixa 3 zonas** (`pad_type` 8) com sensing novo, `snare3zoneSensing()`:

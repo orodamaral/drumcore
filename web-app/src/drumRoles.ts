@@ -89,7 +89,28 @@ const AD2_SLOTS: Record<Exclude<DrumRole, 'none'>, Slots> = {
   china: { main: 89, choke: 90 }
 }
 
-const SLOTS: Record<MidiMapId, Record<Exclude<DrumRole, 'none'>, Slots>> = { gm: GM_SLOTS, ad2: AD2_SLOTS }
+// Superior Drummer 3 - notas do layout padrão (ver midiMaps.ts). Pratos nos
+// slots que coincidem com o GM: Cymbal 2 = 49 (ataque), Cymbal 4 = 57
+// (ataque 2), Cymbal 3 = 55 (splash), Cymbal 5 = 52 (china); choke = "Muted".
+// Chimbal: notas "Trig" controladas pelo CC do pedal (8 tip / 7 edge / 9
+// bell), como no AD2. Tom 4 (surdo) = Floortom 1.
+const SD3_SLOTS: Record<Exclude<DrumRole, 'none'>, Slots> = {
+  kick: { main: 36 },
+  snare: { main: 38, rim: 40, edge: 33 },
+  tom1: { main: 48, rim: 82 },
+  tom2: { main: 47, rim: 80 },
+  tom3: { main: 45, rim: 78 },
+  tom4: { main: 43, rim: 75 },
+  hihat: { main: 8, edge: 7, bell: 9 },
+  hihat_pedal: { main: 21 },
+  ride: { main: 51, edge: 59, bell: 53, choke: 118 },
+  crash1: { main: 49, bell: 28, choke: 50 },
+  crash2: { main: 57, bell: 32, choke: 58 },
+  splash: { main: 55, bell: 97, choke: 56 },
+  china: { main: 52, bell: 109, choke: 54 }
+}
+
+const SLOTS: Record<MidiMapId, Record<Exclude<DrumRole, 'none'>, Slots>> = { gm: GM_SLOTS, ad2: AD2_SLOTS, sd3: SD3_SLOTS }
 
 type NoteField = Extract<PadField, 'note' | 'note_rim' | 'note_cup'>
 
@@ -154,8 +175,8 @@ const NAME_RULES: Array<[RegExp, DrumRole]> = [
   [/\btom\b/, 'tom1']
 ]
 
-/** Nota atual -> papel, por mapa (reconhece um kit já configurado em GM ou AD2). */
-const NOTE_ROLE: Record<MidiMapId, Record<number, DrumRole>> = { gm: {}, ad2: {} }
+/** Nota atual -> papel, por mapa (reconhece um kit já configurado em GM, AD2 ou SD3). */
+const NOTE_ROLE: Record<MidiMapId, Record<number, DrumRole>> = { gm: {}, ad2: {}, sd3: {} }
 for (const id of Object.keys(SLOTS) as MidiMapId[]) {
   for (const [role, s] of Object.entries(SLOTS[id]) as Array<[DrumRole, Slots]>) {
     for (const n of [s.main, s.open, s.closed]) if (n !== undefined && !(n in NOTE_ROLE[id])) NOTE_ROLE[id][n] = role
@@ -172,6 +193,9 @@ export function suggestRole(pad: PadConfigPrimary, map: MidiMapId): DrumRole {
   if (pad.pad_type === 8) return 'snare'
   if (pad.pad_type === 9) return 'none'
   // Mapa escolhido primeiro (49 = Ataque no GM, mas Chimbal fechado no AD2).
-  const other: MidiMapId = map === 'gm' ? 'ad2' : 'gm'
-  return NOTE_ROLE[map][pad.note] ?? NOTE_ROLE[other][pad.note] ?? 'none'
+  for (const id of [map, ...(Object.keys(NOTE_ROLE) as MidiMapId[]).filter((m) => m !== map)]) {
+    const role = NOTE_ROLE[id][pad.note]
+    if (role) return role
+  }
+  return 'none'
 }

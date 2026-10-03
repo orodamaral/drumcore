@@ -120,7 +120,7 @@ export function padTypeLabel(type: PadType): string {
   return `${base} · ${meta.channels} ${meta.channels > 1 ? 'canais' : 'canal'}`
 }
 
-// Nomes de nota / mapas GM e Addictive Drums 2: ver midiMaps.ts.
+// Nomes de nota / mapas GM, Addictive Drums 2 e Superior Drummer 3: ver midiMaps.ts.
 
 // ------------------------------------------------------------ curvas
 
