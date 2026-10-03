@@ -576,3 +576,9 @@ footer.site .license-note {
     display: none;
   }
 }
+
+/* rotulo secundario em tabelas, ex: "(legado)" */
+.dim {
+  color: var(--ink-faint);
+  font-weight: 400;
+}

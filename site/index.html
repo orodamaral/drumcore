@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>DrumCore — módulo MIDI-USB/BLE para bateria eletrônica</title>
-<meta name="description" content="DrumCore: módulo de disparo MIDI para bateria eletrônica baseado em ESP32-S3, com 32 canais analógicos, USB-MIDI nativo, BLE-MIDI e app de configuração direto pelo navegador." />
+<meta name="description" content="DrumCore: módulo de disparo MIDI para bateria eletrônica baseado em ESP32-S3, com 32 canais analógicos, USB-MIDI nativo, BLE-MIDI, Wi-Fi e app de configuração direto pelo navegador ou pela própria placa." />
 <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
@@ -31,14 +31,15 @@
       analógicos de pads/pratos/chimbal, converte em notas e Control Change, e manda
       via <strong>USB-MIDI nativo</strong> (plug-and-play) e <strong>BLE-MIDI</strong>
       simultaneamente. Tela TFT + encoder rotativo pra configurar direto no hardware,
-      e um app pelo navegador pra ajustar tudo com mais conforto.
+      e um app pelo navegador pra ajustar tudo com mais conforto — pelo cabo USB ou
+      <strong>pelo Wi-Fi</strong>, abrindo o app direto da placa, até no celular.
     </p>
     <div class="hero-actions">
       <a class="btn btn-primary" href="app/">Configurar pelo navegador ↗</a>
       <a class="btn btn-ghost" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">Ver código no GitHub</a>
       <a class="btn btn-ghost" href="hardware.html">Esquemático de ligação</a>
     </div>
-    <div class="status-pill"><span class="dot"></span>Em desenvolvimento — bring-up em bancada (2 canais de teste validados), jackboard single-layer pronta pra fabricar em casa</div>
+    <div class="status-pill"><span class="dot"></span>Em desenvolvimento — as 2 jackboards (32 canais) montadas e validadas; caixa 3 zonas e chimbal testados com pads reais; Wi-Fi com o app na própria placa</div>
   </div>
 </header>
 
@@ -53,7 +54,7 @@
       <div class="card">
         <div class="icon">🥁</div>
         <h3>32 canais analógicos</h3>
-        <p>2x multiplexador CD4067 (módulo HW-178, 16 canais cada) escaneados pelo ESP32-S3 — dá pra montar um kit inteiro de pads, pratos e chimbal num único módulo.</p>
+        <p>2x multiplexador CD4067 (módulo HW-178, 16 canais cada) em 2 jackboards com 8 jacks TRS cada — montadas e validadas. O módulo lê só os canais em uso, então cada pad é lido mais vezes por segundo.</p>
       </div>
       <div class="card">
         <div class="icon">🔌</div>
@@ -73,12 +74,22 @@
       <div class="card">
         <div class="icon">🧰</div>
         <h3>App de configuração pelo navegador</h3>
-        <p>Direto pelo navegador (<a href="app/">Chrome/Edge, via Web Serial</a>, sem instalar nada) — todos os parâmetros de cada pad organizados por seção, curva de resposta com gráfico, mapas MIDI General MIDI, Addictive Drums 2 e Superior Drummer 3 aplicados ao kit inteiro num clique, copiar/colar entre pads, desfazer/refazer e modo demo pra testar sem hardware.</p>
+        <p>Pelo cabo USB (<a href="app/">Chrome/Edge, via Web Serial</a>, sem instalar nada) ou pelo Wi-Fi, em qualquer navegador — todos os parâmetros de cada pad organizados por seção, curva de resposta com gráfico, mapas MIDI General MIDI, Addictive Drums 2 e Superior Drummer 3 aplicados ao kit inteiro num clique, copiar/colar entre pads, desfazer/refazer e modo demo pra testar sem hardware.</p>
       </div>
       <div class="card">
         <div class="icon">🎯</div>
         <h3>Auto-calibração assistida</h3>
-        <p>Assistente guiado que bate no pad algumas vezes e calcula sensibilidade/threshold sozinho, em vez de ajustar slider no escuro.</p>
+        <p>Assistente guiado que bate no pad algumas vezes e calcula sensibilidade/threshold sozinho, em vez de ajustar slider no escuro. No pedal de chimbal, basta segurar solto e depois fechado.</p>
+      </div>
+      <div class="card">
+        <div class="icon">📡</div>
+        <h3>Wi-Fi: o app vem dentro da placa</h3>
+        <p>Ligue o Wi-Fi no menu e abra <code>drumcore.local</code>: o ConfigTool abre direto da placa, no celular ou em qualquer navegador, sem cabo. A placa cria a própria rede ou entra no Wi-Fi de casa.</p>
+      </div>
+      <div class="card">
+        <div class="icon">⬆️</div>
+        <h3>Atualização pelo Wi-Fi</h3>
+        <p>O firmware novo é instalado pela rede, sem cabo. Por segurança, o módulo só aceita depois de um clique no próprio botão dele. O USB continua funcionando para gravar uma placa nova.</p>
       </div>
     </div>
   </div>
@@ -86,10 +97,11 @@
 
 <section class="block">
   <div class="wrap">
-    <h2>10 tipos de sensor, configuráveis por canal</h2>
+    <h2>Tipos de sensor, configuráveis por canal</h2>
     <p class="block-sub">
-      Cada um dos 32 canais pode ser configurado independentemente como qualquer um
-      desses tipos, pelo app. Nenhum tipo usa mais de 2 canais físicos.
+      Cada um dos 32 canais pode ser configurado independentemente, pelo app ou pela
+      tela. Nenhum tipo usa mais de 2 canais físicos (o tip e o ring do mesmo jack).
+      O projeto é feito pra funcionar só com piezos, o sensor mais barato e fácil de achar.
     </p>
     <div class="table-wrap">
       <table>
@@ -99,12 +111,12 @@
         <tbody>
           <tr><td>Simples</td><td class="mono">1</td><td class="wrap-text">Pad ou prato de zona única (bow).</td></tr>
           <tr><td>Aro / Dual</td><td class="mono">2</td><td class="wrap-text">Pele (head) + aro (rim) — caixa/tom com sensor de aro.</td></tr>
-          <tr><td>Chimbal simples</td><td class="mono">1</td><td class="wrap-text">1 zona; a nota muda conforme o pedal está aberto ou fechado.</td></tr>
+          <tr><td>Chimbal simples <span class="dim">(legado)</span></td><td class="mono">1</td><td class="wrap-text">1 zona; a nota muda conforme o pedal está aberto ou fechado. Escondido no app: com Addictive Drums 2 e Superior Drummer 3, o chimbal é um pad comum com as notas controladas pelo CC do pedal.</td></tr>
           <tr><td>Prato 2 zonas</td><td class="mono">2</td><td class="wrap-text">Corpo (bow) + borda (edge).</td></tr>
-          <tr><td>Chimbal 2 zonas</td><td class="mono">2</td><td class="wrap-text">Bow + edge, nota muda com o pedal aberto/fechado.</td></tr>
+          <tr><td>Chimbal 2 zonas <span class="dim">(legado)</span></td><td class="mono">2</td><td class="wrap-text">Bow + edge, nota muda com o pedal aberto/fechado. Escondido no app, pelo mesmo motivo.</td></tr>
           <tr><td>Prato 3 zonas</td><td class="mono">2</td><td class="wrap-text">Bow + edge/cup (cup e edge no mesmo canal, separados por threshold).</td></tr>
-          <tr><td>Caixa 3 zonas</td><td class="mono">2</td><td class="wrap-text">Centro da pele + borda da pele (edge) + aro de verdade (rim), mesma técnica do prato 3 zonas.</td></tr>
-          <tr><td>Pedal de chimbal (FSR)</td><td class="mono">1</td><td class="wrap-text">Sensor de posição contínua (FSR/VH-10/VH-11) — controla abertura/fechamento via CC.</td></tr>
+          <tr><td>Caixa 3 zonas</td><td class="mono">2</td><td class="wrap-text">Centro da pele + borda da pele + aro, com só 2 piezos: o aro sai da razão entre o sinal do aro e o da pele, e a borda pelo formato do sinal do piezo central. Regras tiradas de capturas do sinal bruto de um pad real.</td></tr>
+          <tr><td>Pedal de chimbal</td><td class="mono">1</td><td class="wrap-text">Sensor de posição contínua (testado com sensor Hall SS49E; FSR também serve) — CC de abertura de 0 a 127 sem degraus, chick ao fechar com força pela velocidade do pé.</td></tr>
           <tr><td>Pedal de chimbal (óptico)</td><td class="mono">1</td><td class="wrap-text">Mesmo conceito, sensor óptico TCRT5000.</td></tr>
           <tr><td>Choke (fita de contato)</td><td class="mono">1</td><td class="wrap-text">Gatilho binário — fita de alumínio ligada direto num pino analógico, sem piezo. Dispara a nota configurada com velocity sempre 127 ao encostar.</td></tr>
         </tbody>
@@ -126,7 +138,7 @@
       <div class="card">
         <div class="icon">💻</div>
         <h3>App de configuração</h3>
-        <p><a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/web-app" target="_blank" rel="noopener"><code>web-app/</code></a> — React/TypeScript, roda puro no navegador via Web Serial, sem instalar nada (publicado em <code>site/app/</code>). Fala com o módulo pelo protocolo serial NDJSON (<a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/04-protocolo-serial.md" target="_blank" rel="noopener"><code>docs/04-protocolo-serial.md</code></a>), com modo demo pra configurar sem hardware conectado.</p>
+        <p><a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/web-app" target="_blank" rel="noopener"><code>web-app/</code></a> — React/TypeScript, roda puro no navegador via Web Serial, sem instalar nada (publicado em <code>site/app/</code>), e vai embutido no firmware pra abrir pelo Wi-Fi. Fala com o módulo pelo protocolo serial NDJSON (<a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/04-protocolo-serial.md" target="_blank" rel="noopener"><code>docs/04-protocolo-serial.md</code></a>), com modo demo pra configurar sem hardware conectado.</p>
       </div>
       <div class="card">
         <div class="icon">🔧</div>

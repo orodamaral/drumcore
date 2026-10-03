@@ -2,6 +2,17 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-03 — Site atualizado; jackboards validadas
+
+- As **2 jackboards** (32 canais pelos 2 CD4067) estão montadas e
+  validadas em hardware real.
+- Site: Wi-Fi e atualização pelo Wi-Fi, caixa 3 zonas por razões, pedal de
+  chimbal contínuo (SS49E), mapa do Superior Drummer 3, aviso do jack 1
+  dedicado ao pedal, e status do hardware validado.
+- Esquemático do site corrigido: mostrava a pinagem antiga do MUX. O
+  certo, igual ao firmware: S0–S3 = GPIO39/40/41/42, SIG da jackboard A =
+  GPIO2, da B = GPIO1.
+
 ## 2026-10-03 — Wi-Fi, fase 3: atualizar o firmware pela rede
 
 - Com o ConfigTool aberto pela placa, a aba **Firmware** atualiza o

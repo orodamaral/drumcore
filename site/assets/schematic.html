@@ -267,7 +267,7 @@
       Pinout conforme <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/firmware/src/main.cpp" target="_blank" rel="noopener"><code>firmware/src/main.cpp</code></a> e
       <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/02-hardware.md" target="_blank" rel="noopener"><code>docs/02-hardware.md</code></a>.
     </p>
-    <div class="stamp"><span class="dot"></span>Encoder + tela validados em hardware real (2026-09-06) — MUX ainda proposto, físico não conectado nesse layout</div>
+    <div class="stamp"><span class="dot"></span>Tudo validado em hardware real: encoder + tela (2026-09-06) e as 2 jackboards com MUX (2026-10)</div>
   </header>
 
   <div class="legend">
@@ -280,7 +280,7 @@
   <div class="schematic-frame">
     <figure>
       <div class="schematic-scroll">
-        <svg viewBox="0 0 1600 1000" role="img" aria-label="Esquemático mostrando o ESP32-S3 no centro. Do header físico esquerdo saem o encoder rotativo (GPIO4,5,6) e a tela TFT ST7735 (GPIO7,15,16,17,18,8), como um único feixe contíguo de 9 pinos. Do header físico direito saem os 2 módulos HW-178/CD4067 (barramento compartilhado S0-S3 em GPIO42,41,40,39, cada um com seu próprio pino ADC1 SIG em GPIO1/GPIO2). Fase Z: a placa ganhou pads de 3V3/GND extras nos dois headers, a divisão passou a ser por função (interface do usuário de um lado, sensing do outro) em vez de por alimentação.">
+        <svg viewBox="0 0 1600 1000" role="img" aria-label="Esquemático mostrando o ESP32-S3 no centro. Do header físico esquerdo saem o encoder rotativo (GPIO4,5,6) e a tela TFT ST7735 (GPIO7,15,16,17,18,8), como um único feixe contíguo de 9 pinos. Do header físico direito saem os 2 módulos HW-178/CD4067 (barramento compartilhado S0-S3 em GPIO39,40,41,42, cada um com seu próprio pino ADC1 SIG: GPIO2 na jackboard A e GPIO1 na jackboard B). Fase Z: a placa ganhou pads de 3V3/GND extras nos dois headers, a divisão passou a ser por função (interface do usuário de um lado, sensing do outro) em vez de por alimentação.">
           <defs>
             <marker id="dot" markerWidth="8" markerHeight="8" refX="4" refY="4">
               <circle cx="4" cy="4" r="3" fill="currentColor" />
@@ -290,7 +290,7 @@
           <!-- ===================== ESP32-S3 BOARD ===================== -->
           <rect x="780" y="60" width="220" height="880" rx="10" fill="#1d232d" stroke="#e9e4d8" stroke-width="2" />
           <text x="890" y="100" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="18" font-weight="700" fill="#e9e4d8">ESP32-S3</text>
-          <text x="890" y="120" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">DevKitC-1 (proposto)</text>
+          <text x="890" y="120" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">DevKitC-1</text>
 
           <!-- USB connector -->
           <rect x="855" y="900" width="70" height="26" rx="4" fill="#171c24" stroke="#e9e4d8" stroke-width="1.5" />
@@ -348,27 +348,27 @@
           <!-- ===================== RIGHT STUBS: MUX (teal) ===================== -->
           <g>
             <rect x="1000" y="145" width="40" height="10" fill="#5fd3c4" />
-            <text x="1045" y="154" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S0 · GPIO42</text>
+            <text x="1045" y="154" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S0 · GPIO39</text>
           </g>
           <g>
             <rect x="1000" y="185" width="40" height="10" fill="#5fd3c4" />
-            <text x="1045" y="194" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S1 · GPIO41</text>
+            <text x="1045" y="194" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S1 · GPIO40</text>
           </g>
           <g>
             <rect x="1000" y="225" width="40" height="10" fill="#5fd3c4" />
-            <text x="1045" y="234" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S2 · GPIO40</text>
+            <text x="1045" y="234" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S2 · GPIO41</text>
           </g>
           <g>
             <rect x="1000" y="265" width="40" height="10" fill="#5fd3c4" />
-            <text x="1045" y="274" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S3 · GPIO39</text>
+            <text x="1045" y="274" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">S3 · GPIO42</text>
           </g>
           <g>
             <rect x="1000" y="305" width="40" height="10" fill="#5fd3c4" />
-            <text x="1045" y="314" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">SIG0 · GPIO1 (ADC1)</text>
+            <text x="1045" y="314" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">SIG0 · GPIO2 (ADC1)</text>
           </g>
           <g>
             <rect x="1000" y="345" width="40" height="10" fill="#5fd3c4" />
-            <text x="1045" y="354" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">SIG1 · GPIO2 (ADC1)</text>
+            <text x="1045" y="354" font-family="IBM Plex Mono, monospace" font-size="12" fill="#e9e4d8">SIG1 · GPIO1 (ADC1)</text>
           </g>
 
           <!-- ===================== ENCODER (header ESQUERDO) ===================== -->
@@ -428,7 +428,7 @@
           <g>
             <rect x="1150" y="400" width="320" height="190" rx="8" fill="#171c24" stroke="#5fd3c4" stroke-width="1.5" />
             <text x="1310" y="425" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">HW-178 #0 (CD4067)</text>
-            <text x="1310" y="442" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">pads 0–15 (C0–C15)</text>
+            <text x="1310" y="442" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">jackboard A · pads 0–15</text>
 
             <path d="M1190,400 V145 H1040" stroke="#5fd3c4" stroke-width="2" fill="none" />
             <path d="M1230,400 V185 H1040" stroke="#5fd3c4" stroke-width="2" fill="none" />
@@ -441,7 +441,7 @@
             <text x="1270" y="415" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S2</text>
             <text x="1310" y="415" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S3</text>
             <text x="1350" y="415" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#5fd3c4">SIG</text>
-            <text x="1165" y="465" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">SIG → GPIO1 (ADC1)</text>
+            <text x="1165" y="465" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">SIG → GPIO2 (ADC1)</text>
             <text x="1165" y="487" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VCC → 3V3 · GND → GND</text>
             <text x="1165" y="505" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">EN → GND (sempre habilitado)</text>
             <text x="1165" y="523" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">16x canais (C0–C15) → conectores dos pads</text>
@@ -453,7 +453,7 @@
           <g>
             <rect x="1150" y="640" width="320" height="190" rx="8" fill="#171c24" stroke="#5fd3c4" stroke-width="1.5" />
             <text x="1310" y="665" text-anchor="middle" font-size="13" font-weight="600" fill="#e9e4d8">HW-178 #1 (CD4067)</text>
-            <text x="1310" y="682" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">pads 16–31 (C0–C15)</text>
+            <text x="1310" y="682" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">jackboard B · pads 16–31</text>
 
             <!-- Rotas dos 4 sinais compartilhados (S0-S3) desviam do box #0, usando uma faixa a esquerda (x=1050-1115) -->
             <path d="M1050,640 V145 H1040" stroke="#5fd3c4" stroke-width="2" fill="none" />
@@ -467,7 +467,7 @@
             <text x="1090" y="655" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S2</text>
             <text x="1110" y="655" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">S3</text>
             <text x="1350" y="655" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#5fd3c4">SIG</text>
-            <text x="1165" y="705" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">SIG → GPIO2 (ADC1)</text>
+            <text x="1165" y="705" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">SIG → GPIO1 (ADC1)</text>
             <text x="1165" y="727" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VCC → 3V3 · GND → GND</text>
             <text x="1165" y="745" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">EN → GND (sempre habilitado)</text>
             <text x="1165" y="763" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">16x canais (C0–C15) → conectores dos pads</text>
@@ -485,8 +485,9 @@
         ESQUERDO; sensing (2x CD4067/HW-178, 6 sinais contíguos) no header
         DIREITO — mesmo bloco de pinos que os 2 encoders usavam antes das
         Fases Y/Z. SIG0/SIG1 usam os 2 únicos pinos ADC desse bloco
-        (<code>GPIO1</code>/<code>GPIO2</code>, ADC1); S0-S3 usam os 4
-        pinos digitais restantes. Barramento S0/S1/S2/S3 compartilhado
+        (<code>GPIO2</code> na jackboard A, <code>GPIO1</code> na B, ambos
+        ADC1, que funciona com o Wi-Fi ligado); S0-S3 usam os 4 pinos
+        digitais restantes (<code>GPIO39–42</code>). Barramento S0/S1/S2/S3 compartilhado
         entre os 2 módulos; cada placa usa seu próprio pino SIG. Pontos
         pretos = junção elétrica real.
       </figcaption>
@@ -526,11 +527,11 @@
     </div>
     <div class="note-card">
       <h3>Histórico de ajustes de pinout</h3>
-      <p><strong>2026-08-31</strong>: contiguidade dentro de cada header. <strong>Fase Y (2026-09-04)</strong>: 2 encoders → 1 só, o que sobrou ficou em GPIO41/40/39 (GPIO1/2/42 livres). <strong>Fase Z (2026-09-05)</strong>: encoder + tela migraram pro header esquerdo (mesmo bloco contíguo <code>4,5,6,7,15,16,17,18,8</code>); o MUX migrou pro header direito (bloco <code>1,2,42,41,40,39</code>, o mesmo que os 2 encoders usavam antes).</p>
+      <p><strong>2026-08-31</strong>: contiguidade dentro de cada header. <strong>Fase Y (2026-09-04)</strong>: 2 encoders → 1 só, o que sobrou ficou em GPIO41/40/39 (GPIO1/2/42 livres). <strong>Fase Z (2026-09-05)</strong>: encoder + tela migraram pro header esquerdo (mesmo bloco contíguo <code>4,5,6,7,15,16,17,18,8</code>); o MUX migrou pro header direito (bloco <code>1,2,42,41,40,39</code>, o mesmo que os 2 encoders usavam antes). <strong>2026-10-01</strong>: ajustado na montagem da jackboard A — S0–S3 = GPIO39/40/41/42 (ordem invertida) e os SIGs trocaram (A = GPIO2, B = GPIO1).</p>
     </div>
     <div class="note-card">
       <h3>O que já foi validado, o que ainda não</h3>
-      <p><strong>Validado (2026-09-06)</strong>: encoder (GPIO4/5/6, navegação girar/clicar/segurar confirmada) e tela (GPIO7/15/16/17/18/8, imagem confirmada). <strong>Ainda não</strong>: o MUX — o pinout do header direito (GPIO1/2/42/41/40/39) foi definido em papel, mas o CD4067 físico ainda não foi conectado nesse layout novo.</p>
+      <p><strong>Validado (2026-09-06)</strong>: encoder (GPIO4/5/6, navegação girar/clicar/segurar confirmada) e tela (GPIO7/15/16/17/18/8, imagem confirmada). <strong>Validado (2026-10)</strong>: as 2 jackboards montadas com os CD4067 — os 32 canais lidos pelo MUX, com pads de piezo, caixa 3 zonas e o controlador de chimbal (sensor Hall SS49E) no jack 1.</p>
     </div>
   </section>
 
@@ -568,12 +569,12 @@
       <table>
         <thead><tr><th>Sinal</th><th>GPIO</th></tr></thead>
         <tbody>
-          <tr><td>S0 (compartilhado)</td><td class="gpio">42</td></tr>
-          <tr><td>S1 (compartilhado)</td><td class="gpio">41</td></tr>
-          <tr><td>S2 (compartilhado)</td><td class="gpio">40</td></tr>
-          <tr><td>S3 (compartilhado)</td><td class="gpio">39</td></tr>
-          <tr><td>SIG — MUX 0 (pads 0–15)</td><td class="gpio">1</td></tr>
-          <tr><td>SIG — MUX 1 (pads 16–31)</td><td class="gpio">2</td></tr>
+          <tr><td>S0 (compartilhado)</td><td class="gpio">39</td></tr>
+          <tr><td>S1 (compartilhado)</td><td class="gpio">40</td></tr>
+          <tr><td>S2 (compartilhado)</td><td class="gpio">41</td></tr>
+          <tr><td>S3 (compartilhado)</td><td class="gpio">42</td></tr>
+          <tr><td>SIG — jackboard A (pads 0–15)</td><td class="gpio">2</td></tr>
+          <tr><td>SIG — jackboard B (pads 16–31)</td><td class="gpio">1</td></tr>
         </tbody>
       </table>
     </div>

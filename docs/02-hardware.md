@@ -170,9 +170,8 @@ GND    ------------ GND
 
 ### Pinout (usado em `firmware/src/main.cpp`)
 
-> **Status: proposto, ainda não validado em hardware real** (o MUX físico
-> ainda não foi conectado nesse pinout novo — encoder e tela já foram,
-> ver seções abaixo). Reorganizado na Fase Z (2026-09-05) pro header
+> **Status: validado em hardware real** (2026-10): as 2 jackboards
+> montadas, com os 32 canais lidos pelo MUX. Reorganizado na Fase Z (2026-09-05) pro header
 > DIREITO, no bloco contíguo
 > `GPIO1,2,42,41,40,39` (mesma faixa física que os 2 encoders usavam antes
 > da Fase Y/Z). SIG0/SIG1 (leitura analógica) precisam de pino com ADC —
@@ -199,9 +198,9 @@ strapping (0, 3, 45, 46). A ordem do S0-S3 precisa bater exatamente com a
 fiação: invertida, o endereço sai com os bits ao contrário e os canais
 embaralham (canal 1 lido como 8, 2 como 4...).
 
-Enquanto só a jackboard A estiver montada, o SIG do MUX 1 (GPIO1) fica
-flutuando: os pads 17-32 podem ler ruído como batida — desligar esses canais
-no ConfigTool até a placa B ser montada.
+As 2 jackboards (A e B) estão montadas e validadas desde 2026-10. Se uma
+delas for desconectada, o SIG dela fica flutuando e os pads dessa placa
+podem ler ruído como batida: desligue esses canais no ConfigTool.
 
 ## Tela TFT (ST7735, SPI) — header ESQUERDO
 

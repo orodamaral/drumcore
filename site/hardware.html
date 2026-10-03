@@ -31,7 +31,7 @@
       via SPI, e 1 encoder rotativo com chave pra navegação. Cada subsistema sai de um
       único header físico da placa, por conveniência de montagem.
     </p>
-    <div class="status-pill"><span class="dot"></span>Encoder, tela e 2 canais de teste (leitura direta, sem MUX) validados em hardware real — jackboard ainda não montada/conectada</div>
+    <div class="status-pill"><span class="dot"></span>Validado em hardware real: encoder, tela e as 2 jackboards (32 canais pelos 2 CD4067)</div>
   </div>
 </header>
 
@@ -96,6 +96,12 @@
       passaram de 0,5mm pra 0,8mm (a primeira placa corroída mostrou que 0,5mm ficava
       fino demais pra transferência térmica).
     </p>
+    <p class="callout">
+      <span class="glyph">✅</span>
+      <strong>Montadas e validadas (2026-10):</strong> as 2 jackboards single-layer,
+      corroídas em casa, com os 32 canais lidos pelo MUX. Testadas com pads de
+      piezo (pele + aro), a caixa 3 zonas e o controlador de chimbal.
+    </p>
     <figure class="pcb-figure">
       <img src="assets/jackboard_pcb_full.svg" alt="Vista completa da jackboard single-layer: serigrafia com o logo DRUMCORE, footprints dos 8 conectores e o roteamento por baixo" loading="lazy" />
       <figcaption>Vista completa (serigrafia + footprints + roteamento) — exportado direto do KiCad.</figcaption>
@@ -108,8 +114,16 @@
       <span class="glyph">🖨️</span>
       PDFs prontos pra impressão em <a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/hardware/jackboard_singlelayer/fab" target="_blank" rel="noopener"><code>hardware/jackboard_singlelayer/fab/</code></a>:
       a placa isolada (P&amp;B, pra transferência térmica) e um layout com 4 placas
-      por folha A4 (retrato, com vãos de corte). A revisão anterior já foi corroída
-      uma vez; esta revisão (trilhas mais largas + diodos pro 3V3) ainda não.
+      por folha A4 (retrato, com vãos de corte).
+    </p>
+    <p class="callout">
+      <span class="glyph">🦶</span>
+      <strong>Jack 1 = controlador de chimbal.</strong> O pedal com sensor Hall
+      SS49E (tip = alimentação, ring = sinal, sleeve = GND) só funcionou
+      <strong>sem</strong> a rede de proteção nos canais 0 e 1: componentes
+      retirados, jumper do +3,3 V pro tip e jumper no lugar do resistor série.
+      Por isso o jack 1 fica dedicado ao pedal — não ligue um pad de piezo nele.
+      Detalhes em <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/02-hardware.md" target="_blank" rel="noopener"><code>docs/02-hardware.md</code></a>.
     </p>
   </div>
 </section>
@@ -127,6 +141,7 @@
           <tr><td class="gpio">38</td><td class="wrap-text">Aciona o LED embutido (BUILTIN LED) dessa placa específica.</td></tr>
           <tr><td class="gpio">47, 48</td><td class="wrap-text">Internos de flash/PSRAM; GPIO48 também é o LED RGB endereçável.</td></tr>
           <tr><td class="gpio">35, 36, 37</td><td class="wrap-text">Em módulos com PSRAM octal, são pinos internos do barramento de PSRAM — evitar mesmo que apareçam como GPIO livre na serigrafia.</td></tr>
+          <tr><td class="gpio">11–20</td><td class="wrap-text">ADC2: a leitura analógica não funciona com o Wi-Fi ligado. Os pinos SIG do MUX precisam ficar no ADC1 (GPIO1–10) — hoje GPIO2 e GPIO1.</td></tr>
           <tr><td class="gpio">43, 44</td><td class="wrap-text">Não estão livres apesar de parecerem GPIO genérico: são o UART físico (TXD0/RXD0) usado pelo <code>Serial</code> (protocolo NDJSON com o app).</td></tr>
         </tbody>
       </table>
