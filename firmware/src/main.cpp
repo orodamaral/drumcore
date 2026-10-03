@@ -545,6 +545,7 @@ extern unsigned long loopMaxUs;
 void onEncRotate(int delta);
 void onEncClick();
 void onEncHold();
+void goToLive(); // usado pelo onOtaStatus() (Wi-Fi), definido bem mais abaixo
 
 // Configuracao global (GLOBAL) - persistida como um bloco pequeno em EEPROM.
 byte midiChannel = DEFAULT_MIDI_CHANNEL;
@@ -882,6 +883,7 @@ enum ScreenPage
     PAGE_SIGNAL,
     PAGE_GLOBAL,
     PAGE_AUTOTUNE, // Fase O - ver docs/01-decisoes-arquiteturais.md
+    PAGE_OTA,      // Fase AE (fase 3) - atualizacao do firmware pelo Wi-Fi
 };
 
 ScreenPage currentPage = PAGE_BOOT;
@@ -1016,12 +1018,50 @@ void sendDeviceInfo()
     wifi["sta_ip"] = wifiPortalStaIp();
     wifi["ap_off_in_ms"] = wifiPortalApOffInMs();
     wifi["autostart"] = wifiPortalAutostart();
+    wifi["ota"] = true; // aceita atualizacao do firmware pelo Wi-Fi (fase 3)
     wifi["clients"] = wifiPortalClientCount();
+    sendJsonLine(doc);
+}
+
+void sendOtaStatus()
+{
+    JsonDocument doc;
+    doc["type"] = "ota_status";
+    doc["state"] = wifiOtaStateName();
+    doc["percent"] = wifiOtaPercent();
+    const char *err = wifiOtaError();
+    if (err[0])
+    {
+        doc["error"] = err;
+    }
     sendJsonLine(doc);
 }
 
 // Chamado pelo wifi_portal quando a rede conecta/cai ou a rede propria
 // liga/desliga.
+// Chamado pelo wifi_portal quando o estado da atualizacao pelo Wi-Fi muda.
+void onOtaStatus()
+{
+    WifiOtaState st = wifiOtaState();
+    if (st == WIFI_OTA_IDLE)
+    {
+        if (currentPage == PAGE_OTA)
+        {
+            goToLive(); // cancelado ou expirou
+        }
+    }
+    else if (currentPage != PAGE_OTA)
+    {
+        if (currentPage == PAGE_AUTOTUNE)
+        {
+            cancelAutoTune();
+        }
+        currentPage = PAGE_OTA;
+    }
+    forceScreenRedraw = true;
+    sendOtaStatus();
+}
+
 void onWifiStatus()
 {
     forceScreenRedraw = true;
@@ -1963,6 +2003,21 @@ void handleSerialCommand(const String &line)
         wifiPortalForgetNetwork();
         sendLog("Wi-Fi: rede de casa esquecida.");
         onWifiStatus(); // redesenha a tela + device_info
+    }
+    else if (strcmp(cmd, "ota_request") == 0)
+    {
+        // Fase 3: pede a confirmacao na tela do modulo antes de aceitar o
+        // upload do firmware (POST /update) - ver wifi_portal.h.
+        if (!wifiOtaRequest())
+        {
+            sendError(cmd, wifiPortalActive() ? "busy" : "wifi_off");
+            return;
+        }
+        // a troca de tela e o ota_status saem pelo onOtaStatus()
+    }
+    else if (strcmp(cmd, "ota_cancel") == 0)
+    {
+        wifiOtaCancel();
     }
     else if (strcmp(cmd, "scan_wifi") == 0)
     {
@@ -3637,6 +3692,10 @@ int currentFieldStep(const FieldDef &field)
 // completo (substitui os antigos onEnc1Rotate/onEnc2Rotate).
 void onEncRotate(int delta)
 {
+    if (currentPage == PAGE_OTA)
+    {
+        return; // so' click (confirmar) e hold (cancelar)
+    }
     if (currentPage == PAGE_AUTOTUNE)
     {
         return; // sem navegacao durante o assistente - so' click (aplicar/cancelar) ou hold (cancelar)
@@ -3775,6 +3834,20 @@ void showToast(const char *line1, const char *line2)
 // onEnc1Click/onEnc2Click.
 void onEncClick()
 {
+    if (currentPage == PAGE_OTA)
+    {
+        WifiOtaState st = wifiOtaState();
+        if (st == WIFI_OTA_CONFIRM)
+        {
+            wifiOtaConfirm(); // libera o upload - ver wifi_portal.h
+        }
+        else if (st == WIFI_OTA_ERROR || st == WIFI_OTA_IDLE)
+        {
+            wifiOtaCancel();
+            goToLive();
+        }
+        return;
+    }
     if (currentPage == PAGE_AUTOTUNE)
     {
         if (atState == AT_DONE)
@@ -3922,6 +3995,16 @@ void onEncClick()
 // LIVE. Substitui os antigos onEnc1Hold/onEnc2Hold.
 void onEncHold()
 {
+    if (currentPage == PAGE_OTA)
+    {
+        WifiOtaState st = wifiOtaState();
+        if (st != WIFI_OTA_RECEIVING && st != WIFI_OTA_DONE)
+        {
+            wifiOtaCancel();
+            goToLive();
+        }
+        return;
+    }
     if (currentPage == PAGE_AUTOTUNE)
     {
         cancelAutoTune(); // cancela em qualquer estado, inclusive no meio da coleta de golpes
@@ -4698,6 +4781,85 @@ bool renderGlobal()
 
 // Tela do assistente de auto-tune (Fase O) - ver comentario grande no bloco
 // de estados (perto de goToLive()) pro racional completo.
+// Fase AE (fase 3) - tela da atualizacao do firmware pelo Wi-Fi.
+bool renderOta()
+{
+    if (!forceScreenRedraw)
+    {
+        return false;
+    }
+    forceScreenRedraw = false;
+
+    canvas.fillScreen(COL_BG);
+    drawTitleBar("FIRMWARE", "WI-FI", COL_EDIT);
+    canvas.setTextSize(1);
+    WifiOtaState st = wifiOtaState();
+    if (st == WIFI_OTA_CONFIRM)
+    {
+        canvas.setTextColor(COL_TXT);
+        canvas.setCursor(4, 26);
+        canvas.print("ATUALIZAR O FIRMWARE?");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 44);
+        canvas.print("pedido pelo ConfigTool");
+        canvas.setTextColor(COL_OK);
+        canvas.setCursor(4, 74);
+        canvas.print("CLIQUE = confirmar");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 90);
+        canvas.print("SEGURE = cancelar");
+    }
+    else if (st == WIFI_OTA_ARMED)
+    {
+        canvas.setTextColor(COL_OK);
+        canvas.setCursor(4, 26);
+        canvas.print("CONFIRMADO");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 44);
+        canvas.print("aguardando o arquivo...");
+        canvas.setCursor(4, 90);
+        canvas.print("SEGURE = cancelar");
+    }
+    else if (st == WIFI_OTA_RECEIVING || st == WIFI_OTA_DONE)
+    {
+        int pct = st == WIFI_OTA_DONE ? 100 : wifiOtaPercent();
+        canvas.setTextColor(COL_TXT);
+        canvas.setCursor(4, 26);
+        canvas.print(st == WIFI_OTA_DONE ? "PRONTO - REINICIANDO" : "GRAVANDO...");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 44);
+        canvas.print("nao desligue o modulo");
+        canvas.drawRect(4, 62, 152, 12, COL_LINE);
+        canvas.fillRect(6, 64, 148 * pct / 100, 8, COL_OK);
+        canvas.setTextColor(COL_TXT);
+        canvas.setCursor(4, 82);
+        canvas.print(pct);
+        canvas.print("%");
+    }
+    else if (st == WIFI_OTA_ERROR)
+    {
+        canvas.setTextColor(COL_EDIT);
+        canvas.setCursor(4, 26);
+        canvas.print("FALHOU");
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 44);
+        canvas.print(wifiOtaError());
+        canvas.setCursor(4, 62);
+        canvas.print("firmware atual mantido");
+        canvas.setCursor(4, 90);
+        canvas.print("CLIQUE = voltar");
+    }
+    else
+    {
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 26);
+        canvas.print("cancelado");
+        canvas.setCursor(4, 90);
+        canvas.print("CLIQUE = voltar");
+    }
+    return true;
+}
+
 bool renderAutoTune()
 {
     if (!forceScreenRedraw)
@@ -4932,6 +5094,9 @@ void renderScreen()
     case PAGE_AUTOTUNE:
         dirty = renderAutoTune();
         break;
+    case PAGE_OTA:
+        dirty = renderOta();
+        break;
     }
 
     if (dirty)
@@ -5088,7 +5253,13 @@ void setup()
     // Fase AE - Wi-Fi: desligado a cada boot, a nao ser com "ligar ao
     // iniciar" (ConfigTool, aba Global).
     wifiPortalSetCallbacks(handleSerialCommand, onWifiStatus, sendJsonLine);
-    if (wifiPortalAutostart())
+    wifiPortalSetOtaCallback(onOtaStatus);
+    bool afterOta = wifiPortalTakeOtaBoot(); // atualizado pelo Wi-Fi: religa pra o app reconectar
+    if (afterOta)
+    {
+        sendLog("Firmware atualizado pelo Wi-Fi.");
+    }
+    if (wifiPortalAutostart() || afterOta)
     {
         setWifiEnabled(true);
     }

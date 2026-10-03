@@ -10,7 +10,7 @@ USB, o ConfigTool só funciona no Chrome/Edge de computador (Web Serial).
 |---|---|---|
 | 1 | Rede própria do módulo, ligada pelo menu ou pelo app; ConfigTool servido pela placa; conexão do app por WebSocket | **feito** (2026-10-03), falta testar com celular |
 | 2 | Conectar o módulo no Wi-Fi de casa (configurado pelo app) + `drumcore.local`; se não achar a rede, volta pra rede própria; "ligar ao iniciar" | **feito** (2026-10-03), falta testar com a rede de casa |
-| 3 | Atualizar o firmware pelo Wi-Fi (a tabela de partições `default_16MB.csv` já tem 2 slots de app) | ideia |
+| 3 | Atualizar o firmware pelo Wi-Fi, com confirmação no módulo | **feito** (2026-10-03), testado de ponta a ponta pela rede de casa |
 | — | MIDI pelo Wi-Fi (RTP-MIDI), pra tocar sem cabo | só depois de medir a latência |
 
 ## Como usar (fase 1)
@@ -65,6 +65,50 @@ A tela **GLOBAL** mostra o estado na linha WI-FI:
 A senha da rede de casa fica só no módulo (NVS); nunca volta para o app.
 O ESP32-S3 só conecta em redes de **2,4 GHz**. Se o roteador tiver as
 duas faixas com nomes diferentes, escolha a de 2,4 GHz.
+
+## Atualizar o firmware pelo Wi-Fi (fase 3)
+
+Com o ConfigTool aberto pela placa, a aba **Firmware** atualiza pela rede:
+
+- **Atualizar para fw-v…**: baixa a versão mais recente do GitHub. Precisa
+  de internet no aparelho, o que na prática significa o módulo na rede de
+  casa.
+- **Escolher arquivo .bin…**: funciona também na rede própria, sem
+  internet. Serve o `drumcore-firmware-….bin` das releases (o mesmo da
+  gravação por USB) ou o `firmware.bin` de um build do PlatformIO.
+
+Por segurança, **o módulo pede confirmação**: a tela pergunta e só um clique
+no encoder libera o envio. Segurar cancela. Sem clique em 1 min, o pedido
+expira. Depois do clique, o envio tem que começar em 2 min. Assim, ninguém na
+mesma rede troca o firmware sem alguém mexer no módulo.
+
+O envio leva ~10 s na rede de casa (1,6 MB). O módulo grava, confere o
+arquivo inteiro, reinicia sozinho e volta com o Wi-Fi ligado. O app
+reconecta sozinho e mostra a versão nova. Se algo der errado no meio, o
+firmware atual continua.
+
+Como funciona por dentro:
+
+- **Partições** (`default_16MB.csv`): `app0` (0x10000) e `app1`
+  (0x650000), mais o seletor `otadata` (0xe000). A atualização grava na
+  partição que não está em uso e troca o seletor no fim (`Update` do core,
+  que confere o hash do app antes de trocar).
+- **Binário**: a release publica um binário completo (bootloader, tabela,
+  seletor e app). O navegador recorta o app a partir de `app_offset`
+  (0x10000, gravado no `manifest.json` pela CI) e manda só ele
+  (`web-app/src/otaUpdate.ts`). Antes de gravar, o firmware confere o
+  começo do arquivo (`0xE9`) e o modelo do chip (ESP32-S3).
+- **Gravação por USB depois de uma atualização pelo Wi-Fi**: o binário
+  completo inclui o seletor em 0xe000 (`boot_app0.bin`), então a gravação
+  por USB sempre volta para `app0`. Conferido na placa.
+- `POST /update` sem o clique no módulo é recusado (`not_armed`) sem
+  mudar nada na tela.
+- **Releases antigas**: as anteriores ao Wi-Fi (até fw-v0.0.10-test) não têm
+  `app_offset`. O app avisa que, instaladas pelo Wi-Fi, deixam o módulo sem
+  Wi-Fi (volta pelo USB).
+- **Sem retorno automático**: se um firmware novo não iniciar, a placa não
+  volta sozinha para o anterior. A saída é gravar pelo USB, que sempre
+  funciona.
 
 ## Como funciona
 

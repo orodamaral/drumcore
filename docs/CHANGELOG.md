@@ -2,6 +2,22 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-03 — Wi-Fi, fase 3: atualizar o firmware pela rede
+
+- Com o ConfigTool aberto pela placa, a aba **Firmware** atualiza o
+  firmware **pelo Wi-Fi**: baixa a versão mais recente do GitHub (precisa
+  de internet, ou seja, rede de casa) ou usa um arquivo `.bin` escolhido.
+- **Confirmação física**: o módulo pergunta na tela e só um clique no
+  encoder libera o envio. Ninguém na mesma rede troca o firmware sem mexer
+  no módulo.
+- Testado de ponta a ponta: 1,6 MB em ~10 s na rede de casa. O módulo
+  reinicia sozinho com o Wi-Fi ligado e o app reconecta. Arquivo errado e
+  envio sem confirmação são recusados.
+- Corrigido: a aba Firmware escolhia a versão "mais recente" comparando
+  as tags como texto (`fw-v0.0.9` vinha antes de `fw-v0.0.10`).
+- Comandos `ota_request`/`ota_cancel`, evento `ota_status`. A release grava
+  `app_offset` no `manifest.json`.
+
 ## 2026-10-03 — Wi-Fi, fase 2: rede de casa
 
 - O módulo pode entrar no **Wi-Fi de casa**: no ConfigTool, aba Global >

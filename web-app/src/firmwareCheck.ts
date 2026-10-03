@@ -20,6 +20,8 @@ export interface FirmwareManifest {
   flash_freq: string
   offset: string
   file: string
+  /** Onde o app começa dentro do binário completo (atualização pelo Wi-Fi). Releases antigas não têm. */
+  app_offset?: string
 }
 
 export interface LatestFirmware {
@@ -53,6 +55,21 @@ async function githubFetch(url: string): Promise<Response> {
   return res
 }
 
+function versionParts(tag: string): number[] {
+  return (tag.match(/\d+/g) ?? []).map(Number)
+}
+
+/** < 0 se a for mais antiga que b. */
+export function compareFirmwareTags(a: string, b: string): number {
+  const pa = versionParts(a)
+  const pb = versionParts(b)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (d !== 0) return d
+  }
+  return a.localeCompare(b)
+}
+
 export async function getLatestFirmware(): Promise<LatestFirmware> {
   if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.result
@@ -61,14 +78,12 @@ export async function getLatestFirmware(): Promise<LatestFirmware> {
   const res = await githubFetch(`https://api.github.com/repos/${GITHUB_REPO}/releases`)
   const releases = (await res.json()) as GithubRelease[]
 
-  // Tags de firmware ("fw-v*") ordenam certo por string porque seguem
-  // sempre o mesmo formato fw-vMAJOR.MINOR.PATCH com mesma contagem de
-  // digitos na pratica deste projeto - se isso mudar, trocar por
-  // comparacao semver de verdade.
+  // Tags de firmware ("fw-vMAJOR.MINOR.PATCH[-sufixo]") comparadas por
+  // numero - como texto, "fw-v0.0.10" ficava antes de "fw-v0.0.9".
   const tag = releases
     .map((release) => release.tag_name)
     .filter((tagName) => tagName.startsWith('fw-v'))
-    .sort((a, b) => (a < b ? 1 : -1))[0]
+    .sort((a, b) => compareFirmwareTags(b, a))[0]
   if (!tag) throw new Error('Nenhuma release de firmware encontrada no GitHub ainda.')
 
   const manifestRes = await githubFetch(`${RAW_BASE}/${tag}/manifest.json`)

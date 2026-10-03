@@ -8,6 +8,7 @@ const CONNECT_TIMEOUT_MS = 5000
 
 class WebSocketDrumCore implements DrumCoreApi {
   private ws: WebSocket | null = null
+  private pending: WebSocket | null = null // tentativa em andamento (só a última vale)
   private readonly messageListeners = new Set<(line: string) => void>()
   private readonly errorListeners = new Set<(message: string) => void>()
 
@@ -19,6 +20,8 @@ class WebSocketDrumCore implements DrumCoreApi {
     await this.disconnect()
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
     const ws = new WebSocket(url)
+    this.pending?.close()
+    this.pending = ws
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         ws.close()
@@ -33,6 +36,12 @@ class WebSocketDrumCore implements DrumCoreApi {
         reject(new Error('não foi possível abrir a conexão Wi-Fi com o módulo'))
       }
     })
+    if (this.pending !== ws) {
+      // Outra tentativa começou enquanto esta abria - fica a mais nova.
+      ws.close()
+      throw new Error('conexão substituída por uma tentativa mais nova')
+    }
+    this.pending = null
     ws.onmessage = (event) => {
       if (typeof event.data !== 'string') return
       for (const raw of event.data.split('\n')) {

@@ -59,5 +59,31 @@ bool wifiPortalStartScan();
 bool wifiPortalAutostart();
 void wifiPortalSetAutostart(bool on);
 
+// Fase 3 - atualizar o firmware pelo Wi-Fi (POST /update com o binario do
+// app). Protegido por confirmacao fisica: o app pede (wifiOtaRequest), a
+// tela pede o clique no encoder (wifiOtaConfirm) e so' entao o upload e'
+// aceito, por OTA_ARM_MS. Depois de gravar, a placa reinicia sozinha com o
+// Wi-Fi ligado (ver wifiPortalTakeOtaBoot).
+enum WifiOtaState
+{
+    WIFI_OTA_IDLE,
+    WIFI_OTA_CONFIRM,   // esperando o clique no modulo
+    WIFI_OTA_ARMED,     // confirmado - aceita o upload
+    WIFI_OTA_RECEIVING, // gravando
+    WIFI_OTA_DONE,      // gravado - reinicia em instantes
+    WIFI_OTA_ERROR,
+};
+void wifiPortalSetOtaCallback(void (*onOta)()); // estado/percentual mudou (chamado no poll)
+bool wifiOtaRequest();
+void wifiOtaConfirm();
+void wifiOtaCancel(); // nao cancela uma gravacao em andamento
+WifiOtaState wifiOtaState();
+const char *wifiOtaStateName();
+int wifiOtaPercent();
+const char *wifiOtaError();
+// true uma vez depois de reiniciar por uma atualizacao pelo Wi-Fi (o main
+// religa o Wi-Fi pra o app reconectar sozinho).
+bool wifiPortalTakeOtaBoot();
+
 const char *wifiPortalHostname(); // "drumcore" -> drumcore.local
 int wifiPortalClientCount();

@@ -5,6 +5,7 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include <Update.h>
 #include <WiFi.h>
 
 #include "webapp_files.h" // gerado por firmware/embed_webapp.py
@@ -21,6 +22,11 @@
 // celular perder a conexao.
 #define WIFI_AP_LINGER_MS 30000
 #define WIFI_SCAN_MAX 15
+#define OTA_CONFIRM_MS 60000  // tempo pra clicar no modulo
+#define OTA_ARM_MS 120000     // depois do clique, tempo pra o upload comecar
+#define OTA_STALL_MS 15000    // upload parado (conexao caiu) - desiste
+#define OTA_RESTART_DELAY_MS 1500
+#define OTA_CHIP_ID_ESP32S3 9 // esp_image_header_t.chip_id
 
 static AsyncWebServer *server = nullptr;
 static AsyncWebSocket *ws = nullptr;
@@ -42,6 +48,20 @@ static WifiStaState staState = WIFI_STA_NONE;
 static unsigned long staSinceMs = 0;
 static unsigned long apOffAtMs = 0; // 0 = nao agendado
 static bool scanning = false;
+
+// Atualizacao pelo Wi-Fi - estado mexido pela task do AsyncTCP (upload) e
+// pelo loop principal (confirmacao, tempos limite); otaLock protege as
+// chamadas da Update.
+static volatile WifiOtaState otaState = WIFI_OTA_IDLE;
+static volatile int otaPercent = 0;
+static volatile unsigned long otaSinceMs = 0;    // inicio do estado atual
+static volatile unsigned long otaLastDataMs = 0; // ultimo pedaco recebido
+static const char *volatile otaErr = "";
+// Upload recusado sem mexer no estado (nao pedido pelo app/confirmado no
+// modulo) - so' a resposta HTTP fica sabendo.
+static const char *volatile otaReject = "";
+static SemaphoreHandle_t otaLock = nullptr;
+static void (*cbOta)() = nullptr;
 
 struct RxLine
 {
@@ -139,9 +159,97 @@ static void serveFile(AsyncWebServerRequest *request, const WebAppFile &f)
     request->send(res);
 }
 
+static void otaSet(WifiOtaState st, const char *err = "")
+{
+    otaErr = err;
+    otaState = st;
+    otaSinceMs = millis();
+}
+
+// Corpo do POST /update, em pedacos (task do AsyncTCP). O arquivo e' o
+// binario do app (o app do navegador recorta ele do binario completo da
+// release - ver web-app/src/otaUpdate.ts).
+static void otaBody(const uint8_t *data, size_t len, size_t index, size_t total)
+{
+    xSemaphoreTake(otaLock, portMAX_DELAY);
+    if (index == 0)
+    {
+        otaReject = "";
+        if (otaState != WIFI_OTA_ARMED)
+        {
+            otaReject = "not_armed"; // nao abre tela de erro no modulo
+        }
+        else if (len < 16 || data[0] != 0xE9)
+        {
+            otaSet(WIFI_OTA_ERROR, "invalid_image"); // nao e' um app do ESP32
+        }
+        else if ((data[12] | (data[13] << 8)) != OTA_CHIP_ID_ESP32S3)
+        {
+            otaSet(WIFI_OTA_ERROR, "wrong_chip");
+        }
+        else if (!Update.begin(total, U_FLASH))
+        {
+            otaSet(WIFI_OTA_ERROR, "too_big");
+        }
+        else
+        {
+            otaPercent = 0;
+            otaLastDataMs = millis();
+            otaSet(WIFI_OTA_RECEIVING);
+        }
+    }
+    if (otaState == WIFI_OTA_RECEIVING)
+    {
+        if (Update.write((uint8_t *)data, len) != len)
+        {
+            Update.abort();
+            otaSet(WIFI_OTA_ERROR, "write_failed");
+        }
+        else
+        {
+            otaLastDataMs = millis();
+            otaPercent = (int)((index + len) * 100 / total);
+            if (index + len == total)
+            {
+                // end(true) confere o arquivo inteiro (hash do app) antes
+                // de marcar a nova particao pra o proximo boot.
+                if (Update.end(true))
+                {
+                    otaSet(WIFI_OTA_DONE);
+                }
+                else
+                {
+                    otaSet(WIFI_OTA_ERROR, "verify_failed");
+                }
+            }
+        }
+    }
+    xSemaphoreGive(otaLock);
+}
+
 static void setupServer()
 {
     server = new AsyncWebServer(80);
+    otaLock = xSemaphoreCreateMutex();
+    server->on(
+        "/update", HTTP_POST,
+        [](AsyncWebServerRequest *request) {
+            // Fim do upload - responde com o resultado.
+            if (otaState == WIFI_OTA_DONE)
+            {
+                request->send(200, "application/json", "{\"ok\":true}");
+            }
+            else
+            {
+                const char *err = otaReject[0] ? otaReject : otaState == WIFI_OTA_ERROR ? otaErr : "";
+                String body = String("{\"ok\":false,\"error\":\"") + (err[0] ? err : "incomplete") + "\"}";
+                request->send(400, "application/json", body);
+            }
+        },
+        nullptr,
+        [](AsyncWebServerRequest *, uint8_t *data, size_t len, size_t index, size_t total) {
+            otaBody(data, len, index, total);
+        });
     ws = new AsyncWebSocket("/ws");
     ws->onEvent(onWsEvent);
     server->addHandler(ws);
@@ -247,6 +355,7 @@ void wifiPortalStop()
         return;
     }
     active = false;
+    wifiOtaCancel();
     ws->closeAll();
     MDNS.end();
     if (scanning)
@@ -389,6 +498,51 @@ static void pollScan()
     }
 }
 
+static void pollOta()
+{
+    static WifiOtaState lastState = WIFI_OTA_IDLE;
+    static int lastPercent = -1;
+    unsigned long now = millis();
+    WifiOtaState st = otaState;
+    if (st == WIFI_OTA_CONFIRM && now - otaSinceMs > OTA_CONFIRM_MS)
+    {
+        otaSet(WIFI_OTA_IDLE);
+    }
+    else if (st == WIFI_OTA_ARMED && now - otaSinceMs > OTA_ARM_MS)
+    {
+        otaSet(WIFI_OTA_IDLE);
+    }
+    else if (st == WIFI_OTA_RECEIVING && now - otaLastDataMs > OTA_STALL_MS)
+    {
+        xSemaphoreTake(otaLock, portMAX_DELAY);
+        if (otaState == WIFI_OTA_RECEIVING)
+        {
+            Update.abort();
+            otaSet(WIFI_OTA_ERROR, "upload_stalled");
+        }
+        xSemaphoreGive(otaLock);
+    }
+    else if (st == WIFI_OTA_DONE && now - otaSinceMs > OTA_RESTART_DELAY_MS)
+    {
+        Preferences prefs;
+        prefs.begin("wifi", false);
+        prefs.putBool("ota_boot", true);
+        prefs.end();
+        ESP.restart();
+    }
+    st = otaState;
+    int pct = otaPercent;
+    if (st != lastState || (st == WIFI_OTA_RECEIVING && pct / 5 != lastPercent / 5))
+    {
+        lastState = st;
+        lastPercent = pct;
+        if (cbOta)
+        {
+            cbOta();
+        }
+    }
+}
+
 void wifiPortalPoll()
 {
     if (rxQueue && cbCommand)
@@ -407,6 +561,7 @@ void wifiPortalPoll()
     }
     pollSta();
     pollScan();
+    pollOta();
     static unsigned long lastCleanup = 0;
     if (millis() - lastCleanup > 1000)
     {
@@ -586,6 +741,86 @@ void wifiPortalSetAutostart(bool on)
     prefs.begin("wifi", false);
     prefs.putBool("autostart", on);
     prefs.end();
+}
+
+void wifiPortalSetOtaCallback(void (*onOta)())
+{
+    cbOta = onOta;
+}
+
+bool wifiOtaRequest()
+{
+    WifiOtaState st = otaState;
+    if (!active || st == WIFI_OTA_RECEIVING || st == WIFI_OTA_DONE)
+    {
+        return false;
+    }
+    otaSet(WIFI_OTA_CONFIRM);
+    return true;
+}
+
+void wifiOtaConfirm()
+{
+    if (otaState == WIFI_OTA_CONFIRM)
+    {
+        otaSet(WIFI_OTA_ARMED);
+    }
+}
+
+void wifiOtaCancel()
+{
+    WifiOtaState st = otaState;
+    if (st != WIFI_OTA_RECEIVING && st != WIFI_OTA_DONE)
+    {
+        otaSet(WIFI_OTA_IDLE);
+    }
+}
+
+WifiOtaState wifiOtaState()
+{
+    return otaState;
+}
+
+const char *wifiOtaStateName()
+{
+    switch (otaState)
+    {
+    case WIFI_OTA_CONFIRM:
+        return "confirm";
+    case WIFI_OTA_ARMED:
+        return "armed";
+    case WIFI_OTA_RECEIVING:
+        return "receiving";
+    case WIFI_OTA_DONE:
+        return "done";
+    case WIFI_OTA_ERROR:
+        return "error";
+    default:
+        return "idle";
+    }
+}
+
+int wifiOtaPercent()
+{
+    return otaPercent;
+}
+
+const char *wifiOtaError()
+{
+    return otaErr;
+}
+
+bool wifiPortalTakeOtaBoot()
+{
+    Preferences prefs;
+    prefs.begin("wifi", false);
+    bool flag = prefs.getBool("ota_boot", false);
+    if (flag)
+    {
+        prefs.remove("ota_boot");
+    }
+    prefs.end();
+    return flag;
 }
 
 const char *wifiPortalHostname()

@@ -122,6 +122,11 @@ jobs:
           echo "FLASH_MODE=$FLASH_MODE" >> "$GITHUB_ENV"
           echo "FLASH_FREQ=$FLASH_FREQ" >> "$GITHUB_ENV"
           echo "FLASH_SIZE=$FLASH_SIZE" >> "$GITHUB_ENV"
+          # Onde o app (firmware.bin) fica dentro do binario mesclado - o
+          # ConfigTool aberto pela placa recorta dali pra atualizar pelo
+          # Wi-Fi (web-app/src/otaUpdate.ts).
+          APP_OFFSET=$(awk '$2 ~ /firmware\.bin$/{print $1}' flash_args.txt)
+          echo "APP_OFFSET=${APP_OFFSET:-0x10000}" >> "$GITHUB_ENV"
 
           # So as linhas "0x... arquivo.bin" (pula as 3 primeiras linhas de
           # metadados flash_mode/flash_freq/flash_size).
@@ -141,6 +146,7 @@ jobs:
             "flash_mode": "${{ env.FLASH_MODE }}",
             "flash_freq": "${{ env.FLASH_FREQ }}",
             "offset": "0x0",
+            "app_offset": "${{ env.APP_OFFSET }}",
             "file": "${{ env.MERGED_NAME }}"
           }
           JSON

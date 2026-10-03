@@ -398,7 +398,16 @@ export interface WifiInfo {
   ap_off_in_ms?: number
   /** Liga o Wi-Fi sozinho quando o módulo liga. */
   autostart?: boolean
+  /** Aceita atualização do firmware pelo Wi-Fi (fase 3). */
+  ota?: boolean
   clients: number
+}
+
+/** Atualização do firmware pelo Wi-Fi (fase 3). */
+export interface OtaStatus {
+  state: 'idle' | 'confirm' | 'armed' | 'receiving' | 'done' | 'error'
+  percent: number
+  error?: string
 }
 
 export interface WifiNetwork {
@@ -427,6 +436,7 @@ export type IncomingMessage =
   | { type: 'log'; message: string }
   | { type: 'jack_config'; jack: number; label: string }
   | { type: 'wifi_scan'; networks: WifiNetwork[]; error?: string }
+  | ({ type: 'ota_status' } & OtaStatus)
 
 export function parseIncoming(line: string): IncomingMessage | null {
   try {

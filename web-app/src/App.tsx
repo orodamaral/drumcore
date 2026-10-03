@@ -11,7 +11,8 @@ import {
   PadType,
   PAD_FIELDS,
   parseIncoming,
-  WifiInfo
+  WifiInfo,
+  OtaStatus
 } from './protocol'
 import PadGrid, { HitEvent, stepPad } from './components/PadGrid'
 import PadEditor from './components/PadEditor'
@@ -32,6 +33,7 @@ import Logo from './components/Logo'
 import type { PortInfo } from './env'
 import { DEVICE_HOSTED } from './hosted'
 import WifiPanel, { WifiScanState } from './components/WifiPanel'
+import OtaManager from './components/OtaManager'
 
 const PAD_COUNT = 32
 
@@ -46,8 +48,12 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'firmware', label: 'Firmware' }
 ]
 
-// Aberto pela placa (Wi-Fi): sem aba Firmware - gravar firmware é só pelo USB.
-const VISIBLE_TABS = DEVICE_HOSTED ? TABS.filter((t) => t.key !== 'firmware') : TABS
+// Pelo Wi-Fi a aba Firmware atualiza pela rede (OtaManager) em vez do USB.
+const VISIBLE_TABS = TABS
+// Pelo Wi-Fi: depois de uma queda (módulo reiniciando, Wi-Fi religando),
+// tenta reconectar a cada RECONNECT_MS, até RECONNECT_TRIES vezes.
+const RECONNECT_MS = 3000
+const RECONNECT_TRIES = 40
 
 const LOG_MAX = 200
 const HIT_HISTORY_MAX = 20
@@ -83,6 +89,8 @@ export default function App() {
   const [firmwareVersion, setFirmwareVersion] = useState<string | undefined>(undefined)
   const [wifi, setWifi] = useState<WifiInfo | null>(null)
   const [wifiScan, setWifiScan] = useState<WifiScanState | null>(null)
+  const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null)
+  const reconnectTimer = useRef<number | null>(null)
 
   const mockDeviceRef = useRef<MockDevice | null>(null)
   // Espelho síncrono de demoMode - connect() liga o demo e já envia comandos
@@ -143,6 +151,9 @@ export default function App() {
           midi_output: message.midi_output
         })
         break
+      case 'ota_status':
+        setOtaStatus({ state: message.state, percent: message.percent, error: message.error })
+        break
       case 'wifi_scan':
         setWifiScan({ busy: false, networks: message.networks ?? [], error: message.error })
         break
@@ -202,8 +213,12 @@ export default function App() {
     const unsubscribeMessage = window.drumCore.onMessage(handleLine)
     const unsubscribeError = window.drumCore.onError((message) => {
       appendLog(DEVICE_HOSTED ? message : `Erro serial: ${message}`, 'error')
-      // Pelo Wi-Fi a queda é detectada na hora - volta pra tela "Conectar".
-      if (DEVICE_HOSTED) void disconnect()
+      // Pelo Wi-Fi a queda é detectada na hora - volta pra tela "Conectar"
+      // e tenta reconectar sozinho (ex: módulo reiniciando depois de uma
+      // atualização de firmware).
+      if (DEVICE_HOSTED) {
+        void disconnect().then(() => scheduleReconnect(0))
+      }
     })
     return () => {
       unsubscribeMessage()
@@ -236,7 +251,19 @@ export default function App() {
     }
   }
 
-  async function connect(demo = false): Promise<void> {
+  function scheduleReconnect(attempt: number): void {
+    if (reconnectTimer.current !== null) window.clearTimeout(reconnectTimer.current)
+    if (attempt >= RECONNECT_TRIES) return
+    reconnectTimer.current = window.setTimeout(() => {
+      reconnectTimer.current = null
+      void connect(false, true).then((ok) => {
+        if (!ok) scheduleReconnect(attempt + 1)
+      })
+    }, RECONNECT_MS)
+  }
+
+  /** `quiet`: tentativa automática de reconexão - não registra a falha no log. */
+  async function connect(demo = false, quiet = false): Promise<boolean> {
     demoRef.current = demo
     setDemoMode(demo)
     if (demo) {
@@ -248,7 +275,7 @@ export default function App() {
       send({ cmd: 'get_all_pads' })
       send({ cmd: 'get_jacks' })
       send({ cmd: 'get_device_info' })
-      return
+      return true
     }
 
     // Com Web Serial, nunca existe uma porta pre-selecionada - listPorts()
@@ -256,20 +283,25 @@ export default function App() {
     // seletor nativo do navegador direto. Esta checagem so' importa se um
     // dia existir uma implementacao de DrumCoreApi com lista real de
     // portas pra escolher.
-    if (ports.length > 0 && !selectedPort) return
+    if (ports.length > 0 && !selectedPort) return false
     setConnecting(true)
     try {
       await window.drumCore.connect(selectedPort)
     } catch (err) {
-      appendLog(`Não foi possível conectar: ${err instanceof Error ? err.message : String(err)}`, 'error')
-      return
+      if (!quiet) appendLog(`Não foi possível conectar: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      return false
     } finally {
       setConnecting(false)
+    }
+    if (reconnectTimer.current !== null) {
+      window.clearTimeout(reconnectTimer.current)
+      reconnectTimer.current = null
     }
     setConnected(true)
     send({ cmd: 'get_all_pads' })
     send({ cmd: 'get_jacks' })
     send({ cmd: 'get_device_info' })
+    return true
   }
 
   async function disconnect(): Promise<void> {
@@ -690,7 +722,20 @@ export default function App() {
           </div>
         )}
 
-        {tab === 'firmware' ? (
+        {tab === 'firmware' && DEVICE_HOSTED ? (
+          <main className="content">
+            <OtaManager
+              connected={connected}
+              firmwareVersion={connected ? firmwareVersion : undefined}
+              otaStatus={otaStatus}
+              onRequest={() => {
+                setOtaStatus(null)
+                send({ cmd: 'ota_request' })
+              }}
+              onCancel={() => send({ cmd: 'ota_cancel' })}
+            />
+          </main>
+        ) : tab === 'firmware' ? (
           <main className="content">
             <FirmwareManager
               appConnected={connected}
