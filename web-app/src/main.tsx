@@ -2,11 +2,14 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import { installWebDrumCore } from './webDrumCore'
+import { installWsDrumCore } from './wsDrumCore'
+import { DEVICE_HOSTED } from './hosted'
 import './styles.css'
 
 const root = document.getElementById('root')!
 
-if (!('serial' in navigator)) {
+// Aberto a partir da placa (Wi-Fi): conecta por WebSocket, sem Web Serial.
+if (!DEVICE_HOSTED && !('serial' in navigator)) {
   root.innerHTML = `
     <div style="max-width:520px;margin:80px auto;padding:24px;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#e9e4d8;background:#171c24;border:1px solid #2a3240;border-radius:10px;">
       <h1 style="font-size:18px;">Navegador sem suporte a Web Serial</h1>
@@ -15,9 +18,10 @@ if (!('serial' in navigator)) {
     </div>
   `
 } else {
-  // Instala a implementacao Web Serial de DrumCoreApi em window.drumCore
-  // ANTES de renderizar <App />.
-  installWebDrumCore()
+  // Instala a implementacao de DrumCoreApi (Web Serial, ou WebSocket quando
+  // aberto pela placa) em window.drumCore ANTES de renderizar <App />.
+  if (DEVICE_HOSTED) installWsDrumCore()
+  else installWebDrumCore()
 
   createRoot(root).render(
     <StrictMode>

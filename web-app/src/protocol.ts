@@ -379,6 +379,16 @@ export interface AutoTuneStatus {
   reason?: 'timeout' | 'channel_disabled'
 }
 
+/** Wi-Fi do módulo (Fase AE) - ausente em firmwares mais antigos. */
+export interface WifiInfo {
+  active: boolean
+  ssid: string
+  password: string
+  hostname: string
+  ip: string
+  clients: number
+}
+
 export type IncomingMessage =
   | { type: 'pong' }
   | ({ type: 'device_info' } & {
@@ -389,6 +399,7 @@ export type IncomingMessage =
       ble_connected: boolean
       firmware_phase: string
       firmware_version?: string
+      wifi?: WifiInfo
     })
   | ({ type: 'pad_config' } & PadConfig)
   | ({ type: 'hit' } & { pad: number; zone: string; note: number; velocity: number })

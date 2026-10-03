@@ -10,7 +10,8 @@ import {
   PadField,
   PadType,
   PAD_FIELDS,
-  parseIncoming
+  parseIncoming,
+  WifiInfo
 } from './protocol'
 import PadGrid, { HitEvent, stepPad } from './components/PadGrid'
 import PadEditor from './components/PadEditor'
@@ -29,6 +30,7 @@ import FirmwareManager from './components/FirmwareManager'
 import MidiMonitor from './components/MidiMonitor'
 import Logo from './components/Logo'
 import type { PortInfo } from './env'
+import { DEVICE_HOSTED } from './hosted'
 
 const PAD_COUNT = 32
 
@@ -42,6 +44,9 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'midi', label: 'MIDI Monitor' },
   { key: 'firmware', label: 'Firmware' }
 ]
+
+// Aberto pela placa (Wi-Fi): sem aba Firmware - gravar firmware é só pelo USB.
+const VISIBLE_TABS = DEVICE_HOSTED ? TABS.filter((t) => t.key !== 'firmware') : TABS
 
 const LOG_MAX = 200
 const HIT_HISTORY_MAX = 20
@@ -75,6 +80,7 @@ export default function App() {
   const [global, setGlobal] = useState<GlobalConfig>(DEFAULT_GLOBAL)
   const [autoTune, setAutoTune] = useState<AutoTuneStatus | null>(null)
   const [firmwareVersion, setFirmwareVersion] = useState<string | undefined>(undefined)
+  const [wifi, setWifi] = useState<WifiInfo | null>(null)
 
   const mockDeviceRef = useRef<MockDevice | null>(null)
   // Espelho síncrono de demoMode - connect() liga o demo e já envia comandos
@@ -129,6 +135,7 @@ export default function App() {
       case 'device_info':
         setBleConnected(message.ble_connected)
         setFirmwareVersion(message.firmware_version)
+        setWifi(message.wifi ?? null)
         setGlobal({
           midi_channel: message.midi_channel,
           midi_output: message.midi_output
@@ -187,7 +194,11 @@ export default function App() {
   useEffect(() => {
     if (!connected || demoMode) return
     const unsubscribeMessage = window.drumCore.onMessage(handleLine)
-    const unsubscribeError = window.drumCore.onError((message) => appendLog(`Erro serial: ${message}`, 'error'))
+    const unsubscribeError = window.drumCore.onError((message) => {
+      appendLog(DEVICE_HOSTED ? message : `Erro serial: ${message}`, 'error')
+      // Pelo Wi-Fi a queda é detectada na hora - volta pra tela "Conectar".
+      if (DEVICE_HOSTED) void disconnect()
+    })
     return () => {
       unsubscribeMessage()
       unsubscribeError()
@@ -198,6 +209,17 @@ export default function App() {
   useEffect(() => {
     window.drumCore.listPorts().then(setPorts)
   }, [])
+
+  // Aberto pela placa: conecta sozinho (não há porta pra escolher).
+  useEffect(() => {
+    if (DEVICE_HOSTED) void connect(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function toggleWifi(on: boolean): void {
+    if (!on && DEVICE_HOSTED && !window.confirm('Desligar o Wi-Fi vai desconectar este app do módulo. Continuar?')) return
+    send({ cmd: 'set_wifi', enabled: on })
+  }
 
   function send(obj: Record<string, unknown>): void {
     const line = JSON.stringify(obj)
@@ -258,6 +280,7 @@ export default function App() {
     setLastHit(null)
     setHitHistory({})
     setJackLabels({})
+    setWifi(null)
     setUndoStack([])
     setRedoStack([])
     setBleConnected(false)
@@ -552,10 +575,14 @@ export default function App() {
             DRUMCORE
           </a>
           <ul className="navlinks">
-            <li><a href="../index.html">Visão geral</a></li>
-            <li><a href="../hardware.html">Hardware</a></li>
-            <li><a className="active" href="./">ConfigTool</a></li>
-            <li><a href="../webdrum.html">WebDrum</a></li>
+            {!DEVICE_HOSTED && (
+              <>
+                <li><a href="../index.html">Visão geral</a></li>
+                <li><a href="../hardware.html">Hardware</a></li>
+                <li><a className="active" href="./">ConfigTool</a></li>
+                <li><a href="../webdrum.html">WebDrum</a></li>
+              </>
+            )}
             <li>
               <a className="nav-gh" href="https://github.com/orodamaral/drumcore" target="_blank" rel="noopener">
                 GitHub ↗
@@ -568,7 +595,7 @@ export default function App() {
       <div className="app">
         <header className="statusbar">
           <nav className="tabbar" aria-label="Seções do ConfigTool">
-            {TABS.map((t) => (
+            {VISIBLE_TABS.map((t) => (
               <button
                 key={t.key}
                 className={tab === t.key ? 'active' : ''}
@@ -632,7 +659,7 @@ export default function App() {
             ) : (
               <>
                 <span className="conn-chip online" title={firmwareVersion ? `Firmware ${firmwareVersion}` : undefined}>
-                  <span className="conn-dot" aria-hidden /> Conectado · USB
+                  <span className="conn-dot" aria-hidden /> Conectado · {DEVICE_HOSTED ? 'Wi-Fi' : 'USB'}
                   {firmwareVersion && <span className="conn-meta">fw {firmwareVersion}</span>}
                 </span>
                 <button onClick={disconnect}>Desconectar</button>
@@ -672,9 +699,16 @@ export default function App() {
           <main className="content empty-state">
             <div className="empty-card">
               <h2>Nenhum módulo conectado</h2>
-              <p>
-                Ligue o DrumCore no USB e clique em <strong>Conectar</strong>, ou experimente a interface sem hardware.
-              </p>
+              {DEVICE_HOSTED ? (
+                <p>
+                  Sem conexão com o módulo pelo Wi-Fi. Confira se este aparelho está na rede do DrumCore (o nome e a
+                  senha aparecem na tela do módulo, em GLOBAL &gt; WI-FI) e clique em <strong>Conectar</strong>.
+                </p>
+              ) : (
+                <p>
+                  Ligue o DrumCore no USB e clique em <strong>Conectar</strong>, ou experimente a interface sem hardware.
+                </p>
+              )}
               <div className="empty-actions">
                 <button className="btn-primary" onClick={() => connect(false)} disabled={connectDisabled || connecting}>
                   Conectar
@@ -728,6 +762,39 @@ export default function App() {
                     ))}
                   </select>
                 </div>
+              </section>
+
+              <section className="editor-section">
+                <h3 className="section-title">Wi-Fi</h3>
+                {wifi ? (
+                  <>
+                    <dl className="import-summary">
+                      <div>
+                        <dt>Rede</dt>
+                        <dd>{wifi.ssid}</dd>
+                      </div>
+                      <div>
+                        <dt>Senha</dt>
+                        <dd>{wifi.password}</dd>
+                      </div>
+                      <div>
+                        <dt>Endereço</dt>
+                        <dd>{wifi.active ? `${wifi.hostname}.local · ${wifi.ip}` : '—'}</dd>
+                      </div>
+                    </dl>
+                    <div className="global-actions">
+                      <button onClick={() => toggleWifi(!wifi.active)}>{wifi.active ? 'Desligar Wi-Fi' : 'Ligar Wi-Fi'}</button>
+                    </div>
+                    <p className="pad-hint">
+                      Com o Wi-Fi ligado, conecte o celular ou computador na rede acima e abra{' '}
+                      <strong>http://{wifi.hostname}.local</strong> (ou o IP, se o endereço .local não abrir — comum no
+                      Android) para usar este ConfigTool sem cabo. O Wi-Fi começa desligado a cada vez que o módulo
+                      liga; também dá pra ligar pela tela do módulo, em GLOBAL &gt; WI-FI.
+                    </p>
+                  </>
+                ) : (
+                  <p className="pad-hint">Este firmware não tem Wi-Fi — atualize o firmware na aba Firmware.</p>
+                )}
               </section>
 
               <section className="editor-section">

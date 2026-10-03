@@ -2,6 +2,20 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-03 — Wi-Fi, fase 1: ConfigTool direto da placa
+
+- O módulo cria a **própria rede Wi-Fi** (`DrumCore-XXXX`, senha de 8
+  dígitos própria de cada placa), ligada em **GLOBAL > WI-FI** na tela ou
+  pelo ConfigTool (aba Global). Começa desligada a cada boot.
+- Com o Wi-Fi ligado, o **ConfigTool abre direto da placa** em
+  `http://drumcore.local` ou `http://192.168.4.1`, em qualquer navegador,
+  inclusive no celular, sem cabo. O app vem embutido no firmware e conecta
+  sozinho por WebSocket, com o mesmo protocolo da serial.
+- Comando novo `set_wifi`; `device_info` ganhou o objeto `wifi`.
+- Medido sem aparelho conectado: o loop de leitura dos pads passa de 1,93
+  para 1,98 ms em média com o Wi-Fi ligado.
+- Detalhes em [08-wifi.md](08-wifi.md).
+
 ## 2026-10-03 — Mapa MIDI do Superior Drummer 3 no ConfigTool
 
 - Novo mapa **Superior Drummer 3** (layout padrão da Toontrack, 36 = C1) no

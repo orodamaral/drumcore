@@ -84,6 +84,7 @@
 #include "driver/gpio.h"
 #include "driver/periph_ctrl.h"
 #include "esp_rom_gpio.h"
+#include "wifi_portal.h" // Fase AE - Wi-Fi + ConfigTool servido pela placa
 
 #define USBD_STACK_SZ (4096)
 
@@ -900,7 +901,7 @@ byte editPadIndex = 0;  // pad em foco em PAD_EDIT/SIGNAL
 byte editItemIndex = 0; // item selecionado dentro de PAD_EDIT
 bool editingValue = false;
 
-byte globalSelection = 0; // 0..3 (MIDI CH, SAIDA, SALVAR, RESTAURAR)
+byte globalSelection = 0; // 0..5 (MIDI CH, SAIDA, SALVAR, RESTAURAR, FABRICA, WI-FI)
 bool globalEditing = false;
 
 #define GLOBAL_ROW_MIDI_CH 0
@@ -908,7 +909,8 @@ bool globalEditing = false;
 #define GLOBAL_ROW_SAVE 2
 #define GLOBAL_ROW_RESTORE 3
 #define GLOBAL_ROW_FACTORY 4
-#define GLOBAL_ROW_COUNT 5
+#define GLOBAL_ROW_WIFI 5 // Fase AE - clique liga/desliga
+#define GLOBAL_ROW_COUNT 6
 // GLOBAL > FABRICA pede um 2o clique pra confirmar - armado pelo 1o clique,
 // desarmado ao girar o encoder ou apos FACTORY_CONFIRM_MS.
 bool factoryArmed = false;
@@ -936,8 +938,18 @@ bool signalNeedsRedraw = true;
 
 void sendJsonLine(JsonDocument &doc)
 {
-    serializeJson(doc, Serial);
-    Serial.println();
+    if (!wifiPortalActive())
+    {
+        serializeJson(doc, Serial);
+        Serial.println();
+        return;
+    }
+    // Fase AE: com o Wi-Fi ligado, a mesma linha vai tambem pros clientes do
+    // WebSocket (o app aberto pela placa).
+    String line;
+    serializeJson(doc, line);
+    Serial.println(line);
+    wifiPortalBroadcast(line);
 }
 
 void sendLog(const char *message)
@@ -992,7 +1004,33 @@ void sendDeviceInfo()
     doc["ble_connected"] = bleMidiConnected;
     doc["firmware_phase"] = "J";
     doc["firmware_version"] = FW_VERSION;
+    JsonObject wifi = doc["wifi"].to<JsonObject>();
+    wifi["active"] = wifiPortalActive();
+    wifi["ssid"] = wifiPortalSsid();
+    wifi["password"] = wifiPortalPassword();
+    wifi["hostname"] = wifiPortalHostname();
+    wifi["ip"] = wifiPortalIp();
+    wifi["clients"] = wifiPortalClientCount();
     sendJsonLine(doc);
+}
+
+// Fase AE - liga/desliga o Wi-Fi (menu GLOBAL e comando set_wifi).
+bool setWifiEnabled(bool on)
+{
+    bool ok = true;
+    if (on)
+    {
+        ok = wifiPortalStart();
+        sendLog(ok ? "Wi-Fi ligado." : "Wi-Fi: nao foi possivel criar a rede.");
+    }
+    else
+    {
+        wifiPortalStop();
+        sendLog("Wi-Fi desligado.");
+    }
+    forceScreenRedraw = true;
+    sendDeviceInfo();
+    return ok;
 }
 
 // Callbacks do BLE-MIDI - chamados pela stack BLE (Bluedroid, roda numa
@@ -1860,6 +1898,15 @@ void handleSerialCommand(const String &line)
         {
             sendError(cmd, "invalid_action");
         }
+    }
+    else if (strcmp(cmd, "set_wifi") == 0)
+    {
+        if (!doc["enabled"].is<bool>())
+        {
+            sendError(cmd, "invalid_value");
+            return;
+        }
+        setWifiEnabled(doc["enabled"].as<bool>());
     }
     else
     {
@@ -3719,6 +3766,18 @@ void onEncClick()
             loadAllFromEeprom();
             showToast("RESTAURADO", "32 PADS DA NVS");
         }
+        else if (globalSelection == GLOBAL_ROW_WIFI)
+        {
+            bool on = !wifiPortalActive();
+            if (setWifiEnabled(on))
+            {
+                showToast(on ? "WI-FI ON" : "WI-FI OFF", on ? wifiPortalSsid() : "REDE DESLIGADA");
+            }
+            else
+            {
+                showToast("WI-FI", "FALHOU");
+            }
+        }
         else if (globalSelection == GLOBAL_ROW_FACTORY)
         {
             if (factoryArmed && millis() - factoryArmedAtMs < FACTORY_CONFIRM_MS)
@@ -4484,6 +4543,27 @@ bool renderGlobal()
     drawValueRow(54, "RESTAURAR", ">", globalSelection == GLOBAL_ROW_RESTORE, false);
     bool armed = factoryArmed && millis() - factoryArmedAtMs < FACTORY_CONFIRM_MS;
     drawValueRow(68, "FABRICA", armed ? "CONFIRMA?" : ">", globalSelection == GLOBAL_ROW_FACTORY, armed);
+    drawValueRow(82, "WI-FI", wifiPortalActive() ? "LIGADO" : "DESLIG.", globalSelection == GLOBAL_ROW_WIFI, false);
+    if (wifiPortalActive())
+    {
+        // Dados pra conectar: rede, senha e endereco (drumcore.local ou o IP).
+        canvas.setTextSize(1);
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 99);
+        canvas.print("REDE  ");
+        canvas.setTextColor(COL_TXT);
+        canvas.print(wifiPortalSsid());
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 109);
+        canvas.print("SENHA ");
+        canvas.setTextColor(COL_TXT);
+        canvas.print(wifiPortalPassword());
+        canvas.setTextColor(COL_OK);
+        canvas.setCursor(4, 119);
+        canvas.print(wifiPortalHostname());
+        canvas.print(".local ");
+        canvas.print(wifiPortalIp());
+    }
 
     if (showingToast)
     {
@@ -5023,4 +5103,5 @@ void loop()
     handleEncoder();
     renderScreen();
     pollSerialCommands();
+    wifiPortalPoll(handleSerialCommand); // Fase AE - mesmos comandos, vindos do Wi-Fi
 }

@@ -27,3 +27,6 @@ Thumbs.db
 # MCP config e locks de editor - especificos da maquina/sessao local
 .mcp.json
 hardware/**/~*.lck
+
+# Firmware: ConfigTool embutido, gerado no build (firmware/embed_webapp.py)
+firmware/include/webapp_files.h

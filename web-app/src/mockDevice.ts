@@ -118,6 +118,8 @@ export class MockDevice {
     this.global = { midi_channel: 10, midi_output: 2 }
   }
 
+  private wifiActive = false
+
   private deviceInfo(): IncomingMessage {
     return {
       type: 'device_info',
@@ -126,6 +128,14 @@ export class MockDevice {
       ble_connected: this.bleConnected,
       firmware_phase: 'K (demo)',
       firmware_version: 'demo',
+      wifi: {
+        active: this.wifiActive,
+        ssid: 'DrumCore-DEMO',
+        password: '12345678',
+        hostname: 'drumcore',
+        ip: this.wifiActive ? '192.168.4.1' : '',
+        clients: 0
+      },
       ...this.global
     }
   }
@@ -269,7 +279,7 @@ export class MockDevice {
   }
 
   send(line: string): void {
-    let cmd: { cmd?: string; pad?: number; field?: string; value?: number | string }
+    let cmd: { cmd?: string; pad?: number; field?: string; value?: number | string; enabled?: unknown }
     try {
       cmd = JSON.parse(line)
     } catch {
@@ -283,6 +293,16 @@ export class MockDevice {
         break
 
       case 'get_device_info':
+        this.emit(this.deviceInfo())
+        break
+
+      case 'set_wifi':
+        if (typeof cmd.enabled !== 'boolean') {
+          this.emit({ type: 'error', cmd: 'set_wifi', message: 'invalid_value' })
+          break
+        }
+        this.wifiActive = cmd.enabled
+        this.emit({ type: 'log', message: cmd.enabled ? 'Wi-Fi ligado.' : 'Wi-Fi desligado.' })
         this.emit(this.deviceInfo())
         break
 
