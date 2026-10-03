@@ -119,6 +119,8 @@ export class MockDevice {
   }
 
   private wifiActive = false
+  private wifiAutostart = false
+  private staSsid = ''
 
   private deviceInfo(): IncomingMessage {
     return {
@@ -130,10 +132,16 @@ export class MockDevice {
       firmware_version: 'demo',
       wifi: {
         active: this.wifiActive,
+        ap_active: this.wifiActive && !this.staSsid,
         ssid: 'DrumCore-DEMO',
         password: '12345678',
         hostname: 'drumcore',
-        ip: this.wifiActive ? '192.168.4.1' : '',
+        ip: this.wifiActive && !this.staSsid ? '192.168.4.1' : '',
+        sta_ssid: this.staSsid,
+        sta_state: this.wifiActive && this.staSsid ? 'connected' : 'none',
+        sta_ip: this.wifiActive && this.staSsid ? '192.168.1.50' : '',
+        ap_off_in_ms: 0,
+        autostart: this.wifiAutostart,
         clients: 0
       },
       ...this.global
@@ -279,7 +287,7 @@ export class MockDevice {
   }
 
   send(line: string): void {
-    let cmd: { cmd?: string; pad?: number; field?: string; value?: number | string; enabled?: unknown }
+    let cmd: { cmd?: string; pad?: number; field?: string; value?: number | string; enabled?: unknown; autostart?: unknown; ssid?: unknown }
     try {
       cmd = JSON.parse(line)
     } catch {
@@ -297,13 +305,53 @@ export class MockDevice {
         break
 
       case 'set_wifi':
-        if (typeof cmd.enabled !== 'boolean') {
+        if (typeof cmd.enabled !== 'boolean' && typeof cmd.autostart !== 'boolean') {
           this.emit({ type: 'error', cmd: 'set_wifi', message: 'invalid_value' })
           break
         }
-        this.wifiActive = cmd.enabled
-        this.emit({ type: 'log', message: cmd.enabled ? 'Wi-Fi ligado.' : 'Wi-Fi desligado.' })
+        if (typeof cmd.autostart === 'boolean') this.wifiAutostart = cmd.autostart
+        if (typeof cmd.enabled === 'boolean') {
+          this.wifiActive = cmd.enabled
+          this.emit({ type: 'log', message: cmd.enabled ? 'Wi-Fi ligado.' : 'Wi-Fi desligado.' })
+        }
         this.emit(this.deviceInfo())
+        break
+
+      case 'set_wifi_network':
+        if (typeof cmd.ssid !== 'string' || !cmd.ssid) {
+          this.emit({ type: 'error', cmd: 'set_wifi_network', message: 'invalid_value' })
+          break
+        }
+        this.staSsid = cmd.ssid
+        this.emit(this.deviceInfo())
+        break
+
+      case 'forget_wifi_network':
+        this.staSsid = ''
+        this.emit(this.deviceInfo())
+        break
+
+      case 'retry_wifi_network':
+        this.emit(this.deviceInfo())
+        break
+
+      case 'scan_wifi':
+        if (!this.wifiActive) {
+          this.emit({ type: 'error', cmd: 'scan_wifi', message: 'wifi_off' })
+          break
+        }
+        setTimeout(
+          () =>
+            this.emit({
+              type: 'wifi_scan',
+              networks: [
+                { ssid: 'Casa', rssi: -52, secure: true },
+                { ssid: 'Casa_5G', rssi: -67, secure: true },
+                { ssid: 'Vizinho', rssi: -83, secure: true }
+              ]
+            }),
+          1200
+        )
         break
 
       case 'get_all_pads':

@@ -1006,12 +1006,26 @@ void sendDeviceInfo()
     doc["firmware_version"] = FW_VERSION;
     JsonObject wifi = doc["wifi"].to<JsonObject>();
     wifi["active"] = wifiPortalActive();
-    wifi["ssid"] = wifiPortalSsid();
+    wifi["ap_active"] = wifiPortalApActive();
+    wifi["ssid"] = wifiPortalSsid(); // rede propria
     wifi["password"] = wifiPortalPassword();
     wifi["hostname"] = wifiPortalHostname();
-    wifi["ip"] = wifiPortalIp();
+    wifi["ip"] = wifiPortalApIp();
+    wifi["sta_ssid"] = wifiPortalStaSsid(); // rede de casa ("" = nenhuma)
+    wifi["sta_state"] = wifiPortalStaStateName();
+    wifi["sta_ip"] = wifiPortalStaIp();
+    wifi["ap_off_in_ms"] = wifiPortalApOffInMs();
+    wifi["autostart"] = wifiPortalAutostart();
     wifi["clients"] = wifiPortalClientCount();
     sendJsonLine(doc);
+}
+
+// Chamado pelo wifi_portal quando a rede conecta/cai ou a rede propria
+// liga/desliga.
+void onWifiStatus()
+{
+    forceScreenRedraw = true;
+    sendDeviceInfo();
 }
 
 // Fase AE - liga/desliga o Wi-Fi (menu GLOBAL e comando set_wifi).
@@ -1901,12 +1915,62 @@ void handleSerialCommand(const String &line)
     }
     else if (strcmp(cmd, "set_wifi") == 0)
     {
-        if (!doc["enabled"].is<bool>())
+        // enabled e/ou autostart ("ligar o Wi-Fi quando o modulo liga").
+        bool hasEnabled = doc["enabled"].is<bool>();
+        bool hasAutostart = doc["autostart"].is<bool>();
+        if (!hasEnabled && !hasAutostart)
         {
             sendError(cmd, "invalid_value");
             return;
         }
-        setWifiEnabled(doc["enabled"].as<bool>());
+        if (hasAutostart)
+        {
+            wifiPortalSetAutostart(doc["autostart"].as<bool>());
+        }
+        if (hasEnabled)
+        {
+            setWifiEnabled(doc["enabled"].as<bool>()); // ja manda device_info
+        }
+        else
+        {
+            sendDeviceInfo();
+        }
+    }
+    else if (strcmp(cmd, "set_wifi_network") == 0)
+    {
+        // Rede de casa (Fase AE, fase 2). A senha fica so' na placa.
+        const char *ssid = doc["ssid"] | "";
+        const char *password = doc["password"] | "";
+        if (!wifiPortalSetNetwork(ssid, password))
+        {
+            sendError(cmd, "invalid_value");
+            return;
+        }
+        sendLog(wifiPortalActive() ? "Wi-Fi: rede de casa salva, conectando." : "Wi-Fi: rede de casa salva.");
+        onWifiStatus(); // redesenha a tela + device_info
+    }
+    else if (strcmp(cmd, "retry_wifi_network") == 0)
+    {
+        if (!wifiPortalRetry())
+        {
+            sendError(cmd, "not_ready");
+            return;
+        }
+        onWifiStatus(); // redesenha a tela + device_info
+    }
+    else if (strcmp(cmd, "forget_wifi_network") == 0)
+    {
+        wifiPortalForgetNetwork();
+        sendLog("Wi-Fi: rede de casa esquecida.");
+        onWifiStatus(); // redesenha a tela + device_info
+    }
+    else if (strcmp(cmd, "scan_wifi") == 0)
+    {
+        if (!wifiPortalStartScan())
+        {
+            sendError(cmd, "wifi_off");
+        }
+        // resultado chega depois, como wifi_scan
     }
     else
     {
@@ -3771,7 +3835,7 @@ void onEncClick()
             bool on = !wifiPortalActive();
             if (setWifiEnabled(on))
             {
-                showToast(on ? "WI-FI ON" : "WI-FI OFF", on ? wifiPortalSsid() : "REDE DESLIGADA");
+                showToast(on ? "WI-FI ON" : "WI-FI OFF", !on ? "REDE DESLIGADA" : wifiPortalStaSsid()[0] ? "REDE DE CASA" : wifiPortalSsid());
             }
             else
             {
@@ -4508,6 +4572,16 @@ bool renderSignal()
     return true;
 }
 
+// Linha "ROTULO valor" pequena da tela GLOBAL (Wi-Fi).
+void drawInfoLine(int y, const char *label, const char *value, uint16_t color)
+{
+    canvas.setTextColor(COL_TXT_DIM);
+    canvas.setCursor(4, y);
+    canvas.print(label);
+    canvas.setTextColor(color);
+    canvas.print(value);
+}
+
 const char *midiOutputLabel(byte v)
 {
     return v == OUTPUT_USB ? "USB" : v == OUTPUT_BLE ? "BLE" : "USB+BLE";
@@ -4543,26 +4617,46 @@ bool renderGlobal()
     drawValueRow(54, "RESTAURAR", ">", globalSelection == GLOBAL_ROW_RESTORE, false);
     bool armed = factoryArmed && millis() - factoryArmedAtMs < FACTORY_CONFIRM_MS;
     drawValueRow(68, "FABRICA", armed ? "CONFIRMA?" : ">", globalSelection == GLOBAL_ROW_FACTORY, armed);
-    drawValueRow(82, "WI-FI", wifiPortalActive() ? "LIGADO" : "DESLIG.", globalSelection == GLOBAL_ROW_WIFI, false);
+    WifiStaState sta = wifiPortalStaState();
+    const char *wifiLabel = !wifiPortalActive()              ? "DESLIG."
+                            : sta == WIFI_STA_CONNECTED      ? "CASA"
+                            : sta == WIFI_STA_CONNECTING     ? "CONECT..."
+                            : sta == WIFI_STA_FAILED         ? "FALHOU"
+                                                             : "LIGADO";
+    drawValueRow(82, "WI-FI", wifiLabel, globalSelection == GLOBAL_ROW_WIFI, false);
     if (wifiPortalActive())
     {
-        // Dados pra conectar: rede, senha e endereco (drumcore.local ou o IP).
+        // Dados pra conectar. Na rede de casa: nome da rede e IP; na rede
+        // propria: nome, senha e endereco (drumcore.local ou o IP).
         canvas.setTextSize(1);
-        canvas.setTextColor(COL_TXT_DIM);
-        canvas.setCursor(4, 99);
-        canvas.print("REDE  ");
-        canvas.setTextColor(COL_TXT);
-        canvas.print(wifiPortalSsid());
-        canvas.setTextColor(COL_TXT_DIM);
-        canvas.setCursor(4, 109);
-        canvas.print("SENHA ");
-        canvas.setTextColor(COL_TXT);
-        canvas.print(wifiPortalPassword());
-        canvas.setTextColor(COL_OK);
-        canvas.setCursor(4, 119);
-        canvas.print(wifiPortalHostname());
-        canvas.print(".local ");
-        canvas.print(wifiPortalIp());
+        canvas.setTextWrap(false); // nome de rede longo nao quebra linha
+        if (sta == WIFI_STA_CONNECTED || (sta == WIFI_STA_CONNECTING && !wifiPortalApActive()))
+        {
+            drawInfoLine(99, "CASA  ", wifiPortalStaSsid(), COL_TXT);
+            if (sta == WIFI_STA_CONNECTED)
+            {
+                drawInfoLine(109, "IP    ", wifiPortalStaIp().c_str(), COL_TXT);
+                canvas.setTextColor(COL_OK);
+                canvas.setCursor(4, 119);
+                canvas.print(wifiPortalHostname());
+                canvas.print(".local");
+            }
+            else
+            {
+                drawInfoLine(109, "", "CONECTANDO...", COL_TXT_DIM);
+            }
+        }
+        else
+        {
+            drawInfoLine(99, "REDE  ", wifiPortalSsid(), COL_TXT);
+            drawInfoLine(109, "SENHA ", wifiPortalPassword(), COL_TXT);
+            canvas.setTextColor(COL_OK);
+            canvas.setCursor(4, 119);
+            canvas.print(wifiPortalHostname());
+            canvas.print(".local ");
+            canvas.print(wifiPortalApIp());
+        }
+        canvas.setTextWrap(true);
     }
 
     if (showingToast)
@@ -4990,6 +5084,14 @@ void setup()
     // antes de ir pra LIVE.
     delay(1200);
     sendLog("DrumCore - Fase J/K: navegacao/tela redesenhada (32 canais, 2x CD4067, USB-MIDI + BLE-MIDI)");
+
+    // Fase AE - Wi-Fi: desligado a cada boot, a nao ser com "ligar ao
+    // iniciar" (ConfigTool, aba Global).
+    wifiPortalSetCallbacks(handleSerialCommand, onWifiStatus, sendJsonLine);
+    if (wifiPortalAutostart())
+    {
+        setWifiEnabled(true);
+    }
     goToLive();
 }
 
@@ -5103,5 +5205,5 @@ void loop()
     handleEncoder();
     renderScreen();
     pollSerialCommands();
-    wifiPortalPoll(handleSerialCommand); // Fase AE - mesmos comandos, vindos do Wi-Fi
+    wifiPortalPoll(); // Fase AE - comandos vindos do Wi-Fi, rede de casa, busca de redes
 }

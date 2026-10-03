@@ -2,6 +2,21 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-03 — Wi-Fi, fase 2: rede de casa
+
+- O módulo pode entrar no **Wi-Fi de casa**: no ConfigTool, aba Global >
+  Wi-Fi, procure a rede, digite a senha e salve. Daí em diante, ligar o
+  Wi-Fi já entra nela, e o ConfigTool abre em `http://drumcore.local` na
+  própria rede de casa, sem trocar de rede.
+- Se a rede de casa não conectar em 15 s, o módulo para de tentar e põe a
+  rede própria no ar para corrigir ("Tentar de novo" no app).
+- Opção **ligar o Wi-Fi sempre que o módulo ligar** (padrão: desligado).
+- A tela GLOBAL mostra o estado (`LIGADO` / `CONECT...` / `CASA` /
+  `FALHOU`) e o endereço.
+- Comandos novos `set_wifi_network`, `retry_wifi_network`,
+  `forget_wifi_network`, `scan_wifi` (resposta `wifi_scan`); `set_wifi`
+  aceita `autostart`; `device_info.wifi` com o estado da rede de casa.
+
 ## 2026-10-03 — Wi-Fi, fase 1: ConfigTool direto da placa
 
 - O módulo cria a **própria rede Wi-Fi** (`DrumCore-XXXX`, senha de 8

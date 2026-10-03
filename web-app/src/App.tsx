@@ -31,6 +31,7 @@ import MidiMonitor from './components/MidiMonitor'
 import Logo from './components/Logo'
 import type { PortInfo } from './env'
 import { DEVICE_HOSTED } from './hosted'
+import WifiPanel, { WifiScanState } from './components/WifiPanel'
 
 const PAD_COUNT = 32
 
@@ -81,6 +82,7 @@ export default function App() {
   const [autoTune, setAutoTune] = useState<AutoTuneStatus | null>(null)
   const [firmwareVersion, setFirmwareVersion] = useState<string | undefined>(undefined)
   const [wifi, setWifi] = useState<WifiInfo | null>(null)
+  const [wifiScan, setWifiScan] = useState<WifiScanState | null>(null)
 
   const mockDeviceRef = useRef<MockDevice | null>(null)
   // Espelho síncrono de demoMode - connect() liga o demo e já envia comandos
@@ -141,6 +143,9 @@ export default function App() {
           midi_output: message.midi_output
         })
         break
+      case 'wifi_scan':
+        setWifiScan({ busy: false, networks: message.networks ?? [], error: message.error })
+        break
       case 'pad_config':
         setPads((prev) => ({ ...prev, [message.pad]: message }))
         resolveReply('config', message.pad)
@@ -166,6 +171,7 @@ export default function App() {
       case 'error':
         appendLog(`Erro (${message.cmd}): ${message.message}`, 'error')
         if (message.cmd === 'set_pad' || message.cmd === 'set_global' || message.cmd === 'set_jack') resolveReply('error')
+        if (message.cmd === 'scan_wifi') setWifiScan({ busy: false, networks: [], error: message.message })
         break
       case 'ack': {
         appendLog(`OK: pad ${message.pad + 1} ${message.field} = ${message.value}`)
@@ -216,9 +222,9 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function toggleWifi(on: boolean): void {
-    if (!on && DEVICE_HOSTED && !window.confirm('Desligar o Wi-Fi vai desconectar este app do módulo. Continuar?')) return
-    send({ cmd: 'set_wifi', enabled: on })
+  function scanWifi(): void {
+    setWifiScan((prev) => ({ busy: true, networks: prev?.networks ?? [] }))
+    send({ cmd: 'scan_wifi' })
   }
 
   function send(obj: Record<string, unknown>): void {
@@ -281,6 +287,7 @@ export default function App() {
     setHitHistory({})
     setJackLabels({})
     setWifi(null)
+    setWifiScan(null)
     setUndoStack([])
     setRedoStack([])
     setBleConnected(false)
@@ -764,38 +771,14 @@ export default function App() {
                 </div>
               </section>
 
-              <section className="editor-section">
-                <h3 className="section-title">Wi-Fi</h3>
-                {wifi ? (
-                  <>
-                    <dl className="import-summary">
-                      <div>
-                        <dt>Rede</dt>
-                        <dd>{wifi.ssid}</dd>
-                      </div>
-                      <div>
-                        <dt>Senha</dt>
-                        <dd>{wifi.password}</dd>
-                      </div>
-                      <div>
-                        <dt>Endereço</dt>
-                        <dd>{wifi.active ? `${wifi.hostname}.local · ${wifi.ip}` : '—'}</dd>
-                      </div>
-                    </dl>
-                    <div className="global-actions">
-                      <button onClick={() => toggleWifi(!wifi.active)}>{wifi.active ? 'Desligar Wi-Fi' : 'Ligar Wi-Fi'}</button>
-                    </div>
-                    <p className="pad-hint">
-                      Com o Wi-Fi ligado, conecte o celular ou computador na rede acima e abra{' '}
-                      <strong>http://{wifi.hostname}.local</strong> (ou o IP, se o endereço .local não abrir — comum no
-                      Android) para usar este ConfigTool sem cabo. O Wi-Fi começa desligado a cada vez que o módulo
-                      liga; também dá pra ligar pela tela do módulo, em GLOBAL &gt; WI-FI.
-                    </p>
-                  </>
-                ) : (
+              {wifi ? (
+                <WifiPanel wifi={wifi} scan={wifiScan} hosted={DEVICE_HOSTED} onSend={send} onScan={scanWifi} />
+              ) : (
+                <section className="editor-section">
+                  <h3 className="section-title">Wi-Fi</h3>
                   <p className="pad-hint">Este firmware não tem Wi-Fi — atualize o firmware na aba Firmware.</p>
-                )}
-              </section>
+                </section>
+              )}
 
               <section className="editor-section">
                 <h3 className="section-title">Backup e compartilhamento</h3>

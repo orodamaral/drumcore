@@ -9,7 +9,7 @@ USB, o ConfigTool só funciona no Chrome/Edge de computador (Web Serial).
 | Fase | O quê | Estado |
 |---|---|---|
 | 1 | Rede própria do módulo, ligada pelo menu ou pelo app; ConfigTool servido pela placa; conexão do app por WebSocket | **feito** (2026-10-03), falta testar com celular |
-| 2 | Conectar o módulo no Wi-Fi de casa (configurado pelo app) + `drumcore.local`; se não achar a rede, volta pra rede própria | ideia |
+| 2 | Conectar o módulo no Wi-Fi de casa (configurado pelo app) + `drumcore.local`; se não achar a rede, volta pra rede própria; "ligar ao iniciar" | **feito** (2026-10-03), falta testar com a rede de casa |
 | 3 | Atualizar o firmware pelo Wi-Fi (a tabela de partições `default_16MB.csv` já tem 2 slots de app) | ideia |
 | — | MIDI pelo Wi-Fi (RTP-MIDI), pra tocar sem cabo | só depois de medir a latência |
 
@@ -30,6 +30,41 @@ seguro para tocar é sem Wi-Fi.
 
 A rede fica sem internet. Alguns celulares avisam isso e oferecem trocar de
 rede: escolha continuar conectado.
+
+## Rede de casa (fase 2)
+
+No ConfigTool, aba **Global > Wi-Fi > Rede de casa**:
+
+1. Com o Wi-Fi ligado, clique em **Procurar redes** e escolha a sua, ou
+   digite o nome.
+2. Digite a senha e clique em **Salvar e conectar**.
+3. A rede própria do módulo continua no ar enquanto ele tenta. Quando
+   conecta, o app mostra o endereço na rede de casa, e a rede própria
+   desliga 30 s depois. Volte o celular para a rede de casa e abra
+   **http://drumcore.local** (ou o IP que o app e a tela mostram).
+
+Daí em diante, ligar o Wi-Fi já entra na rede de casa. Marque **Ligar o
+Wi-Fi sempre que o módulo ligar** para não precisar ligar pelo menu.
+
+Se a rede de casa não conectar em 15 s (senha errada, roteador desligado,
+fora de alcance), o módulo **para de tentar** e põe a rede própria no ar
+para você corrigir. Ele para porque cada tentativa troca o canal do rádio e
+derruba quem está na rede própria. Para tentar de novo: **Tentar de novo**
+no app, ou desligar e ligar o Wi-Fi.
+
+A tela **GLOBAL** mostra o estado na linha WI-FI:
+
+| Linha WI-FI | Significa | Linhas de baixo |
+|---|---|---|
+| `DESLIG.` | Wi-Fi desligado | — |
+| `LIGADO` | só a rede própria | rede, senha, endereço |
+| `CONECT...` | tentando a rede de casa | rede de casa / "CONECTANDO..." |
+| `CASA` | na rede de casa | rede de casa, IP, `drumcore.local` |
+| `FALHOU` | a rede de casa não conectou, rede própria no ar | rede, senha, endereço |
+
+A senha da rede de casa fica só no módulo (NVS); nunca volta para o app.
+O ESP32-S3 só conecta em redes de **2,4 GHz**. Se o roteador tiver as
+duas faixas com nomes diferentes, escolha a de 2,4 GHz.
 
 ## Como funciona
 
@@ -74,7 +109,11 @@ rede: escolha continuar conectado.
 - **Pinos dos MUX** (GPIO1 e GPIO2) estão no ADC1, que funciona com o Wi-Fi
   ligado. O ADC2 não pode ser usado com Wi-Fi: nunca mover leitura de pad
   para ele.
-- **Mais de um módulo** na mesma rede (fase 2): o nome `drumcore.local`
-  vai precisar de sufixo.
+- **Mais de um módulo** na mesma rede de casa: os dois respondem como
+  `drumcore.local`. Ainda não tratado: use o IP de cada um.
+- **Economia de energia na rede de casa**: o modo de economia do rádio fica
+  ligado, porque o ESP32 exige isso com o Bluetooth (BLE-MIDI) ativo. O app
+  pode responder um pouco mais devagar na rede de casa do que na rede
+  própria; a leitura dos pads e o MIDI não são afetados.
 - **Web MIDI** (aba MIDI Monitor) exige página segura (`https`). Pela
   placa (`http`), o monitor não funciona. O resto do app funciona.

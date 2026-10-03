@@ -168,7 +168,8 @@ body {
 select,
 button,
 input[type='number'],
-input[type='text'] {
+input[type='text'],
+input[type='password'] {
   background: var(--surface);
   color: var(--txt);
   border: 1px solid var(--line);
@@ -181,7 +182,8 @@ input[type='text'] {
 select:focus-visible,
 button:focus-visible,
 input[type='number']:focus-visible,
-input[type='text']:focus-visible {
+input[type='text']:focus-visible,
+input[type='password']:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--focus-ring);
@@ -1518,6 +1520,96 @@ input:disabled {
   gap: 10px;
   flex-wrap: wrap;
   margin: 0 0 4px;
+}
+
+/* ---------------------------------------------------------------- wi-fi */
+
+.wifi-status {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--txt-dim);
+}
+
+.wifi-status.on {
+  color: var(--txt);
+}
+
+.wifi-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.wifi-autostart {
+  margin: 8px 0 4px;
+}
+
+.wifi-sub {
+  margin: 18px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wifi-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 420px;
+}
+
+.wifi-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wifi-field input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.wifi-row {
+  display: flex;
+  gap: 8px;
+}
+
+.wifi-row button {
+  white-space: nowrap;
+}
+
+.wifi-scan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.wifi-net {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+}
+
+.wifi-net.active {
+  border-color: var(--accent);
+}
+
+.wifi-net-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wifi-net-meta {
+  color: var(--txt-dim);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------- log */

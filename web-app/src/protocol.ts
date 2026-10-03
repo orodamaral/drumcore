@@ -382,11 +382,29 @@ export interface AutoTuneStatus {
 /** Wi-Fi do módulo (Fase AE) - ausente em firmwares mais antigos. */
 export interface WifiInfo {
   active: boolean
+  /** Rede própria do módulo (ponto de acesso) no ar. Fase 2. */
+  ap_active?: boolean
+  /** Rede própria: nome e senha. */
   ssid: string
   password: string
   hostname: string
+  /** IP na rede própria (vazio se ela não estiver no ar). */
   ip: string
+  /** Rede de casa salva ("" = nenhuma). Fase 2 - a senha nunca vem. */
+  sta_ssid?: string
+  sta_state?: 'none' | 'connecting' | 'connected' | 'failed'
+  sta_ip?: string
+  /** ms até a rede própria desligar depois de conectar na de casa (0 = não vai). */
+  ap_off_in_ms?: number
+  /** Liga o Wi-Fi sozinho quando o módulo liga. */
+  autostart?: boolean
   clients: number
+}
+
+export interface WifiNetwork {
+  ssid: string
+  rssi: number
+  secure: boolean
 }
 
 export type IncomingMessage =
@@ -408,6 +426,7 @@ export type IncomingMessage =
   | { type: 'error'; cmd: string; message: string }
   | { type: 'log'; message: string }
   | { type: 'jack_config'; jack: number; label: string }
+  | { type: 'wifi_scan'; networks: WifiNetwork[]; error?: string }
 
 export function parseIncoming(line: string): IncomingMessage | null {
   try {
