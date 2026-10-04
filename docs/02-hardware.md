@@ -288,6 +288,14 @@ mapeamento completo e o racional, e Fase Z pro pinout atual.
   [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase R).
   Corrige uma nota anterior que os listava como "sem uso previsto".
 
+## Jackboard single-layer montada (2026-10)
+
+As 2 jackboards (A e B) foram corroídas em casa, montadas e validadas.
+
+| Vista de cima | Vista de baixo |
+|---|---|
+| ![Jackboard montada, vista de cima: 8 jacks TRS e o módulo do MUX](../site/assets/jackboard_top.jpg) | ![Jackboard montada, vista de baixo: trilhas corroídas e soldas](../site/assets/jackboard_bottom.jpg) |
+
 ## Jack 1: controlador de chimbal com sensor Hall SS49E (2026-10-01)
 
 Montagem **validada na bancada** (Rodrigo, jackboard A single-layer): o

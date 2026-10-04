@@ -475,6 +475,25 @@ td.gpio, td .mono {
   color: var(--ink-dim);
 }
 
+/* fotos em retrato lado a lado (ex: jackboard montada) */
+.photo-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.photo-pair .pcb-figure {
+  margin: 0;
+}
+
+.photo-pair .pcb-figure img {
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  border-radius: 6px;
+}
+
 /* ---------------------------------------------------------------- env cards (flash page) */
 
 .env-grid {
