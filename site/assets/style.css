@@ -475,6 +475,12 @@ td.gpio, td .mono {
   color: var(--ink-dim);
 }
 
+/* titulos das tabelas da lista de componentes */
+.bom-title {
+  margin: 26px 0 10px;
+  font-size: 15px;
+}
+
 /* fotos em retrato lado a lado (ex: jackboard montada) */
 .photo-pair {
   display: grid;

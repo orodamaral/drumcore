@@ -288,6 +288,23 @@ mapeamento completo e o racional, e Fase Z pro pinout atual.
   [01-decisoes-arquiteturais.md](01-decisoes-arquiteturais.md) (Fase R).
   Corrige uma nota anterior que os listava como "sem uso previsto".
 
+## Lista de componentes
+
+Lista completa (módulo principal, por jackboard e pads/pedal) na página de
+hardware do site: [site/hardware.html](../site/hardware.html#componentes).
+Resumo por jackboard (do projeto KiCad `hardware/jackboard_singlelayer/`):
+
+| Por placa | Componente |
+|---|---|
+| 1 | placa cobreada face simples, mín. 184 × 57,5 mm |
+| 8 | jack P10 estéreo (TRS 6,35 mm), footprint Neutrik NMJ6HCD2 |
+| 1 | módulo multiplexador 16 canais CD74HC4067 (ex.: HW-178) |
+| 1 + 1 | barra de pinos fêmea 2,54 mm 1×16 e 1×8 |
+| 16 | resistor 1 kΩ (série, 1 por canal) |
+| 16 | resistor 100 kΩ (canal → GND) |
+| 32 | diodo 1N4148 (2 por canal: GND e 3V3) |
+| 1 | resistor 4,7 kΩ (SIG → GND) |
+
 ## Jackboard single-layer montada (2026-10)
 
 As 2 jackboards (A e B) foram corroídas em casa, montadas e validadas.

@@ -138,6 +138,68 @@
   </div>
 </section>
 
+<section class="block" id="componentes">
+  <div class="wrap">
+    <h2>Lista de componentes</h2>
+    <p class="block-sub">
+      Tudo o que vai no módulo completo (32 canais = 2 jackboards). Os componentes da
+      jackboard saem direto do projeto KiCad
+      (<a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/hardware/jackboard_singlelayer" target="_blank" rel="noopener"><code>hardware/jackboard_singlelayer/</code></a>).
+      Dá pra começar com 1 jackboard só (16 canais) e montar a segunda depois.
+    </p>
+
+    <h3 class="bom-title">Módulo principal</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Qtd</th><th>Componente</th><th>Observação</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td>Placa ESP32-S3 DevKitC-1 (44 pinos), módulo <strong>ESP32-S3-N16R8</strong></td><td class="wrap-text">16 MB de flash + 8 MB de PSRAM. Tem a porta USB nativa (MIDI) e a USB-UART (gravação e ConfigTool por cabo).</td></tr>
+          <tr><td class="mono">1</td><td>Tela TFT 1,8" 128×160, driver ST7735S (SPI)</td><td class="wrap-text">Usada na horizontal (160×128).</td></tr>
+          <tr><td class="mono">1</td><td>Encoder rotativo com botão</td><td class="wrap-text">Girar navega, clicar entra/confirma, segurar volta.</td></tr>
+          <tr><td class="mono">1</td><td>Cabo USB-C</td><td class="wrap-text">Na porta USB nativa para o MIDI; na USB-UART para gravar o firmware.</td></tr>
+          <tr><td class="mono">—</td><td>Fios / jumpers</td><td class="wrap-text">Tela e encoder no header esquerdo; as 2 jackboards no direito (8 fios cada: S0–S3, SIG, EN, 3V3, GND). Ver o esquemático acima.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="bom-title">Por jackboard (8 jacks = 16 canais)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Por placa</th><th>Total (2 placas)</th><th>Componente</th><th>Função</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td class="mono">2</td><td>Placa cobreada face simples, mín. 184 × 57,5 mm</td><td class="wrap-text">Corroída em casa (transferência térmica) — PDFs em <code>fab/</code>.</td></tr>
+          <tr><td class="mono">8</td><td class="mono">16</td><td>Jack P10 estéreo (TRS 6,35 mm) para placa</td><td class="wrap-text">Footprint do Neutrik NMJ6HCD2. Tip = um canal, ring = outro.</td></tr>
+          <tr><td class="mono">1</td><td class="mono">2</td><td>Módulo multiplexador 16 canais CD74HC4067</td><td class="wrap-text">Placa azul pronta ("16-Channel Analog Multiplexer", ex.: HW-178).</td></tr>
+          <tr><td class="mono">1 + 1</td><td class="mono">2 + 2</td><td>Barra de pinos fêmea 2,54 mm: 1×16 e 1×8</td><td class="wrap-text">Encaixe do módulo do MUX (canais e controle).</td></tr>
+          <tr><td class="mono">16</td><td class="mono">32</td><td>Resistor 1 kΩ</td><td class="wrap-text">Em série em cada canal.</td></tr>
+          <tr><td class="mono">16</td><td class="mono">32</td><td>Resistor 100 kΩ</td><td class="wrap-text">Do canal pro GND (descarga do piezo).</td></tr>
+          <tr><td class="mono">32</td><td class="mono">64</td><td>Diodo 1N4148</td><td class="wrap-text">2 por canal: um pro GND, outro pro 3V3 (grampo de proteção).</td></tr>
+          <tr><td class="mono">1</td><td class="mono">2</td><td>Resistor 4,7 kΩ</td><td class="wrap-text">Do SIG do MUX pro GND.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="bom-title">Pads e pedal</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Qtd</th><th>Componente</th><th>Observação</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1–2 por pad</td><td>Disco piezo</td><td class="wrap-text">1 por zona: pele (tip) e aro/borda (ring). A caixa 3 zonas usa só 2.</td></tr>
+          <tr><td class="mono">1 por pad</td><td>Cabo P10 estéreo (TRS)</td><td class="wrap-text">Pad de 1 zona funciona com cabo mono.</td></tr>
+          <tr><td class="mono">1</td><td>Sensor Hall SS49E + ímã</td><td class="wrap-text">Opcional, para o pedal de chimbal. Vai no <strong>jack 1</strong>, sem a proteção nos canais 0 e 1 (ver abaixo).</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="callout">
+      <span class="glyph">ℹ️</span>
+      Todos os componentes são de furo (THT) e fáceis de achar. Para o pedal com SS49E,
+      os componentes dos canais 0 e 1 do jack 1 não são montados: entram um jumper do
+      +3,3 V pro tip e um jumper no lugar do resistor série — ver
+      <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/02-hardware.md" target="_blank" rel="noopener"><code>docs/02-hardware.md</code></a>.
+    </p>
+  </div>
+</section>
+
 <section class="block">
   <div class="wrap">
     <h2>Pinos a evitar, se for adaptar o pinout</h2>
