@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="184.0mm" height="60.55mm" viewBox="0 0 184.0 60.55">
+<g id="silkscreen">
+<rect x="0.1" y="0.1" width="183.8" height="57.3" fill="none" stroke="#fff" stroke-width="0.2"/>
+<rect x="160.77" y="34.02" width="19.3" height="26.53" fill="none" stroke="#fff" stroke-width="0.2"/>
+<text x="170.07" y="32.85" font-family="'Droid Sans', Arial, sans-serif" font-size="2" fill="#fff" text-anchor="middle">J1</text>
+<rect x="138.27" y="34.02" width="19.3" height="26.53" fill="none" stroke="#fff" stroke-width="0.2"/>
+<text x="147.57" y="32.85" font-family="'Droid Sans', Arial, sans-serif" font-size="2" fill="#fff" text-anchor="middle">J2</text>
+<rect x="115.77" y="34.02" width="19.3" height="26.53" fill="none" stroke="#fff" stroke-width="0.2"/>
+<text x="125.07" y="32.85" font-family="'Droid Sans', Arial, sans-serif" font-size="2" fill="#fff" text-anchor="middle">J3</text>
+<rect x="93.27" y="34.02" width="19.3" height="26.53" fill="none" stroke="#fff" stroke-width="0.2"/>
+<text x="102.57" y="32.85" font-family="'Droid Sans', Arial, sans-serif" font-size="2" fill="#fff" text-anchor="middle">J4</text>
+<rect x="70.77" y="34.02" width="19.3" height="26.53" fill="none" stroke="#fff" stroke-width="0.2"/>
+<text x="80.07" y="32.85" font-family="'Droid Sans', Arial, sans-serif" font-size="2" fill="#fff" text-anchor="middle">J5</text>
+<rect x="48.27" y="34.02" width="19.3" height="26.53" fill="none" stroke="#fff" stroke-width="0.2"/>
+<text x="57.57" y="32.85" font-family="'Droid Sans', Arial, sans-serif" font-size="2" fill="#fff" text-anchor="middle">J6</text>
+<rect x="25.77" y="34.02" width="19.3" height="26.53" fill="none" stroke="#fff" stroke-width="0.2"/>
+<text x="35.07" y="32.85" font-family="'Droid Sans', Arial, sans-serif" font-size="2" fill="#fff" text-anchor="middle">J7</text>
+<rect x="3.27" y="34.02" width="19.3" height="26.53" fill="none" stroke="#fff" stroke-width="0.2"/>
+<text x="12.57" y="32.85" font-family="'Droid Sans', Arial, sans-serif" font-size="2" fill="#fff" text-anchor="middle">J8</text>
+<text x="100.89" y="3.4" font-family="'Droid Sans', Arial, sans-serif" font-size="0.95" fill="#fff" text-anchor="middle">GND</text>
+<text x="98.35" y="3.4" font-family="'Droid Sans', Arial, sans-serif" font-size="0.95" fill="#fff" text-anchor="middle">VCC</text>
+<text x="95.81" y="3.4" font-family="'Droid Sans', Arial, sans-serif" font-size="0.95" fill="#fff" text-anchor="middle">EN</text>
+<text x="93.27" y="3.4" font-family="'Droid Sans', Arial, sans-serif" font-size="0.95" fill="#fff" text-anchor="middle">S0</text>
+<text x="90.73" y="3.4" font-family="'Droid Sans', Arial, sans-serif" font-size="0.95" fill="#fff" text-anchor="middle">S1</text>
+<text x="88.19" y="3.4" font-family="'Droid Sans', Arial, sans-serif" font-size="0.95" fill="#fff" text-anchor="middle">S2</text>
+<text x="85.65" y="3.4" font-family="'Droid Sans', Arial, sans-serif" font-size="0.95" fill="#fff" text-anchor="middle">S3</text>
+<text x="83.11" y="3.4" font-family="'Droid Sans', Arial, sans-serif" font-size="0.95" fill="#fff" text-anchor="middle">SIG</text>
+</g>
+<g id="copper0"><g id="copper1">
+<rect id="connector0pin" x="100.215" y="4.325" width="1.35" height="1.35" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle id="connector1pin" cx="98.35" cy="5.0" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle id="connector2pin" cx="95.81" cy="5.0" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle id="connector3pin" cx="93.27" cy="5.0" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle id="connector4pin" cx="90.73" cy="5.0" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle id="connector5pin" cx="88.19" cy="5.0" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle id="connector6pin" cx="85.65" cy="5.0" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle id="connector7pin" cx="83.11" cy="5.0" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<rect x="110.375" y="19.565" width="1.35" height="1.35" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="108.51" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="105.97" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="103.43" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="100.89" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="98.35" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="95.81" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="93.27" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="90.73" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="88.19" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="85.65" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="83.11" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="80.57" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="78.03" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="75.49" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle cx="72.95" cy="20.24" r="0.675" fill="none" stroke="#F7BD13" stroke-width="0.35"/>
+<circle id="connector8pin" cx="179.07" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector9pin" cx="179.07" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="179.07" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="162.84" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="162.84" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="162.84" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector10pin" cx="156.57" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector11pin" cx="156.57" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="156.57" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="140.34" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="140.34" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="140.34" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector12pin" cx="134.07" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector13pin" cx="134.07" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="134.07" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="117.84" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="117.84" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="117.84" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector14pin" cx="111.57" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector15pin" cx="111.57" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="111.57" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="95.34" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="95.34" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="95.34" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector16pin" cx="89.07" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector17pin" cx="89.07" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="89.07" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="72.84" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="72.84" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="72.84" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector18pin" cx="66.57" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector19pin" cx="66.57" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="66.57" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="50.34" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="50.34" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="50.34" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector20pin" cx="44.07" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector21pin" cx="44.07" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="44.07" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="27.84" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="27.84" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="27.84" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector22pin" cx="21.57" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle id="connector23pin" cx="21.57" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="21.57" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="5.34" cy="40.85" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="5.34" cy="47.2" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+<circle cx="5.34" cy="53.55" r="1.1" fill="none" stroke="#F7BD13" stroke-width="0.8"/>
+</g></g>
+</svg>

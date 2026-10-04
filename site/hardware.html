@@ -157,7 +157,7 @@
           <tr><td class="mono">1</td><td>Tela TFT 1,8" 128×160, driver ST7735S (SPI)</td><td class="wrap-text">Usada na horizontal (160×128).</td></tr>
           <tr><td class="mono">1</td><td>Encoder rotativo com botão</td><td class="wrap-text">Girar navega, clicar entra/confirma, segurar volta.</td></tr>
           <tr><td class="mono">1</td><td>Cabo USB-C</td><td class="wrap-text">Na porta USB nativa para o MIDI; na USB-UART para gravar o firmware.</td></tr>
-          <tr><td class="mono">—</td><td>Fios / jumpers</td><td class="wrap-text">Tela e encoder no header esquerdo; as 2 jackboards no direito (8 fios cada: S0–S3, SIG, EN, 3V3, GND). Ver o esquemático acima.</td></tr>
+          <tr><td class="mono">—</td><td>Fios / jumpers</td><td class="wrap-text">Tela e encoder no header esquerdo; as 2 jackboards no direito (7 fios cada: S0–S3, SIG, 3V3 e GND — o EN já vai pro GND na placa). Ver o esquemático acima.</td></tr>
         </tbody>
       </table>
     </div>
@@ -196,6 +196,23 @@
       os componentes dos canais 0 e 1 do jack 1 não são montados: entram um jumper do
       +3,3 V pro tip e um jumper no lugar do resistor série — ver
       <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/02-hardware.md" target="_blank" rel="noopener"><code>docs/02-hardware.md</code></a>.
+    </p>
+  </div>
+</section>
+
+<section class="block" id="fritzing">
+  <div class="wrap">
+    <h2>Peça para o Fritzing</h2>
+    <p class="block-sub">
+      A jackboard também existe como peça do <a href="https://fritzing.org/" target="_blank" rel="noopener">Fritzing</a>,
+      com as medidas reais da placa, pra desenhar a ligação do módulo e dos pads: os 8 pinos de
+      controle do MUX (GND, VCC, EN, S0–S3, SIG) e o tip/ring de cada um dos 8 jacks.
+    </p>
+    <p class="callout">
+      <span class="glyph">⬇️</span>
+      Baixe <a class="repo-link" href="https://github.com/orodamaral/drumcore/raw/master/hardware/fritzing/DrumCore_Jackboard.fzpz"><code>DrumCore_Jackboard.fzpz</code></a>
+      e abra no Fritzing (Arquivo &gt; Abrir) — ela vai pro bin "Minhas peças". Detalhes em
+      <a class="repo-link" href="https://github.com/orodamaral/drumcore/tree/master/hardware/fritzing" target="_blank" rel="noopener"><code>hardware/fritzing/</code></a>.
     </p>
   </div>
 </section>

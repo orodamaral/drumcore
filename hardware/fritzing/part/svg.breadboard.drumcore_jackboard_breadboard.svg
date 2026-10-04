@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="184.0mm" height="60.55mm" viewBox="0 0 184.0 60.55">
+<g id="breadboard">
+<rect x="0" y="0" width="184.0" height="57.5" rx="1" fill="#c9773b" stroke="#8a4a1f" stroke-width="0.3"/>
+<text x="6" y="9" font-family="'Droid Sans', Arial, sans-serif" font-size="4" font-weight="bold" fill="#5a2c0c">DRUMCORE JACKBOARD</text>
+<text x="6" y="14" font-family="'Droid Sans', Arial, sans-serif" font-size="2.6" fill="#5a2c0c">16 canais - 8 jacks TRS 6,35 mm</text>
+<rect x="160.77" y="34.02" width="19.3" height="26.53" rx="1" fill="#222" stroke="#000" stroke-width="0.3"/>
+<rect x="165.07" y="57.0" width="10" height="3.55" fill="#3a3a3a" stroke="#000" stroke-width="0.2"/>
+<circle cx="170.07" cy="58.95" r="1.4" fill="#000"/>
+<text x="170.07" y="38.22" font-family="'Droid Sans', Arial, sans-serif" font-size="3.2" fill="#eee" text-anchor="middle">J1</text>
+<rect x="138.27" y="34.02" width="19.3" height="26.53" rx="1" fill="#222" stroke="#000" stroke-width="0.3"/>
+<rect x="142.57" y="57.0" width="10" height="3.55" fill="#3a3a3a" stroke="#000" stroke-width="0.2"/>
+<circle cx="147.57" cy="58.95" r="1.4" fill="#000"/>
+<text x="147.57" y="38.22" font-family="'Droid Sans', Arial, sans-serif" font-size="3.2" fill="#eee" text-anchor="middle">J2</text>
+<rect x="115.77" y="34.02" width="19.3" height="26.53" rx="1" fill="#222" stroke="#000" stroke-width="0.3"/>
+<rect x="120.07" y="57.0" width="10" height="3.55" fill="#3a3a3a" stroke="#000" stroke-width="0.2"/>
+<circle cx="125.07" cy="58.95" r="1.4" fill="#000"/>
+<text x="125.07" y="38.22" font-family="'Droid Sans', Arial, sans-serif" font-size="3.2" fill="#eee" text-anchor="middle">J3</text>
+<rect x="93.27" y="34.02" width="19.3" height="26.53" rx="1" fill="#222" stroke="#000" stroke-width="0.3"/>
+<rect x="97.57" y="57.0" width="10" height="3.55" fill="#3a3a3a" stroke="#000" stroke-width="0.2"/>
+<circle cx="102.57" cy="58.95" r="1.4" fill="#000"/>
+<text x="102.57" y="38.22" font-family="'Droid Sans', Arial, sans-serif" font-size="3.2" fill="#eee" text-anchor="middle">J4</text>
+<rect x="70.77" y="34.02" width="19.3" height="26.53" rx="1" fill="#222" stroke="#000" stroke-width="0.3"/>
+<rect x="75.07" y="57.0" width="10" height="3.55" fill="#3a3a3a" stroke="#000" stroke-width="0.2"/>
+<circle cx="80.07" cy="58.95" r="1.4" fill="#000"/>
+<text x="80.07" y="38.22" font-family="'Droid Sans', Arial, sans-serif" font-size="3.2" fill="#eee" text-anchor="middle">J5</text>
+<rect x="48.27" y="34.02" width="19.3" height="26.53" rx="1" fill="#222" stroke="#000" stroke-width="0.3"/>
+<rect x="52.57" y="57.0" width="10" height="3.55" fill="#3a3a3a" stroke="#000" stroke-width="0.2"/>
+<circle cx="57.57" cy="58.95" r="1.4" fill="#000"/>
+<text x="57.57" y="38.22" font-family="'Droid Sans', Arial, sans-serif" font-size="3.2" fill="#eee" text-anchor="middle">J6</text>
+<rect x="25.77" y="34.02" width="19.3" height="26.53" rx="1" fill="#222" stroke="#000" stroke-width="0.3"/>
+<rect x="30.07" y="57.0" width="10" height="3.55" fill="#3a3a3a" stroke="#000" stroke-width="0.2"/>
+<circle cx="35.07" cy="58.95" r="1.4" fill="#000"/>
+<text x="35.07" y="38.22" font-family="'Droid Sans', Arial, sans-serif" font-size="3.2" fill="#eee" text-anchor="middle">J7</text>
+<rect x="3.27" y="34.02" width="19.3" height="26.53" rx="1" fill="#222" stroke="#000" stroke-width="0.3"/>
+<rect x="7.57" y="57.0" width="10" height="3.55" fill="#3a3a3a" stroke="#000" stroke-width="0.2"/>
+<circle cx="12.57" cy="58.95" r="1.4" fill="#000"/>
+<text x="12.57" y="38.22" font-family="'Droid Sans', Arial, sans-serif" font-size="3.2" fill="#eee" text-anchor="middle">J8</text>
+<rect x="70.75" y="2.6" width="42.5" height="20.04" rx="1" fill="#1f5fbf" stroke="#0d3a80" stroke-width="0.3"/>
+<rect x="102.25" y="10.42" width="8" height="5.2" fill="#111"/>
+<text x="73.75" y="13.82" font-family="'Droid Sans', Arial, sans-serif" font-size="1.9" fill="#fff">CD74HC4067 16-ch MUX</text>
+<rect x="110.45" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="107.91" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="105.37" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="102.83" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="100.29" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="97.75" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="95.21" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="92.67" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="90.13" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="87.59" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="85.05" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="82.51" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="79.97" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="77.43" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="74.89" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect x="72.35" y="19.64" width="1.2" height="1.2" fill="#bbb"/>
+<rect id="connector0pin" x="100.09" y="4.2" width="1.6" height="1.6" fill="#d4af37" stroke="#8a6d1a" stroke-width="0.15"/>
+<text x="100.89" y="8.4" font-family="'Droid Sans', Arial, sans-serif" font-size="1.05" fill="#fff" text-anchor="middle">GND</text>
+<rect id="connector1pin" x="97.55" y="4.2" width="1.6" height="1.6" fill="#d4af37" stroke="#8a6d1a" stroke-width="0.15"/>
+<text x="98.35" y="8.4" font-family="'Droid Sans', Arial, sans-serif" font-size="1.05" fill="#fff" text-anchor="middle">VCC</text>
+<rect id="connector2pin" x="95.01" y="4.2" width="1.6" height="1.6" fill="#d4af37" stroke="#8a6d1a" stroke-width="0.15"/>
+<text x="95.81" y="8.4" font-family="'Droid Sans', Arial, sans-serif" font-size="1.05" fill="#fff" text-anchor="middle">EN</text>
+<rect id="connector3pin" x="92.47" y="4.2" width="1.6" height="1.6" fill="#d4af37" stroke="#8a6d1a" stroke-width="0.15"/>
+<text x="93.27" y="8.4" font-family="'Droid Sans', Arial, sans-serif" font-size="1.05" fill="#fff" text-anchor="middle">S0</text>
+<rect id="connector4pin" x="89.93" y="4.2" width="1.6" height="1.6" fill="#d4af37" stroke="#8a6d1a" stroke-width="0.15"/>
+<text x="90.73" y="8.4" font-family="'Droid Sans', Arial, sans-serif" font-size="1.05" fill="#fff" text-anchor="middle">S1</text>
+<rect id="connector5pin" x="87.39" y="4.2" width="1.6" height="1.6" fill="#d4af37" stroke="#8a6d1a" stroke-width="0.15"/>
+<text x="88.19" y="8.4" font-family="'Droid Sans', Arial, sans-serif" font-size="1.05" fill="#fff" text-anchor="middle">S2</text>
+<rect id="connector6pin" x="84.85" y="4.2" width="1.6" height="1.6" fill="#d4af37" stroke="#8a6d1a" stroke-width="0.15"/>
+<text x="85.65" y="8.4" font-family="'Droid Sans', Arial, sans-serif" font-size="1.05" fill="#fff" text-anchor="middle">S3</text>
+<rect id="connector7pin" x="82.31" y="4.2" width="1.6" height="1.6" fill="#d4af37" stroke="#8a6d1a" stroke-width="0.15"/>
+<text x="83.11" y="8.4" font-family="'Droid Sans', Arial, sans-serif" font-size="1.05" fill="#fff" text-anchor="middle">SIG</text>
+<circle id="connector8pin" cx="170.07" cy="43.85" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="172.27" y="44.75" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">T</text>
+<circle id="connector9pin" cx="170.07" cy="52.74" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="172.27" y="53.64" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">R</text>
+<circle id="connector10pin" cx="147.57" cy="43.85" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="149.77" y="44.75" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">T</text>
+<circle id="connector11pin" cx="147.57" cy="52.74" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="149.77" y="53.64" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">R</text>
+<circle id="connector12pin" cx="125.07" cy="43.85" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="127.27" y="44.75" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">T</text>
+<circle id="connector13pin" cx="125.07" cy="52.74" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="127.27" y="53.64" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">R</text>
+<circle id="connector14pin" cx="102.57" cy="43.85" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="104.77" y="44.75" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">T</text>
+<circle id="connector15pin" cx="102.57" cy="52.74" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="104.77" y="53.64" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">R</text>
+<circle id="connector16pin" cx="80.07" cy="43.85" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="82.27" y="44.75" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">T</text>
+<circle id="connector17pin" cx="80.07" cy="52.74" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="82.27" y="53.64" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">R</text>
+<circle id="connector18pin" cx="57.57" cy="43.85" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="59.77" y="44.75" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">T</text>
+<circle id="connector19pin" cx="57.57" cy="52.74" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="59.77" y="53.64" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">R</text>
+<circle id="connector20pin" cx="35.07" cy="43.85" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="37.27" y="44.75" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">T</text>
+<circle id="connector21pin" cx="35.07" cy="52.74" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="37.27" y="53.64" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">R</text>
+<circle id="connector22pin" cx="12.57" cy="43.85" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="14.77" y="44.75" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">T</text>
+<circle id="connector23pin" cx="12.57" cy="52.74" r="1.1" fill="#c0c0c0" stroke="#666" stroke-width="0.15"/>
+<text x="14.77" y="53.64" font-family="'Droid Sans', Arial, sans-serif" font-size="2.4" fill="#eee">R</text>
+</g>
+</svg>
