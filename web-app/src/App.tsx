@@ -88,6 +88,8 @@ export default function App() {
   const [autoTune, setAutoTune] = useState<AutoTuneStatus | null>(null)
   const [firmwareVersion, setFirmwareVersion] = useState<string | undefined>(undefined)
   const [wifi, setWifi] = useState<WifiInfo | null>(null)
+  // undefined = firmware sem a opção (anterior a 2026-10-11)
+  const [displayFlip, setDisplayFlip] = useState<boolean | undefined>(undefined)
   const [wifiScan, setWifiScan] = useState<WifiScanState | null>(null)
   const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null)
   const reconnectTimer = useRef<number | null>(null)
@@ -146,6 +148,7 @@ export default function App() {
         setBleConnected(message.ble_connected)
         setFirmwareVersion(message.firmware_version)
         setWifi(message.wifi ?? null)
+        setDisplayFlip(message.display_flip)
         setGlobal({
           midi_channel: message.midi_channel,
           midi_output: message.midi_output
@@ -320,6 +323,7 @@ export default function App() {
     setJackLabels({})
     setWifi(null)
     setWifiScan(null)
+    setDisplayFlip(undefined)
     setUndoStack([])
     setRedoStack([])
     setBleConnected(false)
@@ -814,6 +818,28 @@ export default function App() {
                     ))}
                   </select>
                 </div>
+              </section>
+
+              <section className="editor-section">
+                <h3 className="section-title">Tela do módulo</h3>
+                {displayFlip === undefined ? (
+                  <p className="pad-hint">Este firmware não tem a opção de girar a tela — atualize o firmware.</p>
+                ) : (
+                  <>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={displayFlip}
+                        onChange={(e) => send({ cmd: 'set_global', field: 'display_flip', value: e.target.checked ? 1 : 0 })}
+                      />
+                      Tela invertida (girada 180°)
+                    </label>
+                    <p className="pad-hint">
+                      Para caixas em que a tela fica de cabeça para baixo. Também dá para trocar no módulo, em GLOBAL &gt;
+                      TELA. Fica gravado no módulo e não vai junto no arquivo de configuração exportado.
+                    </p>
+                  </>
+                )}
               </section>
 
               {wifi ? (

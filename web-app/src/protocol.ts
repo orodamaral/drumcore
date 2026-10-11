@@ -426,6 +426,8 @@ export type IncomingMessage =
       ble_connected: boolean
       firmware_phase: string
       firmware_version?: string
+      /** Tela girada 180° (montagem física; fora do arquivo de configuração). Desde 2026-10-11. */
+      display_flip?: boolean
       wifi?: WifiInfo
     })
   | ({ type: 'pad_config' } & PadConfig)

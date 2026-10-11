@@ -395,7 +395,10 @@ const char *padTypeShortName(byte type)
 #define EEPROM_PEDAL_NOTE_ADDR (EEPROM_GLOBAL_ADDR + 2)
 #define EEPROM_PEDAL_CC_ADDR (EEPROM_PEDAL_NOTE_ADDR + NUM_PADS)
 #define EEPROM_JACK_LABELS_ADDR (EEPROM_PEDAL_CC_ADDR + NUM_PADS)
-#define EEPROM_SIZE (EEPROM_JACK_LABELS_ADDR + JACK_COUNT * (JACK_LABEL_MAX_LEN + 1))
+// 2026-10-11: tela invertida (1 byte, no fim - mesmo esquema acima: placa
+// ja' em uso le 0xFF = tela normal).
+#define EEPROM_DISPLAY_FLIP_ADDR (EEPROM_JACK_LABELS_ADDR + JACK_COUNT * (JACK_LABEL_MAX_LEN + 1))
+#define EEPROM_SIZE (EEPROM_DISPLAY_FLIP_ADDR + 1)
 #define jackLabelEepromAddr(j) (EEPROM_JACK_LABELS_ADDR + (j) * (JACK_LABEL_MAX_LEN + 1))
 #define EEPROM_INIT_MAGIC 0xA5
 
@@ -550,6 +553,10 @@ void goToLive(); // usado pelo onOtaStatus() (Wi-Fi), definido bem mais abaixo
 // Configuracao global (GLOBAL) - persistida como um bloco pequeno em EEPROM.
 byte midiChannel = DEFAULT_MIDI_CHANNEL;
 byte midiOutput = OUTPUT_USB_BLE;
+// Tela girada 180 graus - pra caixas em que a tela fica de cabeca pra baixo
+// (2026-10-11). E' da montagem fisica, nao do kit: fora do "fabrica", do
+// save_all/restore_all e do arquivo de configuracao do ConfigTool.
+bool displayFlip = false;
 
 // true se ha mudancas em RAM ainda nao gravadas via GLOBAL > SALVAR (o
 // design pede persistencia so explicita pelos encoders - ver
@@ -912,7 +919,11 @@ bool globalEditing = false;
 #define GLOBAL_ROW_RESTORE 3
 #define GLOBAL_ROW_FACTORY 4
 #define GLOBAL_ROW_WIFI 5 // Fase AE - clique liga/desliga
-#define GLOBAL_ROW_COUNT 6
+#define GLOBAL_ROW_DISPLAY 6 // 2026-10-11 - clique inverte a tela
+#define GLOBAL_ROW_COUNT 7
+// So' cabem 6 linhas acima dos dados do Wi-Fi - a lista rola.
+#define GLOBAL_VISIBLE_ROWS 6
+byte globalTop = 0;
 // GLOBAL > FABRICA pede um 2o clique pra confirmar - armado pelo 1o clique,
 // desarmado ao girar o encoder ou apos FACTORY_CONFIRM_MS.
 bool factoryArmed = false;
@@ -1003,6 +1014,7 @@ void sendDeviceInfo()
     doc["muxes"] = NUM_MUX;
     doc["midi_channel"] = midiChannel;
     doc["midi_output"] = midiOutput;
+    doc["display_flip"] = displayFlip;
     doc["ble_connected"] = bleMidiConnected;
     doc["firmware_phase"] = "J";
     doc["firmware_version"] = FW_VERSION;
@@ -1701,6 +1713,17 @@ void handleSetPad(JsonDocument &doc)
     sendAck("set_pad", pad, field, value);
 }
 
+// Gira a tela 180 graus (rotacao 3 em vez de 1 - ver setup()) e grava na
+// hora. O canvas continua 160x128; so' a orientacao da saida muda.
+void setDisplayFlip(bool flip)
+{
+    displayFlip = flip;
+    tft.setRotation(flip ? 3 : 1);
+    EEPROM_ESP.write(EEPROM_DISPLAY_FLIP_ADDR, flip ? 1 : 0);
+    EEPROM_ESP.commit();
+    forceScreenRedraw = true;
+}
+
 void handleSetGlobal(JsonDocument &doc)
 {
     const char *field = doc["field"] | "";
@@ -1715,6 +1738,14 @@ void handleSetGlobal(JsonDocument &doc)
     {
         if (value < 0 || value > OUTPUT_USB_BLE) { sendError("set_global", "value_out_of_range"); return; }
         midiOutput = value;
+    }
+    else if (strcmp(field, "display_flip") == 0)
+    {
+        if (value < 0 || value > 1) { sendError("set_global", "value_out_of_range"); return; }
+        setDisplayFlip(value == 1); // ja' grava na EEPROM
+        sendAck("set_global", -1, field, value);
+        sendDeviceInfo();
+        return;
     }
     else
     {
@@ -3751,6 +3782,14 @@ void onEncRotate(int delta)
             if (next < 0) next = 0;
             if (next > GLOBAL_ROW_COUNT - 1) next = GLOBAL_ROW_COUNT - 1;
             globalSelection = next;
+            if (globalSelection < globalTop)
+            {
+                globalTop = globalSelection;
+            }
+            else if (globalSelection >= globalTop + GLOBAL_VISIBLE_ROWS)
+            {
+                globalTop = globalSelection - GLOBAL_VISIBLE_ROWS + 1;
+            }
         }
         else
         {
@@ -3902,6 +3941,12 @@ void onEncClick()
         {
             loadAllFromEeprom();
             showToast("RESTAURADO", "32 PADS DA NVS");
+        }
+        else if (globalSelection == GLOBAL_ROW_DISPLAY)
+        {
+            setDisplayFlip(!displayFlip);
+            showToast("TELA", displayFlip ? "INVERTIDA" : "NORMAL");
+            sendDeviceInfo();
         }
         else if (globalSelection == GLOBAL_ROW_WIFI)
         {
@@ -4688,25 +4733,51 @@ bool renderGlobal()
     forceScreenRedraw = false;
 
     canvas.fillScreen(COL_BG);
-    drawTitleBar("GLOBAL", "", COL_TXT);
+    // Lista rola: setinha no titulo quando tem linha escondida acima/abaixo.
+    bool moreUp = globalTop > 0;
+    bool moreDown = globalTop + GLOBAL_VISIBLE_ROWS < GLOBAL_ROW_COUNT;
+    drawTitleBar("GLOBAL", moreUp && moreDown ? "^ v" : moreUp ? "^" : moreDown ? "v" : "", COL_TXT_DIM);
 
     char buf[10];
     snprintf(buf, sizeof(buf), "%d", midiChannel);
-    drawValueRow(12, "MIDI CH", buf, globalSelection == GLOBAL_ROW_MIDI_CH, globalSelection == GLOBAL_ROW_MIDI_CH && globalEditing);
-
-    drawValueRow(26, "SAIDA", midiOutputLabel(midiOutput), globalSelection == GLOBAL_ROW_OUTPUT, globalSelection == GLOBAL_ROW_OUTPUT && globalEditing);
-
-    drawValueRow(40, "SALVAR", unsavedChanges ? "*" : ">", globalSelection == GLOBAL_ROW_SAVE, false);
-    drawValueRow(54, "RESTAURAR", ">", globalSelection == GLOBAL_ROW_RESTORE, false);
     bool armed = factoryArmed && millis() - factoryArmedAtMs < FACTORY_CONFIRM_MS;
-    drawValueRow(68, "FABRICA", armed ? "CONFIRMA?" : ">", globalSelection == GLOBAL_ROW_FACTORY, armed);
     WifiStaState sta = wifiPortalStaState();
     const char *wifiLabel = !wifiPortalActive()              ? "DESLIG."
                             : sta == WIFI_STA_CONNECTED      ? "CASA"
                             : sta == WIFI_STA_CONNECTING     ? "CONECT..."
                             : sta == WIFI_STA_FAILED         ? "FALHOU"
                                                              : "LIGADO";
-    drawValueRow(82, "WI-FI", wifiLabel, globalSelection == GLOBAL_ROW_WIFI, false);
+    // Lista rolavel (GLOBAL_VISIBLE_ROWS de cada vez, ver globalTop).
+    for (byte r = globalTop; r < GLOBAL_ROW_COUNT && r < globalTop + GLOBAL_VISIBLE_ROWS; r++)
+    {
+        int y = 12 + (r - globalTop) * 14;
+        bool sel = globalSelection == r;
+        switch (r)
+        {
+        case GLOBAL_ROW_MIDI_CH:
+            drawValueRow(y, "MIDI CH", buf, sel, sel && globalEditing);
+            break;
+        case GLOBAL_ROW_OUTPUT:
+            drawValueRow(y, "SAIDA", midiOutputLabel(midiOutput), sel, sel && globalEditing);
+            break;
+        case GLOBAL_ROW_SAVE:
+            drawValueRow(y, "SALVAR", unsavedChanges ? "*" : ">", sel, false);
+            break;
+        case GLOBAL_ROW_RESTORE:
+            drawValueRow(y, "RESTAURAR", ">", sel, false);
+            break;
+        case GLOBAL_ROW_FACTORY:
+            drawValueRow(y, "FABRICA", armed ? "CONFIRMA?" : ">", sel, armed);
+            break;
+        case GLOBAL_ROW_WIFI:
+            drawValueRow(y, "WI-FI", wifiLabel, sel, false);
+            break;
+        case GLOBAL_ROW_DISPLAY:
+            drawValueRow(y, "TELA", displayFlip ? "INVERTIDA" : "NORMAL", sel, false);
+            break;
+        }
+    }
+
     if (wifiPortalActive())
     {
         // Dados pra conectar. Na rede de casa: nome da rede e IP; na rede
@@ -5149,6 +5220,14 @@ void setup()
     // confirmado por log), mas o brilho fisico do backlight nao mudava
     // visivelmente nessa placa clone - nao valia a pena investigar mais a
     // fundo agora. Ver docs/01-decisoes-arquiteturais.md).
+    // EEPROM aberta antes da tela, pra ja' saber se a tela e' invertida
+    // (2026-10-11) - o resto da leitura da EEPROM continua mais abaixo.
+    if (!EEPROM_ESP.begin(EEPROM_SIZE))
+    {
+        sendLog("EEPROM_ESP.begin() falhou - configuracoes nao vao persistir entre boots.");
+    }
+    displayFlip = EEPROM_ESP.read(EEPROM_DISPLAY_FLIP_ADDR) == 1;
+
     pinMode(TFT_BLK, OUTPUT);
     digitalWrite(TFT_BLK, HIGH);
 
@@ -5166,7 +5245,9 @@ void setup()
     // vinha rodando em retrato (rotacao 0) so' porque nunca foi ajustado.
     // rotation 1 = 90 graus - se sair de cabeca pra baixo/espelhado,
     // trocar pra rotation 3 (270 graus), e' so' isso que muda.
-    tft.setRotation(1);
+    // 2026-10-11: rotation 3 (= 180 graus a mais) com "tela invertida"
+    // ligada, pra caixas em que a tela fica de cabeca pra baixo.
+    tft.setRotation(displayFlip ? 3 : 1);
     renderBoot();
 
     if (!TinyUSBDevice.isInitialized())
@@ -5216,11 +5297,6 @@ void setup()
     BLEBleMidi.setHandleDisconnected(onBleMidiDisconnected);
     BleMidi.begin();
     renderBootProgress(55);
-
-    if (!EEPROM_ESP.begin(EEPROM_SIZE))
-    {
-        sendLog("EEPROM_ESP.begin() falhou - configuracoes nao vao persistir entre boots.");
-    }
 
     bool eepromFirstBoot = EEPROM_ESP.read(EEPROM_INIT_FLAG_ADDR) != EEPROM_INIT_MAGIC;
     if (eepromFirstBoot)

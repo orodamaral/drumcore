@@ -119,6 +119,7 @@ export class MockDevice {
   }
 
   private wifiActive = false
+  private displayFlip = false
   private wifiAutostart = false
   private staSsid = ''
 
@@ -130,6 +131,7 @@ export class MockDevice {
       ble_connected: this.bleConnected,
       firmware_phase: 'K (demo)',
       firmware_version: 'demo',
+      display_flip: this.displayFlip,
       wifi: {
         active: this.wifiActive,
         ap_active: this.wifiActive && !this.staSsid,
@@ -437,6 +439,8 @@ export class MockDevice {
       this.global.midi_channel = value
     } else if (cmd.field === 'midi_output' && value >= 0 && value <= 2) {
       this.global.midi_output = value as 0 | 1 | 2
+    } else if (cmd.field === 'display_flip' && (value === 0 || value === 1)) {
+      this.displayFlip = value === 1
     } else {
       this.emit({ type: 'error', cmd: 'set_global', message: 'value_out_of_range' })
       return

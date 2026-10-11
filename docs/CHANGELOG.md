@@ -2,6 +2,17 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-11 — Tela invertida (180°)
+
+- Opção para **girar a tela 180°**, para caixas em que a tela fica de
+  cabeça para baixo: no módulo em **GLOBAL > TELA** (a lista do GLOBAL agora
+  rola; setinhas no título) e no ConfigTool, aba Global > Tela do módulo.
+- Fica gravada no módulo na hora e vale desde a tela de boot. Por ser da
+  montagem física, não muda com "fábrica"/restaurar e não vai no arquivo
+  de configuração exportado.
+- Protocolo: `set_global` campo `display_flip` (0/1); `device_info` ganhou
+  `display_flip`.
+
 ## 2026-10-03 — Site atualizado; jackboards validadas
 
 - As **2 jackboards** (32 canais pelos 2 CD4067) estão montadas e
