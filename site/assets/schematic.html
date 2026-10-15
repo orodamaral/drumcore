@@ -70,19 +70,19 @@
     gap: 8px;
     margin-top: 18px;
     padding: 7px 12px;
-    border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
-    background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line));
+    background: color-mix(in srgb, var(--ok) 10%, var(--surface));
     border-radius: 6px;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
-    color: var(--warn);
+    color: var(--ok);
   }
 
   .stamp .dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--warn);
+    background: var(--ok);
     flex: none;
   }
 
@@ -292,10 +292,13 @@
           <text x="890" y="100" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="18" font-weight="700" fill="#e9e4d8">ESP32-S3</text>
           <text x="890" y="120" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8b93a3">DevKitC-1</text>
 
-          <!-- USB connector -->
-          <rect x="855" y="900" width="70" height="26" rx="4" fill="#171c24" stroke="#e9e4d8" stroke-width="1.5" />
-          <text x="890" y="917" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#e9e4d8">USB-C</text>
-          <text x="890" y="950" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#8b93a3">→ PC: USB-MIDI + Serial (NDJSON)</text>
+          <!-- 2 conectores USB-C: nativa (USB-MIDI) e USB-UART (Serial NDJSON + gravacao) -->
+          <rect x="800" y="900" width="80" height="26" rx="4" fill="#171c24" stroke="#e9e4d8" stroke-width="1.5" />
+          <text x="840" y="917" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#e9e4d8">USB nativa</text>
+          <rect x="900" y="900" width="80" height="26" rx="4" fill="#171c24" stroke="#e9e4d8" stroke-width="1.5" />
+          <text x="940" y="917" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#e9e4d8">USB-UART</text>
+          <text x="840" y="948" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#8b93a3">→ USB-MIDI</text>
+          <text x="940" y="948" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#8b93a3">→ app + gravação</text>
 
           <!-- ===================== HEADER SIDE LABELS ===================== -->
           <g font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" letter-spacing="0.04em">
@@ -443,10 +446,10 @@
             <text x="1350" y="415" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#5fd3c4">SIG</text>
             <text x="1165" y="465" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">SIG → GPIO2 (ADC1)</text>
             <text x="1165" y="487" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VCC → 3V3 · GND → GND</text>
-            <text x="1165" y="505" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">EN → GND (sempre habilitado)</text>
-            <text x="1165" y="523" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">16x canais (C0–C15) → conectores dos pads</text>
+            <text x="1165" y="505" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">EN → GND na própria jackboard</text>
+            <text x="1165" y="523" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">16 canais ← 8 jacks TRS (proteção por canal)</text>
             <line x1="1165" y1="538" x2="1450" y2="538" stroke="#5a6274" stroke-width="1.5" stroke-dasharray="3 3" />
-            <text x="1310" y="559" text-anchor="middle" font-size="10.5" fill="#5a6274">(16 fios individuais, não desenhados)</text>
+            <text x="1310" y="559" text-anchor="middle" font-size="10.5" fill="#5a6274">(na placa, não desenhados)</text>
           </g>
 
           <!-- ===================== HW-178 #1 (CD4067) - header DIREITO, abaixo do #0 ===================== -->
@@ -469,10 +472,10 @@
             <text x="1350" y="655" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#5fd3c4">SIG</text>
             <text x="1165" y="705" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5fd3c4">SIG → GPIO1 (ADC1)</text>
             <text x="1165" y="727" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">VCC → 3V3 · GND → GND</text>
-            <text x="1165" y="745" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">EN → GND (sempre habilitado)</text>
-            <text x="1165" y="763" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">16x canais (C0–C15) → conectores dos pads</text>
+            <text x="1165" y="745" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">EN → GND na própria jackboard</text>
+            <text x="1165" y="763" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="#8b93a3">16 canais ← 8 jacks TRS (proteção por canal)</text>
             <line x1="1165" y1="778" x2="1450" y2="778" stroke="#5a6274" stroke-width="1.5" stroke-dasharray="3 3" />
-            <text x="1310" y="799" text-anchor="middle" font-size="10.5" fill="#5a6274">(16 fios individuais, não desenhados)</text>
+            <text x="1310" y="799" text-anchor="middle" font-size="10.5" fill="#5a6274">(na placa, não desenhados)</text>
           </g>
         </svg>
       </div>
@@ -515,11 +518,16 @@
         <li>GPIO38 — aciona um LED embutido (<code>BUILTIN LED</code>) dessa placa específica</li>
         <li>GPIO47/48 — internos de flash/PSRAM nessa placa; GPIO48 também é o LED RGB endereçável (<code>RGB LED</code>)</li>
         <li>GPIO43/44 — não estão livres: são o UART físico usado pelo <code>Serial</code> (protocolo NDJSON)</li>
+        <li>GPIO11–20 (ADC2) — a leitura analógica não funciona com o Wi-Fi ligado; os SIGs do MUX precisam ficar no ADC1 (GPIO1–10)</li>
       </ul>
     </div>
     <div class="note-card">
-      <h3>HW-178 (CD4067) — pino EN fixo em GND</h3>
-      <p>O breakout expõe um pino <code>EN</code> (enable, ativo em LOW) que a lib não controla — decisão de fiação, não de firmware: ligado direto em GND nas 2 placas, sempre habilitadas. Como cada MUX tem seu próprio pino <code>SIG</code>, não há necessidade de desabilitar um deles em nenhum momento.</p>
+      <h3>Jack 1 — pedal de chimbal (SS49E)</h3>
+      <p>O controlador de chimbal com sensor Hall SS49E vai no jack 1 (tip = alimentação, ring = sinal, sleeve = GND) e precisa de uma modificação na jackboard A: sem os componentes de proteção dos canais 0 e 1, com um jumper do <code>3V3</code> para o tip e outro no lugar do resistor série. Por isso o jack 1 fica dedicado ao pedal. Ver <a class="repo-link" href="https://github.com/orodamaral/drumcore/blob/master/docs/02-hardware.md" target="_blank" rel="noopener"><code>docs/02-hardware.md</code></a>.</p>
+    </div>
+    <div class="note-card">
+      <h3>MUX na jackboard — EN já em GND</h3>
+      <p>Cada CD4067 vai encaixado numa jackboard, que liga os 16 canais aos 8 jacks (com a proteção de cada canal) e já liga o <code>EN</code> (enable, ativo em LOW) ao GND na própria placa — sempre habilitado. Como cada MUX tem seu próprio pino <code>SIG</code>, não há por que desabilitar um deles. Da jackboard até o ESP32 são <strong>7 fios</strong>: S0–S3, SIG, 3V3 e GND.</p>
     </div>
     <div class="note-card">
       <h3>Encoder — sem resistor externo</h3>
