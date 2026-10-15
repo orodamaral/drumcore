@@ -255,7 +255,32 @@
   }
 
   footer.page a { color: var(--mux); text-decoration: none; }
+
+  /* Modo "embed" (?embed na URL - o quadro da pagina de hardware): so' o
+     diagrama, inteiro, reduzido pra caber na largura. Clicar abre a pagina
+     completa, com zoom e as notas. */
+  html.embed body { margin: 0; background: var(--bg); }
+  html.embed .wrap { max-width: none; padding: 0; margin: 0; }
+  html.embed header.page,
+  html.embed .legend,
+  html.embed figcaption,
+  html.embed .notes,
+  html.embed .section-title,
+  html.embed .tables,
+  html.embed footer.page { display: none; }
+  html.embed .schematic-frame { border: none; border-radius: 0; padding: 0; background: var(--bg); }
+  html.embed .schematic-scroll { overflow: hidden; cursor: zoom-in; }
+  html.embed .schematic-scroll svg { width: 100%; height: auto; }
 </style>
+<script>
+  // ?embed -> modo quadro (ver CSS acima)
+  if (new URLSearchParams(location.search).has('embed')) {
+    document.documentElement.classList.add('embed')
+    document.addEventListener('click', function (e) {
+      if (e.target.closest('.schematic-scroll')) window.open(location.pathname, '_blank', 'noopener')
+    })
+  }
+</script>
 
 <div class="wrap">
   <header class="page">

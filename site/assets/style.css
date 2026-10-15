@@ -259,6 +259,17 @@ img {
   flex: none;
 }
 
+/* status ja' validado: verde em vez da cor de alerta */
+.status-pill.ok {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  color: var(--ok);
+}
+
+.status-pill.ok .dot {
+  background: var(--ok);
+}
+
 /* ---------------------------------------------------------------- sections */
 
 section.block {
@@ -550,7 +561,9 @@ td.gpio, td .mono {
 
 .schematic-embed iframe {
   width: 100%;
-  height: 900px;
+  /* o diagrama inteiro cabe na largura (modo ?embed do schematic.html) */
+  aspect-ratio: 1600 / 1000;
+  height: auto;
   border: none;
   display: block;
   background: var(--bg);
@@ -606,4 +619,10 @@ footer.site .license-note {
 .dim {
   color: var(--ink-faint);
   font-weight: 400;
+}
+
+/* caminhos de arquivo (code) podem quebrar linha - no celular esticavam a pagina */
+.repo-link code,
+.callout code {
+  overflow-wrap: anywhere;
 }
