@@ -732,6 +732,12 @@ function AutoTunePanel({
     const diff: Array<{ field: PadField; label: string; current: number; next: number; note?: string }> = rows
       .map((r) => ({ ...r, current: pad[r.field], next: status[r.field as keyof AutoTuneStatus] as number | undefined }))
       .filter((r): r is typeof r & { next: number } => r.next !== undefined)
+    if (status.rim_errors) {
+      const rim = diff.find((r) => r.field === 'rim_threshold')
+      if (rim) {
+        rim.note = `${status.rim_errors} batida(s) da calibração ficariam na zona errada — pele e aro se sobrepõem nesse pad`
+      }
+    }
     if (pad.gain !== AUTOTUNE_FORCED_GAIN) {
       diff.push({
         field: 'gain',

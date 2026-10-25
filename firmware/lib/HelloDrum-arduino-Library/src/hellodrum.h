@@ -222,6 +222,9 @@ public:
   // [MODIFICADO - projeto DrumCore, 2026-10-01] caixa 3 zonas so' com 2
   // piezos (centro + borda/aro), por razoes - ver snare3zoneSensing().
   void snare3zoneMUX();
+  // [MODIFICADO - projeto DrumCore, 2026-10-17] pad dual (pele + aro) por
+  // razao ring/tip - ver dualRatioMUX().
+  void dualRatioMUX();
   void cymbal2zoneMUX(byte sens, byte thre, byte scan, byte mask, byte edgeThre);
   void cymbal2zoneMUX();
   void TCRT5000MUX(byte sens, byte thre1, byte thre2, byte scan);

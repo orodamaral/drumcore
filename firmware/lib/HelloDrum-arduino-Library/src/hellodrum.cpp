@@ -1507,6 +1507,28 @@ void HelloDrum::snare3zoneMUX()
   snare3zoneSensing(sensitivity, threshold1, scantime, masktime, rimSensitivity, rimThreshold);
 }
 
+// [MODIFICADO - projeto DrumCore, 2026-10-17] Pad dual (pele + aro) por
+// RAZAO, no lugar de dualPiezoSensing() (diferenca de picos + limiar
+// absoluto). E' snare3zoneSensing() com a borda desligada: aro quando pico
+// ring / pico tip >= rimThreshold/100. Capturas do pad caseiro
+// (captures/rawpad/sessao4): o vazamento do centro pro piezo do aro e' ~0
+// em batida fraca e 0,25-0,45 em batida forte - nao e' proporcional a forca,
+// nenhum limiar absoluto serve pros dois casos (melhor ajuste da regra
+// antiga: 82%; razao >= 0,7: 98%). Devolve hit (pele) / hitRim (aro), como
+// dualPiezoSensing().
+void HelloDrum::dualRatioMUX()
+{
+  padType[padNum] = Dnum;
+  piezoValue = rawValue[pin_1];
+  RimPiezoValue = rawValue[pin_2];
+  snare3zoneSensing(sensitivity, threshold1, scantime, masktime, 0, rimThreshold);
+  if (hitCup)
+  {
+    hitCup = false;
+    hitRim = true;
+  }
+}
+
 void HelloDrum::snare3zoneSensing(byte sens, byte thre, byte scanTime, byte maskTime, byte edgeRatio, byte rimRatio)
 {
 #ifdef ESP32

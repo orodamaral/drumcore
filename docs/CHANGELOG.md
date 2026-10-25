@@ -2,6 +2,49 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-25 — Crosstalk calibrado (pads disparando outros)
+
+- **Problema**: batida forte no bumbo disparava o tom 1 e o tom 2, mesmo sem
+  encostar na estrutura — crosstalk **elétrico** (o pico aparece ao mesmo
+  tempo nos outros canais). A supressão por grupo (`xtalk_group`) só
+  comparava batidas decididas na mesma volta do loop; como cada pad decide
+  no fim do próprio `scan_time`, quase nunca coincidia.
+- **Supressão nova**: o firmware guarda o pico bruto de cada canal nos
+  últimos 10–20 ms, na própria leitura do MUX, e compara com uma **tabela
+  calibrada** de quanto cada pad vaza para cada outro. O disparo é
+  descartado quando fica abaixo de 1,5× o vazamento esperado (até 3×,
+  pelo `xtalk` do pad).
+- **Calibração automática**: ConfigTool, aba Global > Crosstalk entre pads.
+  Bate-se forte em cada pad, um de cada vez; o módulo mede e mostra o
+  vazamento ("Bumbo → Tom 1 18%"). A tabela fica gravada no módulo e não
+  muda com "fábrica"/restaurar.
+- Comandos `start_xtalk_cal` / `stop_xtalk_cal` / `get_xtalk` /
+  `clear_xtalk`; eventos `xtalk_cal_status` e `xtalk_matrix`.
+- **Pedal de chimbal**: evento `pedal` na serial com a posição lida, a
+  faixa calibrada, o CC e "fechado". Com ele, o diagnóstico do pedal real
+  mostrou leitura e calibração boas (524–771 para 520–760, CC contínuo) e
+  o "Inverter" ligado sem precisar, o que mandava o chimbal fechado com o
+  pé solto.
+
+## 2026-10-17 — Pad Dual por razão; tela LIVE sem engasgar
+
+- **Tela LIVE**: depois de cada batida o firmware mandava o quadro inteiro da
+  tela (40 KB pelo SPI, >10 ms) a cada volta do loop por 180 ms — nesse
+  tempo cada canal era lido a cada ~10 ms em vez de ~0,3 ms e notas se
+  perdiam (só na LIVE). Agora só redesenha a célula do jack quando o estado
+  visual muda e manda só ela (~2 KB).
+- **Tipo 1 (Aro / Dual)**: aro pela **razão** pico ring / pico tip ≥ ARO%
+  (padrão 70), como na caixa 3 zonas, no lugar da diferença de picos +
+  limiar absoluto da lib original. Capturas novas (`captures/rawpad/sessao4`):
+  82% de acerto com o melhor ajuste da regra antiga, 98% com a razão.
+  `scan_time` mínimo de 10 ms nesse tipo. Detalhes em
+  [05-tipos-de-sensor.md](05-tipos-de-sensor.md).
+- Calibração do Dual calcula o ARO% pelas razões de cada golpe (rodadas pele
+  e aro) e avisa se as zonas se sobrepõem (`rim_errors` no
+  `autotune_status`).
+- Pads Dual já salvos são migrados uma vez para ARO% 70 / scan ≥ 10 ms.
+  ConfigTool: campo "Aro (razão)" no Dual; "Sensibilidade do aro" saiu.
+
 ## 2026-10-11 — Tela invertida (180°)
 
 - Opção para **girar a tela 180°**, para caixas em que a tela fica de

@@ -12,7 +12,9 @@ import {
   PAD_FIELDS,
   parseIncoming,
   WifiInfo,
-  OtaStatus
+  OtaStatus,
+  XtalkCalStatus,
+  XtalkMatrix
 } from './protocol'
 import PadGrid, { HitEvent, stepPad } from './components/PadGrid'
 import PadEditor from './components/PadEditor'
@@ -34,6 +36,7 @@ import type { PortInfo } from './env'
 import { DEVICE_HOSTED } from './hosted'
 import WifiPanel, { WifiScanState } from './components/WifiPanel'
 import OtaManager from './components/OtaManager'
+import XtalkPanel from './components/XtalkPanel'
 
 const PAD_COUNT = 32
 
@@ -92,6 +95,9 @@ export default function App() {
   const [displayFlip, setDisplayFlip] = useState<boolean | undefined>(undefined)
   const [wifiScan, setWifiScan] = useState<WifiScanState | null>(null)
   const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null)
+  const [xtalkCal, setXtalkCal] = useState<XtalkCalStatus | null>(null)
+  const [xtalkMatrix, setXtalkMatrix] = useState<XtalkMatrix | null>(null)
+  const [xtalkUnsupported, setXtalkUnsupported] = useState(false)
   const reconnectTimer = useRef<number | null>(null)
 
   const mockDeviceRef = useRef<MockDevice | null>(null)
@@ -154,6 +160,12 @@ export default function App() {
           midi_output: message.midi_output
         })
         break
+      case 'xtalk_cal_status':
+        setXtalkCal({ state: message.state, hits: message.hits, last: message.last })
+        break
+      case 'xtalk_matrix':
+        setXtalkMatrix({ calibrated: message.calibrated, pairs: message.pairs })
+        break
       case 'ota_status':
         setOtaStatus({ state: message.state, percent: message.percent, error: message.error })
         break
@@ -186,6 +198,7 @@ export default function App() {
         appendLog(`Erro (${message.cmd}): ${message.message}`, 'error')
         if (message.cmd === 'set_pad' || message.cmd === 'set_global' || message.cmd === 'set_jack') resolveReply('error')
         if (message.cmd === 'scan_wifi') setWifiScan({ busy: false, networks: [], error: message.message })
+        if (message.cmd === 'get_xtalk' && message.message === 'unknown_cmd') setXtalkUnsupported(true)
         break
       case 'ack': {
         appendLog(`OK: pad ${message.pad + 1} ${message.field} = ${message.value}`)
@@ -278,6 +291,7 @@ export default function App() {
       send({ cmd: 'get_all_pads' })
       send({ cmd: 'get_jacks' })
       send({ cmd: 'get_device_info' })
+    send({ cmd: 'get_xtalk' })
       return true
     }
 
@@ -304,6 +318,7 @@ export default function App() {
     send({ cmd: 'get_all_pads' })
     send({ cmd: 'get_jacks' })
     send({ cmd: 'get_device_info' })
+    send({ cmd: 'get_xtalk' })
     return true
   }
 
@@ -324,6 +339,9 @@ export default function App() {
     setWifi(null)
     setWifiScan(null)
     setDisplayFlip(undefined)
+    setXtalkCal(null)
+    setXtalkMatrix(null)
+    setXtalkUnsupported(false)
     setUndoStack([])
     setRedoStack([])
     setBleConnected(false)
@@ -819,6 +837,14 @@ export default function App() {
                   </select>
                 </div>
               </section>
+
+              <XtalkPanel
+                pads={pads}
+                cal={xtalkCal}
+                matrix={xtalkMatrix}
+                unsupported={xtalkUnsupported}
+                onSend={send}
+              />
 
               <section className="editor-section">
                 <h3 className="section-title">Tela do módulo</h3>

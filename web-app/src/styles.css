@@ -1522,6 +1522,71 @@ input:disabled {
   margin: 0 0 4px;
 }
 
+/* ---------------------------------------------------------------- crosstalk */
+
+.xtalk-hits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.xtalk-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--txt-dim);
+}
+
+.xtalk-chip b {
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+}
+
+.xtalk-chip.some {
+  color: var(--txt);
+}
+
+.xtalk-chip.done {
+  color: var(--txt);
+  border-color: var(--accent);
+}
+
+.xtalk-last {
+  margin-top: 4px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.xtalk-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.xtalk-table th,
+.xtalk-table td {
+  text-align: left;
+  padding: 5px 14px 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.xtalk-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--txt-dim);
+  font-weight: 500;
+}
+
+.xtalk-table td:last-child {
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------------------------------------------------------------- wi-fi */
 
 .wifi-status {

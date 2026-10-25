@@ -254,7 +254,18 @@ void bringUpNativeUsbHardware()
 // 1 ou 2 pinos.
 // ---------------------------------------------------------------------------
 #define PAD_SINGLE 0        // 1 canal - pad/prato simples
-#define PAD_DUAL 1          // 2 canais - pad com aro (head + rim)
+// 2 canais - pad com aro (tip = pele, ring = aro). 2026-10-17: aro pela RAZAO
+// pico ring / pico tip >= rim_threshold % (dualRatioMUX() na lib), no lugar
+// da diferenca de picos + limiar absoluto da lib original. rim_sensitivity
+// nao e' usado nesse tipo. Ver docs/05-tipos-de-sensor.md.
+#define PAD_DUAL 1
+// Padroes do Dual (captures/rawpad/sessao4): aro >= 70% (pele forte vaza ate'
+// 0,45 pro aro, borda da pele ate' 0,62; aro quase sempre >= 0,86). Scan de
+// no minimo 10 ms - na borda da pele o pico do piezo central chega 4-7 ms
+// depois do disparo; com scan curto a razao da borda sobe e vira aro.
+#define DUAL_DEFAULT_RIM_RATIO 70
+#define DUAL_MIN_SCAN_MS 10
+void applyDualDefaults(byte i); // definido perto de setFactoryPad()
 #define PAD_HIHAT_SINGLE 2  // 1 canal - chimbal simples (nota muda com open/close do pedal linkado)
 #define PAD_CYMBAL_2ZONE 3  // 2 canais - prato 2 zonas (bow + edge)
 #define PAD_HIHAT_2ZONE 4   // 2 canais - chimbal 2 zonas (bow + edge, nota muda com open/close)
@@ -398,7 +409,16 @@ const char *padTypeShortName(byte type)
 // 2026-10-11: tela invertida (1 byte, no fim - mesmo esquema acima: placa
 // ja' em uso le 0xFF = tela normal).
 #define EEPROM_DISPLAY_FLIP_ADDR (EEPROM_JACK_LABELS_ADDR + JACK_COUNT * (JACK_LABEL_MAX_LEN + 1))
-#define EEPROM_SIZE (EEPROM_DISPLAY_FLIP_ADDR + 1)
+// 2026-10-17: marca de que os pads Dual ja' foram migrados pra razao (ver
+// migrateDualToRatio()) - 1 byte no fim, mesmo esquema acima.
+#define EEPROM_DUAL_RATIO_ADDR (EEPROM_DISPLAY_FLIP_ADDR + 1)
+// 2026-10-25: tabela de crosstalk calibrada (ver xtalkMatrix) - 1 byte de
+// marca + NUM_PADS x NUM_PADS, no fim (placa ja' em uso le 0xFF = sem tabela).
+#define EEPROM_XTALK_MAGIC_ADDR (EEPROM_DUAL_RATIO_ADDR + 1)
+#define EEPROM_XTALK_MATRIX_ADDR (EEPROM_XTALK_MAGIC_ADDR + 1)
+#define XTALK_MATRIX_MAGIC 0x5C
+#define EEPROM_SIZE (EEPROM_XTALK_MATRIX_ADDR + NUM_PADS * NUM_PADS)
+#define DUAL_RATIO_MAGIC 0xD2
 #define jackLabelEepromAddr(j) (EEPROM_JACK_LABELS_ADDR + (j) * (JACK_LABEL_MAX_LEN + 1))
 #define EEPROM_INIT_MAGIC 0xA5
 
@@ -498,6 +518,37 @@ byte padGain[NUM_PADS];
 byte padXtalk[NUM_PADS];
 byte padXtalkGroup[NUM_PADS];
 
+// ---------------------------------------------------------------------------
+// Crosstalk calibrado (2026-10-25). Problema real: pads separados na
+// estrutura (bumbo) disparando outros (tom 1/2) numa batida forte - e'
+// crosstalk ELETRICO (o pico do bumbo aparece ao mesmo tempo nos outros
+// canais), e a supressao por grupo acima so' comparava hits decididos na
+// MESMA volta do loop - cada pad decide no fim do proprio scan_time, entao
+// quase nunca coincidia.
+// Aqui: o pico bruto (antes do gain) de cada canal nos ultimos ~20 ms e'
+// guardado na propria varredura do MUX (2 baldes de XTALK_BUCKET_MS), e
+// xtalkMatrix[vitima][fonte] = quanto do pico da fonte aparece na vitima (%),
+// medido pela calibracao (start_xtalk_cal). Um hit da vitima e' descartado
+// se o pico dela for <= pico da fonte x % x margem (1,5x + xtalk do pad).
+// ---------------------------------------------------------------------------
+#define XTALK_BUCKET_MS 10              // janela = 10 a 20 ms
+#define XTALK_CAL_CAPTURE_MS 30         // depois do 1o hit, junta os picos por mais 30 ms
+#define XTALK_CAL_HOLDOFF_MS 150        // ignora novos hits logo depois (rabo do mesmo golpe)
+#define XTALK_CAL_MIN_SOURCE 800        // golpe fraco demais pra medir (escala 0-4095)
+#define XTALK_CAL_MAX_OTHER_PCT 60      // outro pad acima disso = 2 pads tocados juntos
+uint16_t chPeakCur[NUM_PADS] = {0};
+uint16_t chPeakPrev[NUM_PADS] = {0};
+unsigned long chPeakBucketMs = 0;
+byte xtalkMatrix[NUM_PADS][NUM_PADS]; // [vitima][fonte], % (0 = nada medido)
+bool xtalkMatrixValid = false;
+
+bool xcalRunning = false;
+byte xcalNew[NUM_PADS][NUM_PADS];
+byte xcalHits[NUM_PADS];
+uint16_t xcalCap[NUM_PADS];
+unsigned long xcalCaptureUntil = 0;  // 0 = sem captura em andamento
+unsigned long xcalHoldoffUntil = 0;
+
 // padHihatInvert[i]: so' relevante pra padTypeIsHihatPedal() (controlador
 // de pedal FSR/VH-10/VH-11 ou optico TCRT5000) - alguns sensores mandam o
 // sinal de posicao invertido (ex: fisicamente pedal fechado = raw baixo,
@@ -549,6 +600,10 @@ void onEncRotate(int delta);
 void onEncClick();
 void onEncHold();
 void goToLive(); // usado pelo onOtaStatus() (Wi-Fi), definido bem mais abaixo
+// Crosstalk calibrado (2026-10-25) - usados pelos comandos, definidos perto do suppressCrosstalk().
+void sendXtalkCalStatus(int source, const char *result, const uint16_t *peaks);
+void saveXtalkMatrix();
+void sendXtalkMatrix();
 
 // Configuracao global (GLOBAL) - persistida como um bloco pequeno em EEPROM.
 byte midiChannel = DEFAULT_MIDI_CHANNEL;
@@ -668,8 +723,8 @@ byte getFieldsForType(byte padType, FieldDef *out)
 
     if (padType == PAD_DUAL)
     {
-        out[n++] = {FIELD_RIM_SENS, "R.SENS", 1, 100, true};
-        out[n++] = {FIELD_RIM_THRESH, "R.THRE", 1, 100, true};
+        // Razao em % - ver dualRatioMUX().
+        out[n++] = {FIELD_RIM_THRESH, "ARO%", 1, 100, true};
     }
     else if (padType == PAD_CYMBAL_2ZONE || padType == PAD_HIHAT_2ZONE)
     {
@@ -807,6 +862,10 @@ void setFieldValue(byte padIndex, FieldId id, int value)
         if (!padTypeAllowedAt(padIndex, (byte)value))
         {
             return; // 2 zonas so' no TIP do jack (e nunca no ultimo pad) - ver padTypeAllowedAt()
+        }
+        if (value == PAD_DUAL && padTypes[padIndex] != PAD_DUAL)
+        {
+            applyDualDefaults(padIndex);
         }
         padTypes[padIndex] = (byte)value;
         recomputeChannelPrimary();
@@ -1354,6 +1413,39 @@ void setPadNotes(byte i, byte note, byte noteRim, byte noteCup)
     pads[i].noteCross = noteCup;
 }
 
+// Razao do aro no padrao e scan minimo - ao virar Dual (fabrica, troca de
+// tipo, migracao). Os campos do aro vinham com valores de outro significado
+// (limiar absoluto/10, ex. 3), que como razao fariam quase tudo virar aro.
+void applyDualDefaults(byte i)
+{
+    pads[i].rimThreshold = DUAL_DEFAULT_RIM_RATIO;
+    if (pads[i].scantime < DUAL_MIN_SCAN_MS)
+    {
+        pads[i].scantime = DUAL_MIN_SCAN_MS;
+    }
+}
+
+// Uma vez por placa (2026-10-17): pads Dual salvos antes da troca pra razao
+// tem rim_threshold no significado antigo - volta pro padrao e grava.
+void migrateDualToRatio()
+{
+    if (EEPROM_ESP.read(EEPROM_DUAL_RATIO_ADDR) == DUAL_RATIO_MAGIC)
+    {
+        return;
+    }
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (padTypes[i] == PAD_DUAL)
+        {
+            applyDualDefaults(i);
+            pads[i].initMemory();
+        }
+    }
+    EEPROM_ESP.write(EEPROM_DUAL_RATIO_ADDR, DUAL_RATIO_MAGIC);
+    EEPROM_ESP.commit();
+    sendLog("Pads Dual migrados pra deteccao do aro por razao (ARO% = 70).");
+}
+
 void setFactoryPad(byte i, byte type, const char *label, byte note, byte noteRim, byte noteCup)
 {
     padTypes[i] = type;
@@ -1424,6 +1516,7 @@ void applyFactoryPreset()
         char label[8];
         snprintf(label, sizeof(label), "Tom %d", t + 1);
         setFactoryPad(8 + 2 * t, PAD_DUAL, label, TOM_NOTES[t][0], TOM_NOTES[t][1], 40);
+        applyDualDefaults(8 + 2 * t);
     }
 
     static const byte CYM_NOTES[4][2] = {{77, 78}, {79, 80}, {81, 82}, {89, 90}};
@@ -1526,6 +1619,11 @@ void handleSetPad(JsonDocument &doc)
             return;
         }
 
+        if (newType == PAD_DUAL && padTypes[pad] != PAD_DUAL)
+        {
+            applyDualDefaults(pad);
+            pads[pad].initMemory();
+        }
         padTypes[pad] = (byte)newType;
         recomputeChannelPrimary();
         persistPadType(pad);
@@ -2035,6 +2133,54 @@ void handleSerialCommand(const String &line)
         sendLog("Wi-Fi: rede de casa esquecida.");
         onWifiStatus(); // redesenha a tela + device_info
     }
+    else if (strcmp(cmd, "start_xtalk_cal") == 0)
+    {
+        // Assistente de crosstalk: o usuario bate forte em cada pad, um de
+        // cada vez - ver xtalkCalTick().
+        memset(xcalNew, 0, sizeof(xcalNew));
+        memset(xcalHits, 0, sizeof(xcalHits));
+        xcalCaptureUntil = 0;
+        xcalHoldoffUntil = 0;
+        xcalRunning = true;
+        sendXtalkCalStatus(-1, "", xcalCap);
+    }
+    else if (strcmp(cmd, "stop_xtalk_cal") == 0)
+    {
+        // apply=true: os pads batidos substituem a coluna deles na tabela;
+        // os nao batidos mantem a calibracao anterior.
+        bool apply = doc["apply"] | false;
+        if (xcalRunning && apply)
+        {
+            for (byte j = 0; j < NUM_PADS; j++)
+            {
+                if (xcalHits[j] == 0)
+                {
+                    continue;
+                }
+                for (byte i = 0; i < NUM_PADS; i++)
+                {
+                    xtalkMatrix[i][j] = xcalNew[i][j];
+                }
+                xtalkMatrixValid = true;
+            }
+            saveXtalkMatrix();
+        }
+        xcalRunning = false;
+        xcalCaptureUntil = 0;
+        sendXtalkCalStatus(-1, "", xcalCap);
+        sendXtalkMatrix();
+    }
+    else if (strcmp(cmd, "clear_xtalk") == 0)
+    {
+        memset(xtalkMatrix, 0, sizeof(xtalkMatrix));
+        xtalkMatrixValid = false;
+        saveXtalkMatrix();
+        sendXtalkMatrix();
+    }
+    else if (strcmp(cmd, "get_xtalk") == 0)
+    {
+        sendXtalkMatrix();
+    }
     else if (strcmp(cmd, "ota_request") == 0)
     {
         // Fase 3: pede a confirmacao na tela do modulo antes de aceitar o
@@ -2158,6 +2304,9 @@ struct PedalState
     bool closing = false;
     unsigned long closeStartMs = 0;
     byte chickVel = 0; // > 0 so' na volta em que fechou
+    int pos = 0;       // posicao filtrada (escala da calibracao) - telemetria
+    int lastReportPos = -1000;
+    unsigned long lastReportMs = 0;
 };
 PedalState pedalState[NUM_PADS];
 
@@ -2177,6 +2326,7 @@ void hihatPedalSensing(byte i)
     }
     st.filtFx += internal - (st.filtFx >> PEDAL_FILTER_SHIFT);
     int pos = (int)(st.filtFx >> PEDAL_FILTER_SHIFT);
+    st.pos = pos;
 
     int lo = pad.threshold1 * 10;
     int hi = pad.sensitivity * 10;
@@ -2401,6 +2551,25 @@ void handlePadResult(byte i)
             st.sentOnce = true;
             fireControlChange(padPedalCC[i], st.cc);
         }
+        // Telemetria do pedal (2026-10-25): posicao lida, faixa calibrada,
+        // CC e fechado - pra diagnosticar pela serial/app sem a porta MIDI.
+        // Manda quando a posicao muda >= 3 (no maximo a cada 40 ms) ou a
+        // cada 1 s parado.
+        unsigned long nowMs = millis();
+        if ((abs(st.pos - st.lastReportPos) >= 3 && nowMs - st.lastReportMs >= 40) || nowMs - st.lastReportMs >= 1000)
+        {
+            st.lastReportPos = st.pos;
+            st.lastReportMs = nowMs;
+            JsonDocument ev;
+            ev["type"] = "pedal";
+            ev["pad"] = i;
+            ev["pos"] = st.pos;
+            ev["lo"] = pad.threshold1 * 10;
+            ev["hi"] = pad.sensitivity * 10;
+            ev["cc"] = st.cc;
+            ev["closed"] = st.closed;
+            sendJsonLine(ev);
+        }
         break;
     }
 
@@ -2446,7 +2615,7 @@ void dispatchSensing(byte i)
         pads[i].singlePiezoMUX();
         break;
     case PAD_DUAL:
-        pads[i].dualPiezoMUX();
+        pads[i].dualRatioMUX(); // 2026-10-17: aro pela razao ring/tip (rim_threshold = %) - ver define de PAD_DUAL
         break;
     case PAD_HIHAT_SINGLE:
         pads[i].HHMUX();
@@ -2557,6 +2726,255 @@ void applyPadGain()
 // docs/02-hardware.md). padXtalk[] (0-100) controla o quao agressiva e' a
 // supressao: 0 desliga; valores altos toleram so' uma diferenca pequena
 // antes de suprimir.
+// Tipos que nao entram no crosstalk calibrado: pedal (valor continuo, sem
+// "golpe") e choke (chave de contato).
+bool xtalkPadEligible(byte i)
+{
+    if (!channelPrimary[i] || !padEnabled[i])
+    {
+        return false;
+    }
+    byte t = padTypes[i];
+    return t != PAD_HIHAT_PEDAL && t != PAD_HIHAT_OPTICAL && t != PAD_CHOKE;
+}
+
+uint16_t chRecentPeak(byte c)
+{
+    return max(chPeakCur[c], chPeakPrev[c]);
+}
+
+// Pico do pad = maior dos seus canais (2 zonas: tip e ring).
+uint16_t padPeakOf(byte i, const uint16_t *perChannel)
+{
+    uint16_t v = perChannel[i];
+    if (padTypeUsesSecondChannel(padTypes[i]) && i + 1 < NUM_PADS && perChannel[i + 1] > v)
+    {
+        v = perChannel[i + 1];
+    }
+    return v;
+}
+
+bool padHasHit(byte i)
+{
+    HelloDrum &p = pads[i];
+    return p.hit || p.hitRim || p.hitCup;
+}
+
+void suppressCrosstalkMatrix()
+{
+    if (!xtalkMatrixValid || xcalRunning)
+    {
+        return; // calibrando: deixa os falsos aparecerem
+    }
+    uint16_t recent[NUM_PADS];
+    for (byte c = 0; c < NUM_PADS; c++)
+    {
+        recent[c] = chRecentPeak(c);
+    }
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (!xtalkPadEligible(i) || !padHasHit(i))
+        {
+            continue;
+        }
+        long mine = padPeakOf(i, recent);
+        for (byte j = 0; j < NUM_PADS; j++)
+        {
+            byte pct = xtalkMatrix[i][j];
+            if (j == i || pct == 0 || !xtalkPadEligible(j))
+            {
+                continue;
+            }
+            // margem: 1,5x (xtalk 0) ate' 3x (xtalk 100)
+            long limit = (long)padPeakOf(j, recent) * pct * (150 + padXtalk[i] * 3 / 2) / 10000;
+            if (mine <= limit)
+            {
+                HelloDrum &p = pads[i];
+                p.hit = false;
+                p.hitRim = false;
+                p.hitCup = false;
+                break;
+            }
+        }
+    }
+}
+
+void sendXtalkCalStatus(int source, const char *result, const uint16_t *peaks)
+{
+    JsonDocument doc;
+    doc["type"] = "xtalk_cal_status";
+    doc["state"] = xcalRunning ? "running" : "idle";
+    JsonArray hits = doc["hits"].to<JsonArray>();
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        hits.add(xcalHits[i]);
+    }
+    if (source >= 0)
+    {
+        JsonObject last = doc["last"].to<JsonObject>();
+        last["source"] = source;
+        last["result"] = result; // ok | weak | multi
+        uint16_t sp = padPeakOf(source, peaks);
+        last["peak"] = sp;
+        JsonArray v = last["victims"].to<JsonArray>();
+        for (byte i = 0; i < NUM_PADS && sp > 0; i++)
+        {
+            if (i == source || !xtalkPadEligible(i))
+            {
+                continue;
+            }
+            int pct = (int)((long)padPeakOf(i, peaks) * 100 / sp);
+            if (pct >= 3)
+            {
+                JsonArray pair = v.add<JsonArray>();
+                pair.add(i);
+                pair.add(pct);
+            }
+        }
+    }
+    sendJsonLine(doc);
+}
+
+// Assistente: a cada golpe (1o hit de qualquer pad), junta o pico de todos os
+// canais por XTALK_CAL_CAPTURE_MS; a fonte e' o pad com o maior pico, e cada
+// outro pad guarda a maior % que ja' apareceu dele.
+void xtalkCalTick()
+{
+    if (!xcalRunning)
+    {
+        return;
+    }
+    unsigned long now = millis();
+    if (xcalCaptureUntil == 0)
+    {
+        if ((long)(now - xcalHoldoffUntil) < 0)
+        {
+            return;
+        }
+        for (byte i = 0; i < NUM_PADS; i++)
+        {
+            if (xtalkPadEligible(i) && padHasHit(i))
+            {
+                for (byte c = 0; c < NUM_PADS; c++)
+                {
+                    xcalCap[c] = chRecentPeak(c); // inclui o inicio do golpe
+                }
+                xcalCaptureUntil = now + XTALK_CAL_CAPTURE_MS;
+                break;
+            }
+        }
+        return;
+    }
+    for (byte c = 0; c < NUM_PADS; c++)
+    {
+        if (chPeakCur[c] > xcalCap[c])
+        {
+            xcalCap[c] = chPeakCur[c];
+        }
+    }
+    if ((long)(now - xcalCaptureUntil) < 0)
+    {
+        return;
+    }
+    xcalCaptureUntil = 0;
+    xcalHoldoffUntil = now + XTALK_CAL_HOLDOFF_MS;
+
+    int src = -1;
+    uint16_t srcPeak = 0;
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (xtalkPadEligible(i) && padPeakOf(i, xcalCap) > srcPeak)
+        {
+            srcPeak = padPeakOf(i, xcalCap);
+            src = i;
+        }
+    }
+    if (src < 0)
+    {
+        return;
+    }
+    if (srcPeak < XTALK_CAL_MIN_SOURCE)
+    {
+        sendXtalkCalStatus(src, "weak", xcalCap);
+        return;
+    }
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (i != src && xtalkPadEligible(i) && (long)padPeakOf(i, xcalCap) * 100 > (long)srcPeak * XTALK_CAL_MAX_OTHER_PCT)
+        {
+            sendXtalkCalStatus(src, "multi", xcalCap);
+            return;
+        }
+    }
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (i == src || !xtalkPadEligible(i))
+        {
+            continue;
+        }
+        // arredonda pra cima: 0 so' quando nao apareceu nada
+        long pct = ((long)padPeakOf(i, xcalCap) * 100 + srcPeak - 1) / srcPeak;
+        if (pct > xcalNew[i][src])
+        {
+            xcalNew[i][src] = (byte)min(pct, 100L);
+        }
+    }
+    if (xcalHits[src] < 255)
+    {
+        xcalHits[src]++;
+    }
+    sendXtalkCalStatus(src, "ok", xcalCap);
+}
+
+void saveXtalkMatrix()
+{
+    EEPROM_ESP.write(EEPROM_XTALK_MAGIC_ADDR, xtalkMatrixValid ? XTALK_MATRIX_MAGIC : 0);
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        for (byte j = 0; j < NUM_PADS; j++)
+        {
+            EEPROM_ESP.write(EEPROM_XTALK_MATRIX_ADDR + i * NUM_PADS + j, xtalkMatrix[i][j]);
+        }
+    }
+    EEPROM_ESP.commit();
+}
+
+void loadXtalkMatrix()
+{
+    xtalkMatrixValid = EEPROM_ESP.read(EEPROM_XTALK_MAGIC_ADDR) == XTALK_MATRIX_MAGIC;
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        for (byte j = 0; j < NUM_PADS; j++)
+        {
+            byte v = xtalkMatrixValid ? EEPROM_ESP.read(EEPROM_XTALK_MATRIX_ADDR + i * NUM_PADS + j) : 0;
+            xtalkMatrix[i][j] = v > 100 ? 0 : v;
+        }
+    }
+}
+
+// Tabela atual (so' os pares >= 2%) - resposta de get_xtalk e do fim da calibracao.
+void sendXtalkMatrix()
+{
+    JsonDocument doc;
+    doc["type"] = "xtalk_matrix";
+    doc["calibrated"] = xtalkMatrixValid;
+    JsonArray pairs = doc["pairs"].to<JsonArray>();
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        for (byte j = 0; j < NUM_PADS; j++)
+        {
+            if (xtalkMatrix[i][j] >= 2)
+            {
+                JsonArray pr = pairs.add<JsonArray>();
+                pr.add(i); // vitima
+                pr.add(j); // fonte
+                pr.add(xtalkMatrix[i][j]);
+            }
+        }
+    }
+    sendJsonLine(doc);
+}
+
 void suppressCrosstalk()
 {
     byte padPeak[NUM_PADS] = {0};
@@ -2608,6 +3026,8 @@ void suppressCrosstalk()
             p.hitCup = false;
         }
     }
+
+    suppressCrosstalkMatrix(); // 2026-10-25 - crosstalk calibrado, ver acima
 }
 
 // ---------------------------------------------------------------------------
@@ -2680,12 +3100,12 @@ enum AutoTuneTier : byte
 // cada uma mede dependem de COMO a lib classifica a zona, que varia por
 // "formato" de pad (AutoTuneShape):
 //
-// - AT_SHAPE_DUAL (so' PAD_DUAL, pele+aro): dualPiezoSensing() nao decide
-//   pele-vs-aro olhando cada piezo isolado - compara os picos dos DOIS
-//   canais do MESMO golpe (os dois sempre disparam juntos, um "vaza" pro
-//   outro): `(velocity - velocityRim < rimSensitivity) && (velocityRim >
-//   rimThreshold)`. 1 rodada extra (zona SECONDARY = aro), medindo o pico
-//   do aro E o vazamento cruzado com a pele em cada golpe.
+// - AT_SHAPE_DUAL (so' PAD_DUAL, pele+aro): dualRatioMUX() decide pele-vs-aro
+//   pela RAZAO pico ring / pico tip do MESMO golpe (os dois piezos sempre
+//   disparam juntos, um "vaza" pro outro) >= rimThreshold %. 1 rodada extra
+//   (zona SECONDARY = aro); cada golpe das 2 rodadas guarda a sua razao
+//   (atHeadRatios/atRimRatios) e o ARO% sai de dualRatioThreshold()
+//   (2026-10-17 - antes calibrava a diferenca de picos da lib original).
 // - AT_SHAPE_TRI (PAD_CYMBAL_3ZONE/PAD_SNARE_3ZONE): cymbal3zoneSensing()
 //   usa so' 2 canais fisicos tambem, mas a 3a zona (cup/aro-forte) vem de
 //   uma FAIXA de threshold mais alta no MESMO canal secundario (edge e
@@ -2703,7 +3123,7 @@ enum AutoTuneTier : byte
 enum AutoTuneShape : byte
 {
     AT_SHAPE_SINGLE, // 1 canal - so' a rodada PRIMARY (comportamento de sempre)
-    AT_SHAPE_DUAL,   // PAD_DUAL - 1 rodada extra, classificacao por DIFERENCA entre 2 canais
+    AT_SHAPE_DUAL,   // PAD_DUAL - 1 rodada extra, classificacao por RAZAO entre 2 canais
     AT_SHAPE_TRI,    // PAD_CYMBAL_3ZONE/PAD_SNARE_3ZONE - 2 rodadas extras, 3a zona por FAIXA de threshold no canal secundario
 };
 
@@ -2797,7 +3217,16 @@ AutoTuneShape atShape = AT_SHAPE_SINGLE;
 AutoTuneZone atZone = AT_ZONE_PRIMARY;
 int atOtherPeak = 0;             // pico do canal PASSIVO (o que o usuario NAO esta' batendo agora) durante o golpe atual - so' usado em AT_SHAPE_DUAL
 int atCrossFloor = 0;            // pior vazamento visto no canal secundario durante golpes na zona PRIMARY (qualquer shape com 2 canais)
-long atMaxHeadRimDiff = -100000; // pior (primary - secondary) visto durante golpes reais na zona SECONDARY - so' usado em AT_SHAPE_DUAL. Sentinela bem negativa, sobrescrita no 1o golpe
+// 2026-10-17: razao aro/pele (%) de cada golpe, por rodada - so' usado em
+// AT_SHAPE_DUAL. O limiar ARO% sai de onde as duas listas se separam melhor
+// (ver dualRatioThreshold()).
+#define AUTOTUNE_RATIO_MAX_HITS 64
+#define AUTOTUNE_RATIO_CAP 1000 // aro sem quase nada na pele: razao "infinita"
+uint16_t atHeadRatios[AUTOTUNE_RATIO_MAX_HITS];
+uint16_t atRimRatios[AUTOTUNE_RATIO_MAX_HITS];
+byte atHeadRatioCount = 0;
+byte atRimRatioCount = 0;
+byte atResultRimErrors = 0; // golpes da calibracao que o ARO% escolhido classificaria errado
 long atSumRimPeakByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0};  // picos da zona SECONDARY (aro em DUAL, edge/borda em TRI)
 long atSumCupByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0};      // picos da zona TERTIARY (cup/aro-forte) - so' usado em AT_SHAPE_TRI
 long atRimHitCountByTier[AUTOTUNE_TIER_COUNT] = {0, 0, 0}; // [Fase AA] golpes reais por nivel na zona SECONDARY - espelha atHitCountByTier
@@ -2982,6 +3411,10 @@ void sendAutoTuneStatus()
         {
             doc["rim_sensitivity"] = atResultRimSensitivity;
             doc["rim_threshold"] = atResultRimThreshold;
+            if (atShape == AT_SHAPE_DUAL)
+            {
+                doc["rim_errors"] = atResultRimErrors; // golpes da calibracao que o ARO% erraria
+            }
         }
         if (padTypeIsHihatPedal(padTypes[atPad]))
         {
@@ -3056,7 +3489,9 @@ void startAutoTune(byte pad)
     atCupHitCountByTier[1] = 0;
     atCupHitCountByTier[2] = 0;
     atCrossFloor = 0;
-    atMaxHeadRimDiff = -100000;
+    atHeadRatioCount = 0;
+    atRimRatioCount = 0;
+    atResultRimErrors = 0;
     atHhSampleSum = 0;
     atHhSampleCount = 0;
     atHhOpenRaw = 0;
@@ -3084,6 +3519,68 @@ void startAutoTune(byte pad)
     currentPage = PAGE_AUTOTUNE;
     forceScreenRedraw = true;
     sendAutoTuneStatus();
+}
+
+// Razao num/den em % (picos do mesmo golpe), limitada a AUTOTUNE_RATIO_CAP.
+uint16_t autoTuneRatio(int num, int den)
+{
+    if (den <= 0)
+    {
+        return num > 0 ? AUTOTUNE_RATIO_CAP : 0;
+    }
+    long r = (long)num * 100 / den;
+    return (uint16_t)(r > AUTOTUNE_RATIO_CAP ? AUTOTUNE_RATIO_CAP : r);
+}
+
+// ARO% do Dual: o limiar t (1-100) que erra menos golpes da calibracao (pele
+// com razao >= t + aro com razao < t). Entre os empates, o meio da faixa
+// mais larga - fica o mais longe possivel dos dois lados. Um golpe fora da
+// curva nao puxa o limiar sozinho (o que aconteceria com max/min puros).
+byte dualRatioThreshold(byte *errorsOut)
+{
+    int bestErr = 1000;
+    int runStart = -1, bestStart = 1, bestLen = 0;
+    for (int t = 1; t <= 101; t++)
+    {
+        int err = 1000; // t = 101 so' fecha a ultima faixa
+        if (t <= 100)
+        {
+            err = 0;
+            for (byte k = 0; k < atHeadRatioCount; k++)
+            {
+                err += atHeadRatios[k] >= t ? 1 : 0;
+            }
+            for (byte k = 0; k < atRimRatioCount; k++)
+            {
+                err += atRimRatios[k] < t ? 1 : 0;
+            }
+        }
+        if (err < bestErr)
+        {
+            bestErr = err;
+            bestStart = t;
+            bestLen = 0;
+            runStart = t;
+        }
+        if (err == bestErr)
+        {
+            if (runStart < 0)
+            {
+                runStart = t;
+            }
+            if (t - runStart + 1 > bestLen)
+            {
+                bestLen = t - runStart + 1;
+                bestStart = runStart;
+            }
+        }
+        else
+        {
+            runStart = -1;
+        }
+    }
+    *errorsOut = (byte)min(bestErr, 255);
+    return (byte)(bestStart + (bestLen - 1) / 2);
 }
 
 // So calcula os resultados (RAM) - nao aplica ainda, ver applyAutoTuneResult().
@@ -3192,32 +3689,28 @@ void finishAutoTune()
 
     if (atShape == AT_SHAPE_DUAL)
     {
-        // rimThreshold: piso minimo pro aro ser sequer considerado - mesma
-        // logica de margem do threshold principal (30% do caminho entre um
-        // "piso" e a media fraca), so' que aqui o "piso" e' o pior
-        // vazamento visto no aro durante os golpes na PELE (atCrossFloor),
-        // nao o ruido de silencio.
-        float avgRimWeak = atRimHitCountByTier[AT_TIER_WEAK] > 0 ? (float)atSumRimPeakByTier[AT_TIER_WEAK] / atRimHitCountByTier[AT_TIER_WEAK] : 0;
-        int rimThreshRaw = atCrossFloor + (int)((avgRimWeak - atCrossFloor) * 0.3f);
-        if (rimThreshRaw < 1)
+        // 2026-10-17: Dual decide o aro pela razao pico ring / pico tip
+        // (dualRatioMUX()) - o ARO% sai das razoes medidas em cada golpe das
+        // 2 rodadas. rim_sensitivity nao e' usado nesse tipo, fica como esta'.
+        atResultRimSensitivity = pads[atPad].rimSensitivity;
+        atResultRimThreshold = atRimRatioCount > 0 ? dualRatioThreshold(&atResultRimErrors) : pads[atPad].rimThreshold;
+        if (atResultScan < DUAL_MIN_SCAN_MS)
         {
-            rimThreshRaw = 1;
+            atResultScan = DUAL_MIN_SCAN_MS; // ver DUAL_MIN_SCAN_MS
         }
-
-        // rimSensitivity: dualPiezoSensing() classifica como ARO quando
-        // (pele - aro) < rimSensitivity. Usamos o PIOR caso observado nos
-        // golpes reais de aro (maior diferenca pele-aro, tipicamente nas
-        // batidas mais fracas de aro, onde o vazamento da pele pesa mais)
-        // + uma folga fixa - garante que ate' um toque fraco no aro
-        // continue sendo classificado como aro.
-        int rimSensRaw = (int)atMaxHeadRimDiff + 15;
-        if (rimSensRaw < 10)
+        uint16_t maxHead = 0, minRim = AUTOTUNE_RATIO_CAP;
+        for (byte k = 0; k < atHeadRatioCount; k++)
         {
-            rimSensRaw = 10; // piso - nunca deixar quase 0 (classificaria quase tudo como pele)
+            maxHead = max(maxHead, atHeadRatios[k]);
         }
-
-        atResultRimSensitivity = (byte)constrain(rimSensRaw / 10, 1, 100);
-        atResultRimThreshold = (byte)constrain(rimThreshRaw / 10, 1, 100);
+        for (byte k = 0; k < atRimRatioCount; k++)
+        {
+            minRim = min(minRim, atRimRatios[k]);
+        }
+        char msg[120];
+        snprintf(msg, sizeof(msg), "Calibracao Dual: razao pele max %u%%, aro min %u%% -> ARO%% %u (%u golpes errados)",
+                 maxHead, minRim, atResultRimThreshold, atResultRimErrors);
+        sendLog(msg);
     }
     else if (atShape == AT_SHAPE_TRI)
     {
@@ -3534,13 +4027,10 @@ void autoTuneTick()
                 // canais), mas nao custa nada acumular sempre.
                 atSumRimPeakByTier[atTier] += atHitPeak;
                 atRimHitCountByTier[atTier]++;
-                if (atShape == AT_SHAPE_DUAL)
+                if (atShape == AT_SHAPE_DUAL && atRimRatioCount < AUTOTUNE_RATIO_MAX_HITS)
                 {
-                    long diff = (long)atOtherPeak - (long)atHitPeak;
-                    if (diff > atMaxHeadRimDiff)
-                    {
-                        atMaxHeadRimDiff = diff;
-                    }
+                    // aqui o ativo e' o aro: razao = aro / pele
+                    atRimRatios[atRimRatioCount++] = autoTuneRatio(atHitPeak, atOtherPeak);
                 }
             }
             else // AT_ZONE_PRIMARY
@@ -3550,6 +4040,11 @@ void autoTuneTick()
                 if (atShape != AT_SHAPE_SINGLE && atOtherPeak > atCrossFloor)
                 {
                     atCrossFloor = atOtherPeak; // pior vazamento no canal secundario durante uma pancada na PRIMARY
+                }
+                if (atShape == AT_SHAPE_DUAL && atHeadRatioCount < AUTOTUNE_RATIO_MAX_HITS)
+                {
+                    // aqui o ativo e' a pele: razao = vazamento no aro / pele
+                    atHeadRatios[atHeadRatioCount++] = autoTuneRatio(atOtherPeak, atHitPeak);
                 }
             }
             atHitCount++;
@@ -3624,7 +4119,7 @@ bool applyAutoTuneResult()
     pads[pad].masktime = atResultMask;
     if (atShape != AT_SHAPE_SINGLE)
     {
-        pads[pad].rimSensitivity = atResultRimSensitivity;
+        pads[pad].rimSensitivity = atResultRimSensitivity; // Dual: valor que ja' estava (ver finishAutoTune())
         pads[pad].rimThreshold = atResultRimThreshold;
     }
     if (!padTypeIsHihatPedal(padTypes[pad]))
@@ -4239,6 +4734,29 @@ void renderBoot()
 #define LIVE_Y0 14
 #define LIVE_BOARD_GAP 4
 
+// Estado visual de cada celula da LIVE na ultima vez que foi desenhada (bits
+// LIVE_ST_*) - renderLive() so' redesenha um jack quando isso muda.
+#define LIVE_ST_SOLID 0x01
+#define LIVE_ST_DECAY 0x02
+#define LIVE_ST_TIP 0x04
+#define LIVE_ST_RING 0x08
+byte liveDrawnState[JACK_COUNT] = {0};
+
+// Manda so' um retangulo do canvas pra tela fisica (em vez do quadro inteiro
+// via drawRGBBitmap). Ver renderLive().
+void pushCanvasRect(int x, int y, int w, int h)
+{
+    uint16_t *buf = canvas.getBuffer();
+    int stride = canvas.width();
+    tft.startWrite();
+    tft.setAddrWindow(x, y, w, h);
+    for (int r = 0; r < h; r++)
+    {
+        tft.writePixels(buf + (y + r) * stride + x, w);
+    }
+    tft.endWrite();
+}
+
 // Pad primario de 2 zonas comecando num RING - configuracao salva antes da
 // regra do tip (padTypeAllowedAt()) existir. Continua funcionando, mas a 2a
 // zona esta' no jack seguinte: as telas marcam em COL_EDIT.
@@ -4361,6 +4879,37 @@ void renderLiveJack(byte j)
     canvas.setTextColor(nameColor);
     canvas.setCursor(x + (LIVE_CELL_W - textW) / 2, y + 14);
     canvas.print(name);
+
+    liveDrawnState[j] = (solid ? LIVE_ST_SOLID : 0) | (decay ? LIVE_ST_DECAY : 0) | (tipOn ? LIVE_ST_TIP : 0) |
+                        (ringOn ? LIVE_ST_RING : 0);
+}
+
+// Mesmo calculo de renderLiveJack(), sem desenhar - pra saber se a celula
+// mudou desde o ultimo desenho.
+byte liveJackState(byte j, unsigned long now)
+{
+    byte tip = 2 * j;
+    byte ring = tip + 1;
+    unsigned long last = max(chanHitAtMs[tip], chanHitAtMs[ring]);
+    unsigned long since = now - last;
+    byte st = 0;
+    if (last != 0 && since < PAD_FLASH_MS)
+    {
+        st |= LIVE_ST_SOLID;
+    }
+    else if (last != 0 && since < PAD_DECAY_MS)
+    {
+        st |= LIVE_ST_DECAY;
+    }
+    if (chanHitAtMs[tip] != 0 && now - chanHitAtMs[tip] < PAD_DECAY_MS)
+    {
+        st |= LIVE_ST_TIP;
+    }
+    if (chanHitAtMs[ring] != 0 && now - chanHitAtMs[ring] < PAD_DECAY_MS)
+    {
+        st |= LIVE_ST_RING;
+    }
+    return st;
 }
 
 // Retorna true se algo foi desenhado nesse frame (o canvas precisa ser
@@ -4386,20 +4935,27 @@ bool renderLive()
         return true;
     }
 
-    // Nunca redesenha a grade inteira - so' os jacks cujo estado (solido /
-    // decaindo / idle) pode ter mudado desde o ultimo frame.
-    bool any = false;
+    // 2026-10-17: so' redesenha um jack quando o estado visual dele muda
+    // (batida -> solido -> decaindo -> idle, ~3 vezes por batida) e manda so'
+    // aquela celula pra tela (~2KB, ~0,5 ms de SPI). Antes redesenhava todo
+    // jack com batida recente em TODA volta do loop e devolvia true, e o
+    // renderScreen() mandava o quadro inteiro (40KB, >10 ms a 32 MHz) -
+    // durante os 180 ms depois de cada batida cada canal era lido a cada
+    // ~10+ ms em vez de ~0,3 ms, e os picos se perdiam (notas falhando so'
+    // na LIVE, relatado pelo Rodrigo). Devolve false porque ja' mandou as
+    // celulas pra tela aqui.
     unsigned long now = millis();
     for (byte j = 0; j < JACK_COUNT; j++)
     {
-        unsigned long last = max(chanHitAtMs[2 * j], chanHitAtMs[2 * j + 1]);
-        if (last != 0 && now - last <= PAD_DECAY_MS + 20)
+        if (liveJackState(j, now) != liveDrawnState[j])
         {
             renderLiveJack(j);
-            any = true;
+            int x = LIVE_X0 + (j % 4) * LIVE_PITCH_X;
+            int y = LIVE_Y0 + (j / 4) * LIVE_PITCH_Y + (j / 4 >= 2 ? LIVE_BOARD_GAP : 0);
+            pushCanvasRect(x, y, LIVE_CELL_W, LIVE_CELL_H);
         }
     }
-    return any;
+    return false;
 }
 
 bool renderPadsList()
@@ -5078,7 +5634,22 @@ bool renderAutoTune()
             drawValueRow(y, "MASK", buf, false, false);
             y += 14;
         }
-        if (atShape != AT_SHAPE_SINGLE)
+        if (atShape == AT_SHAPE_DUAL)
+        {
+            // Razao do aro + quantos golpes da calibracao ela erraria
+            // (> 0 = pele e aro se sobrepoem nesse pad).
+            if (atResultRimErrors > 0)
+            {
+                snprintf(buf, sizeof(buf), "%d (%d err)", atResultRimThreshold, atResultRimErrors);
+            }
+            else
+            {
+                snprintf(buf, sizeof(buf), "%d", atResultRimThreshold);
+            }
+            drawValueRow(y, "ARO%", buf, false, false);
+            y += 14;
+        }
+        else if (atShape != AT_SHAPE_SINGLE)
         {
             snprintf(buf, sizeof(buf), "%d", atResultRimSensitivity);
             drawValueRow(y, "R.SENS", buf, false, false);
@@ -5305,12 +5876,17 @@ void setup()
         applyFactoryPreset();
         saveAllToEeprom();
         EEPROM_ESP.write(EEPROM_INIT_FLAG_ADDR, EEPROM_INIT_MAGIC);
+        EEPROM_ESP.write(EEPROM_DUAL_RATIO_ADDR, DUAL_RATIO_MAGIC); // kit de fabrica ja' sai com a razao
         EEPROM_ESP.commit();
     }
     else
     {
         loadAllFromEeprom();
+        migrateDualToRatio();
     }
+    // Crosstalk calibrado: e' do kit montado, nao do preset - nao muda com
+    // "fabrica"/restaurar (so' clear_xtalk apaga).
+    loadXtalkMatrix();
 
     renderBootProgress(80);
 
@@ -5359,6 +5935,14 @@ bool channelInUse(byte c)
 // cada 2 ms). Canais fora de uso ficam com rawValue = 0.
 void scanActiveChannels()
 {
+    // Baldes do pico por canal (crosstalk): max(cur, prev) = ultimos 10-20 ms.
+    unsigned long nowMs = millis();
+    if (nowMs - chPeakBucketMs >= XTALK_BUCKET_MS)
+    {
+        chPeakBucketMs = nowMs;
+        memcpy(chPeakPrev, chPeakCur, sizeof(chPeakCur));
+        memset(chPeakCur, 0, sizeof(chPeakCur));
+    }
     static const byte SIG[NUM_MUX] = {MUX0_Z, MUX1_Z};
     for (byte m = 0; m < NUM_MUX; m++)
     {
@@ -5375,6 +5959,10 @@ void scanActiveChannels()
             digitalWrite(MUX_S2, (ch >> 2) & 1);
             digitalWrite(MUX_S3, (ch >> 3) & 1);
             rawValue[c] = analogRead(SIG[m]);
+            if (rawValue[c] > chPeakCur[c])
+            {
+                chPeakCur[c] = rawValue[c]; // crosstalk calibrado - antes do gain
+            }
         }
     }
 }
@@ -5434,6 +6022,7 @@ void loop()
         }
     }
 
+    xtalkCalTick();      // 2026-10-25 - assistente de crosstalk (antes da supressao)
     suppressCrosstalk(); // Fase P - depois do dispatch, antes de decidir o que enviar
 
     for (byte i = 0; i < NUM_PADS; i++)

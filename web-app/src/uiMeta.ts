@@ -94,7 +94,7 @@ export const FIELD_UI: Record<PadField, FieldUi> = {
   xtalk: {
     section: 'xtalk',
     order: 1,
-    help: 'Quanto este pad ignora batidas causadas por vibração de outros pads do mesmo grupo. 0 = desligado.',
+    help: 'Com a calibração de crosstalk (aba Global): aumenta a margem com que este pad descarta disparos vindos dos outros (0 = margem padrão de 1,5×, 100 = 3×). Sem calibração: quanto o pad ignora batidas de outros pads do mesmo grupo (0 = desligado).',
     defaultValue: 0,
     zeroLabel: 'desl.'
   },

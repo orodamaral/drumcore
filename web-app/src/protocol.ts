@@ -90,8 +90,17 @@ export const PAD_TYPE_META: Record<PadType, PadTypeMeta> = {
     isHihatPedal: false,
     fields: [
       ...SENSING_FIELDS,
-      { field: 'rim_sensitivity', label: 'Sensibilidade do aro', min: 0, max: 100 },
-      { field: 'rim_threshold', label: 'Threshold do aro', min: 0, max: 100 },
+      // 2026-10-17: aro pela razão pico ring / pico tip (dualRatioMUX() na
+      // lib do firmware), como na caixa 3 zonas - rim_sensitivity não é usado.
+      {
+        field: 'rim_threshold',
+        label: 'Aro (razão)',
+        min: 1,
+        max: 100,
+        unit: '%',
+        defaultValue: 70,
+        help: 'Batida no aro: o piezo do aro (ring) passa deste % do pico do piezo da pele. Suba se pancadas fortes na pele (ou perto da borda) estiverem saindo como aro; desça se o aro estiver saindo como pele. Use scan time de pelo menos 10 ms.'
+      },
       { field: 'note', label: 'Nota (head)', min: 0, max: 127 },
       { field: 'note_rim', label: 'Nota (rim)', min: 0, max: 127 }
     ]
@@ -269,6 +278,27 @@ export interface PadConfigConsumed {
 
 export type PadConfig = PadConfigPrimary | PadConfigConsumed
 
+/** Assistente de crosstalk (2026-10-25) - ver start_xtalk_cal no protocolo. */
+export interface XtalkCalStatus {
+  state: 'running' | 'idle'
+  /** golpes medidos por pad (índice = pad) */
+  hits: number[]
+  last?: {
+    source: number
+    /** ok | weak (fraco demais) | multi (2 pads juntos) */
+    result: string
+    peak: number
+    /** [pad, %] que apareceu em cada outro pad */
+    victims: Array<[number, number]>
+  }
+}
+
+export interface XtalkMatrix {
+  calibrated: boolean
+  /** [vítima, fonte, %] - só os pares de 2% para cima */
+  pairs: Array<[number, number, number]>
+}
+
 // GLOBAL (design/SPEC.md SCR 5) - saida agora e' USB/BLE/USB+BLE, nao ha'
 // circuito de MIDI DIN nesse hardware (ver docs/01-decisoes-arquiteturais.md).
 export const MIDI_OUTPUTS = [0, 1, 2] as const
@@ -367,6 +397,8 @@ export interface AutoTuneStatus {
   mask_time?: number
   rim_sensitivity?: number
   rim_threshold?: number
+  /** Só Dual (2026-10-17): golpes da calibração que o rim_threshold escolhido classificaria errado (> 0 = pele e aro se sobrepõem). */
+  rim_errors?: number
   // Fase AB: inferidos automaticamente em finishAutoTune() a partir da
   // própria coleta (nível médio pra curve_type, taxa de decaimento
   // observada pro retrigger) - só aparecem no resultado de pads de
@@ -439,6 +471,8 @@ export type IncomingMessage =
   | { type: 'jack_config'; jack: number; label: string }
   | { type: 'wifi_scan'; networks: WifiNetwork[]; error?: string }
   | ({ type: 'ota_status' } & OtaStatus)
+  | ({ type: 'xtalk_cal_status' } & XtalkCalStatus)
+  | ({ type: 'xtalk_matrix' } & XtalkMatrix)
 
 export function parseIncoming(line: string): IncomingMessage | null {
   try {

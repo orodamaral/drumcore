@@ -104,7 +104,10 @@ export class MockDevice {
     // Razões da caixa 3 zonas (igual ao firmware): borda 80%, aro 30%.
     this.pads[6].rim_sensitivity = 80
     this.pads[6].rim_threshold = 30
-    ;[[71, 72], [69, 70], [67, 68], [65, 66]].forEach(([n, r], t) => set(8 + 2 * t, 1, `Tom ${t + 1}`, n, r))
+    ;[[71, 72], [69, 70], [67, 68], [65, 66]].forEach(([n, r], t) => {
+      set(8 + 2 * t, 1, `Tom ${t + 1}`, n, r)
+      this.pads[8 + 2 * t].rim_threshold = 70 // Dual: aro por razão (igual ao firmware)
+    })
     ;[[77, 78], [79, 80], [81, 82], [89, 90]].forEach(([n, c], k) => {
       set(16 + 2 * k, 0, `Cym ${k + 1}`, n)
       set(17 + 2 * k, 9, `Choke ${k + 1}`, c)
@@ -119,6 +122,7 @@ export class MockDevice {
   }
 
   private wifiActive = false
+  private xtalkPairs: Array<[number, number, number]> = []
   private displayFlip = false
   private wifiAutostart = false
   private staSsid = ''
@@ -289,7 +293,7 @@ export class MockDevice {
   }
 
   send(line: string): void {
-    let cmd: { cmd?: string; pad?: number; field?: string; value?: number | string; enabled?: unknown; autostart?: unknown; ssid?: unknown }
+    let cmd: { cmd?: string; pad?: number; field?: string; value?: number | string; enabled?: unknown; autostart?: unknown; ssid?: unknown; apply?: unknown }
     try {
       cmd = JSON.parse(line)
     } catch {
@@ -304,6 +308,39 @@ export class MockDevice {
 
       case 'get_device_info':
         this.emit(this.deviceInfo())
+        break
+
+      case 'get_xtalk':
+        this.emit({ type: 'xtalk_matrix', calibrated: this.xtalkPairs.length > 0, pairs: this.xtalkPairs })
+        break
+
+      case 'clear_xtalk':
+        this.xtalkPairs = []
+        this.emit({ type: 'xtalk_matrix', calibrated: false, pairs: [] })
+        break
+
+      case 'start_xtalk_cal': {
+        // Demo: simula golpes no bumbo (pad 4) vazando pros toms (8 e 10).
+        const hits = new Array(this.pads.length).fill(0)
+        this.emit({ type: 'xtalk_cal_status', state: 'running', hits })
+        ;[0, 1, 2].forEach((k) =>
+          setTimeout(() => {
+            hits[4] = k + 1
+            this.emit({
+              type: 'xtalk_cal_status',
+              state: 'running',
+              hits: [...hits],
+              last: { source: 4, result: 'ok', peak: 3900, victims: [[8, 18 - k], [10, 12]] }
+            })
+          }, 1200 * (k + 1))
+        )
+        break
+      }
+
+      case 'stop_xtalk_cal':
+        if (cmd.apply) this.xtalkPairs = [[8, 4, 18], [10, 4, 12], [6, 4, 4]]
+        this.emit({ type: 'xtalk_cal_status', state: 'idle', hits: new Array(this.pads.length).fill(0) })
+        this.emit({ type: 'xtalk_matrix', calibrated: this.xtalkPairs.length > 0, pairs: this.xtalkPairs })
         break
 
       case 'set_wifi':

@@ -24,7 +24,7 @@ esse único valor contra dois limiares diferentes (`Edge Threshold` e
 | # | Tipo | Canais | Método da lib | Zonas/estados |
 |---|---|---|---|---|
 | 0 | Simples | 1 | `singlePiezoMUX()` | 1 (bow) |
-| 1 | Aro / Dual | 2 | `dualPiezoMUX()` | head + rim |
+| 1 | Aro / Dual | 2 | `dualRatioMUX()` | head + rim, por razão entre os 2 piezos |
 | 2 | Chimbal simples *(oculto)* | 1 | `HHMUX()` | 1 zona, nota varia com aberto/fechado |
 | 3 | Prato 2 zonas | 2 | `cymbal2zoneMUX()` | bow + edge |
 | 4 | Chimbal 2 zonas *(oculto)* | 2 | `HH2zoneMUX()` | bow + edge, nota varia com aberto/fechado |
@@ -69,6 +69,40 @@ vibração nos tipos 3/5/8, um mecanismo completamente diferente; ver
 **Ainda não testado em hardware real** — o circuito real (pull-up/pull-down
 exato da fita, ruído esperado em repouso) só foi validado por leitura de
 código; o valor default de `threshold` pode precisar de ajuste na bancada.
+
+### Tipo 1 — Aro / Dual (pele + aro)
+
+**Desde 2026-10-17: aro por razão** (`dualRatioMUX()`, lib vendorizada) — é
+a regra do aro da caixa 3 zonas, sem a zona de borda. **tip = piezo da
+pele**, **ring = piezo do aro**.
+
+| Zona | Regra (dentro da janela de scan) | Campo | Nota |
+|---|---|---|---|
+| **Aro** (`"rim"`) | pico do ring ÷ pico do tip ≥ `rim_threshold` % (padrão **70**) | `rim_threshold` ("ARO%" na tela) | `note_rim` |
+| **Pele** (`"head"`) | o resto | — | `note` |
+
+- `rim_sensitivity` não é usado neste tipo.
+- Velocity: do pico do tip (pele) ou do maior dos 2 picos (aro).
+- **Por que mudou**: a regra da lib original (`dualPiezoSensing()`: pele −
+  aro < `rim_sensitivity`×10 **e** aro > `rim_threshold`×10) usa limiar
+  absoluto, e o vazamento da pele pro piezo do aro não é proporcional à
+  força. Na `captures/rawpad/sessao4` (caixa caseira, 60 batidas): centro
+  fraco vaza ~0 pro aro, centro forte vaza 0,25–0,45 do pico da pele, borda
+  da pele até 0,62, aro quase sempre ≥ 0,86 (mediana 1,7). Melhor ajuste da
+  regra antiga: 82% de acerto; razão ≥ 0,7: 98%.
+- O `scan_time` precisa ser **≥ 10 ms**: na borda da pele o pico do piezo da
+  pele chega 4–7 ms depois do disparo; com scan curto a razão da borda sobe
+  e ela vira aro (87–92% de acerto com 4 ms). O firmware põe 10 ms ao virar
+  Dual e a calibração nunca sai abaixo disso.
+- **Calibração**: a rodada da pele (bata no centro **e** perto da borda) e a
+  rodada do aro guardam a razão aro/pele de cada golpe; o ARO% é o limiar
+  que erra menos golpes, no meio da faixa de empate. Se pele e aro se
+  sobrepõem, a tela e o ConfigTool mostram quantos golpes ficariam na zona
+  errada.
+- **Configurações antigas**: na primeira inicialização com esse firmware,
+  todo pad Dual salvo volta para ARO% 70 e scan ≥ 10 ms (os valores antigos
+  eram limiares, sem sentido como razão). Trocar um pad para Dual também
+  aplica esses padrões.
 
 ### Tipo 8 — Caixa 3 zonas (centro/borda/aro)
 
