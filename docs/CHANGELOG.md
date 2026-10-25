@@ -20,6 +20,10 @@ Registro cronológico do que foi feito no projeto (mais recente no topo).
   muda com "fábrica"/restaurar.
 - Comandos `start_xtalk_cal` / `stop_xtalk_cal` / `get_xtalk` /
   `clear_xtalk`; eventos `xtalk_cal_status` e `xtalk_matrix`.
+- **Na tela do módulo**: GLOBAL > **XTALK** abre a calibração (golpes por
+  pad, para onde vazou o último golpe; clique salva, segurar cancela). A
+  linha mostra `CALIBRADO` quando há tabela. Iniciada pelo app, a mesma
+  tela abre sozinha no módulo.
 - **Pedal de chimbal**: evento `pedal` na serial com a posição lida, a
   faixa calibrada, o CC e "fechado". Com ele, o diagnóstico do pedal real
   mostrou leitura e calibração boas (524–771 para 520–760, CC contínuo) e

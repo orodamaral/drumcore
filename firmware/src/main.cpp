@@ -548,6 +548,12 @@ byte xcalHits[NUM_PADS];
 uint16_t xcalCap[NUM_PADS];
 unsigned long xcalCaptureUntil = 0;  // 0 = sem captura em andamento
 unsigned long xcalHoldoffUntil = 0;
+// Ultimo golpe, pra tela do modulo (PAGE_XTALK).
+int xcalLastSrc = -1;
+char xcalLastResult = 0; // 'o' ok, 'w' fraco, 'm' 2 pads juntos
+byte xcalLastVictim[2];
+byte xcalLastPct[2];
+byte xcalLastVictimCount = 0;
 
 // padHihatInvert[i]: so' relevante pra padTypeIsHihatPedal() (controlador
 // de pedal FSR/VH-10/VH-11 ou optico TCRT5000) - alguns sensores mandam o
@@ -602,6 +608,8 @@ void onEncHold();
 void goToLive(); // usado pelo onOtaStatus() (Wi-Fi), definido bem mais abaixo
 // Crosstalk calibrado (2026-10-25) - usados pelos comandos, definidos perto do suppressCrosstalk().
 void sendXtalkCalStatus(int source, const char *result, const uint16_t *peaks);
+void startXtalkCal();
+void stopXtalkCal(bool apply);
 void saveXtalkMatrix();
 void sendXtalkMatrix();
 
@@ -950,6 +958,7 @@ enum ScreenPage
     PAGE_GLOBAL,
     PAGE_AUTOTUNE, // Fase O - ver docs/01-decisoes-arquiteturais.md
     PAGE_OTA,      // Fase AE (fase 3) - atualizacao do firmware pelo Wi-Fi
+    PAGE_XTALK,    // 2026-10-25 - assistente de crosstalk (GLOBAL > XTALK ou app)
 };
 
 ScreenPage currentPage = PAGE_BOOT;
@@ -979,7 +988,8 @@ bool globalEditing = false;
 #define GLOBAL_ROW_FACTORY 4
 #define GLOBAL_ROW_WIFI 5 // Fase AE - clique liga/desliga
 #define GLOBAL_ROW_DISPLAY 6 // 2026-10-11 - clique inverte a tela
-#define GLOBAL_ROW_COUNT 7
+#define GLOBAL_ROW_XTALK 7   // 2026-10-25 - clique abre a calibracao de crosstalk
+#define GLOBAL_ROW_COUNT 8
 // So' cabem 6 linhas acima dos dados do Wi-Fi - a lista rola.
 #define GLOBAL_VISIBLE_ROWS 6
 byte globalTop = 0;
@@ -2136,39 +2146,12 @@ void handleSerialCommand(const String &line)
     else if (strcmp(cmd, "start_xtalk_cal") == 0)
     {
         // Assistente de crosstalk: o usuario bate forte em cada pad, um de
-        // cada vez - ver xtalkCalTick().
-        memset(xcalNew, 0, sizeof(xcalNew));
-        memset(xcalHits, 0, sizeof(xcalHits));
-        xcalCaptureUntil = 0;
-        xcalHoldoffUntil = 0;
-        xcalRunning = true;
-        sendXtalkCalStatus(-1, "", xcalCap);
+        // cada vez - ver xtalkCalTick(). A tela do modulo abre a PAGE_XTALK.
+        startXtalkCal();
     }
     else if (strcmp(cmd, "stop_xtalk_cal") == 0)
     {
-        // apply=true: os pads batidos substituem a coluna deles na tabela;
-        // os nao batidos mantem a calibracao anterior.
-        bool apply = doc["apply"] | false;
-        if (xcalRunning && apply)
-        {
-            for (byte j = 0; j < NUM_PADS; j++)
-            {
-                if (xcalHits[j] == 0)
-                {
-                    continue;
-                }
-                for (byte i = 0; i < NUM_PADS; i++)
-                {
-                    xtalkMatrix[i][j] = xcalNew[i][j];
-                }
-                xtalkMatrixValid = true;
-            }
-            saveXtalkMatrix();
-        }
-        xcalRunning = false;
-        xcalCaptureUntil = 0;
-        sendXtalkCalStatus(-1, "", xcalCap);
-        sendXtalkMatrix();
+        stopXtalkCal(doc["apply"] | false);
     }
     else if (strcmp(cmd, "clear_xtalk") == 0)
     {
@@ -2811,6 +2794,10 @@ void sendXtalkCalStatus(int source, const char *result, const uint16_t *peaks)
     }
     if (source >= 0)
     {
+        xcalLastSrc = source;
+        xcalLastResult = result[0];
+        xcalLastVictimCount = 0;
+        forceScreenRedraw = true;
         JsonObject last = doc["last"].to<JsonObject>();
         last["source"] = source;
         last["result"] = result; // ok | weak | multi
@@ -2829,6 +2816,23 @@ void sendXtalkCalStatus(int source, const char *result, const uint16_t *peaks)
                 JsonArray pair = v.add<JsonArray>();
                 pair.add(i);
                 pair.add(pct);
+                // guarda os 2 maiores pra tela
+                byte pc = (byte)min(pct, 255);
+                if (xcalLastVictimCount < 2)
+                {
+                    xcalLastVictim[xcalLastVictimCount] = i;
+                    xcalLastPct[xcalLastVictimCount] = pc;
+                    xcalLastVictimCount++;
+                }
+                else
+                {
+                    byte k = xcalLastPct[0] < xcalLastPct[1] ? 0 : 1;
+                    if (pc > xcalLastPct[k])
+                    {
+                        xcalLastVictim[k] = i;
+                        xcalLastPct[k] = pc;
+                    }
+                }
             }
         }
     }
@@ -2924,6 +2928,55 @@ void xtalkCalTick()
         xcalHits[src]++;
     }
     sendXtalkCalStatus(src, "ok", xcalCap);
+}
+
+void startXtalkCal()
+{
+    memset(xcalNew, 0, sizeof(xcalNew));
+    memset(xcalHits, 0, sizeof(xcalHits));
+    xcalCaptureUntil = 0;
+    xcalHoldoffUntil = 0;
+    xcalLastSrc = -1;
+    xcalRunning = true;
+    if (currentPage == PAGE_AUTOTUNE)
+    {
+        cancelAutoTune();
+    }
+    currentPage = PAGE_XTALK; // a tela acompanha, mesmo iniciado pelo app
+    forceScreenRedraw = true;
+    sendXtalkCalStatus(-1, "", xcalCap);
+}
+
+// apply=true: os pads batidos substituem a coluna deles na tabela; os nao
+// batidos mantem a calibracao anterior.
+void stopXtalkCal(bool apply)
+{
+    if (xcalRunning && apply)
+    {
+        for (byte j = 0; j < NUM_PADS; j++)
+        {
+            if (xcalHits[j] == 0)
+            {
+                continue;
+            }
+            for (byte i = 0; i < NUM_PADS; i++)
+            {
+                xtalkMatrix[i][j] = xcalNew[i][j];
+            }
+            xtalkMatrixValid = true;
+        }
+        saveXtalkMatrix();
+    }
+    xcalRunning = false;
+    xcalCaptureUntil = 0;
+    if (currentPage == PAGE_XTALK)
+    {
+        currentPage = PAGE_GLOBAL; // volta pra lista do GLOBAL
+        homeBrowsing = false;
+    }
+    forceScreenRedraw = true;
+    sendXtalkCalStatus(-1, "", xcalCap);
+    sendXtalkMatrix();
 }
 
 void saveXtalkMatrix()
@@ -4218,6 +4271,10 @@ int currentFieldStep(const FieldDef &field)
 // completo (substitui os antigos onEnc1Rotate/onEnc2Rotate).
 void onEncRotate(int delta)
 {
+    if (currentPage == PAGE_XTALK)
+    {
+        return; // so' click (salvar) e hold (cancelar)
+    }
     if (currentPage == PAGE_OTA)
     {
         return; // so' click (confirmar) e hold (cancelar)
@@ -4368,6 +4425,12 @@ void showToast(const char *line1, const char *line2)
 // onEnc1Click/onEnc2Click.
 void onEncClick()
 {
+    if (currentPage == PAGE_XTALK)
+    {
+        stopXtalkCal(true);
+        showToast("XTALK", "TABELA SALVA");
+        return;
+    }
     if (currentPage == PAGE_OTA)
     {
         WifiOtaState st = wifiOtaState();
@@ -4436,6 +4499,11 @@ void onEncClick()
         {
             loadAllFromEeprom();
             showToast("RESTAURADO", "32 PADS DA NVS");
+        }
+        else if (globalSelection == GLOBAL_ROW_XTALK)
+        {
+            startXtalkCal(); // abre a PAGE_XTALK
+            return;
         }
         else if (globalSelection == GLOBAL_ROW_DISPLAY)
         {
@@ -4535,6 +4603,12 @@ void onEncClick()
 // LIVE. Substitui os antigos onEnc1Hold/onEnc2Hold.
 void onEncHold()
 {
+    if (currentPage == PAGE_XTALK)
+    {
+        stopXtalkCal(false);
+        showToast("XTALK", "CANCELADO");
+        return;
+    }
     if (currentPage == PAGE_OTA)
     {
         WifiOtaState st = wifiOtaState();
@@ -5328,6 +5402,9 @@ bool renderGlobal()
         case GLOBAL_ROW_WIFI:
             drawValueRow(y, "WI-FI", wifiLabel, sel, false);
             break;
+        case GLOBAL_ROW_XTALK:
+            drawValueRow(y, "XTALK", xtalkMatrixValid ? "CALIBRADO" : ">", sel, false);
+            break;
         case GLOBAL_ROW_DISPLAY:
             drawValueRow(y, "TELA", displayFlip ? "INVERTIDA" : "NORMAL", sel, false);
             break;
@@ -5408,6 +5485,102 @@ bool renderGlobal()
 
 // Tela do assistente de auto-tune (Fase O) - ver comentario grande no bloco
 // de estados (perto de goToLive()) pro racional completo.
+// Nome curto do pad pra tela (ate' 6 letras): apelido ou "P12".
+void padShortName(byte i, char *out, size_t n)
+{
+    if (padLabels[i][0])
+    {
+        snprintf(out, n, "%.6s", padLabels[i]);
+    }
+    else
+    {
+        snprintf(out, n, "P%d", i + 1);
+    }
+}
+
+// 2026-10-25 - assistente de crosstalk na tela do modulo.
+bool renderXtalk()
+{
+    if (!forceScreenRedraw)
+    {
+        return false;
+    }
+    forceScreenRedraw = false;
+
+    canvas.fillScreen(COL_BG);
+    drawTitleBar("CROSSTALK", "CAL", COL_EDIT);
+    canvas.setTextSize(1);
+    canvas.setTextColor(COL_TXT);
+    canvas.setCursor(4, 16);
+    canvas.print("BATA FORTE EM CADA PAD");
+    canvas.setTextColor(COL_TXT_DIM);
+    canvas.setCursor(4, 26);
+    canvas.print("um por vez, 3 a 5 vezes");
+
+    byte total = 0, done = 0;
+    for (byte i = 0; i < NUM_PADS; i++)
+    {
+        if (xtalkPadEligible(i))
+        {
+            total++;
+            if (xcalHits[i] > 0)
+            {
+                done++;
+            }
+        }
+    }
+    char buf[32];
+    snprintf(buf, sizeof(buf), "PADS BATIDOS %d/%d", done, total);
+    canvas.setTextColor(COL_ACCENT);
+    canvas.setCursor(4, 42);
+    canvas.print(buf);
+
+    if (xcalLastSrc >= 0)
+    {
+        char name[8];
+        padShortName(xcalLastSrc, name, sizeof(name));
+        canvas.setTextColor(COL_TXT);
+        canvas.setCursor(4, 58);
+        canvas.print("ULTIMO: ");
+        canvas.print(name);
+        canvas.setCursor(4, 70);
+        if (xcalLastResult == 'w')
+        {
+            canvas.setTextColor(COL_EDIT);
+            canvas.print("fraco - bata mais forte");
+        }
+        else if (xcalLastResult == 'm')
+        {
+            canvas.setTextColor(COL_EDIT);
+            canvas.print("2 pads juntos - ignorado");
+        }
+        else if (xcalLastVictimCount == 0)
+        {
+            canvas.setTextColor(COL_OK);
+            canvas.print("sem vazamento");
+        }
+        else
+        {
+            canvas.setTextColor(COL_TXT_DIM);
+            canvas.print("-> ");
+            for (byte k = 0; k < xcalLastVictimCount; k++)
+            {
+                padShortName(xcalLastVictim[k], name, sizeof(name));
+                snprintf(buf, sizeof(buf), "%s %d%% ", name, xcalLastPct[k]);
+                canvas.print(buf);
+            }
+        }
+    }
+
+    canvas.setTextColor(COL_OK);
+    canvas.setCursor(4, 100);
+    canvas.print("CLIQUE = SALVAR");
+    canvas.setTextColor(COL_TXT_DIM);
+    canvas.setCursor(4, 112);
+    canvas.print("SEGURE = CANCELAR");
+    return true;
+}
+
 // Fase AE (fase 3) - tela da atualizacao do firmware pelo Wi-Fi.
 bool renderOta()
 {
@@ -5738,6 +5911,9 @@ void renderScreen()
         break;
     case PAGE_OTA:
         dirty = renderOta();
+        break;
+    case PAGE_XTALK:
+        dirty = renderXtalk();
         break;
     }
 
