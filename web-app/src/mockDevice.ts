@@ -122,6 +122,7 @@ export class MockDevice {
   }
 
   private wifiActive = false
+  private rawTimer: ReturnType<typeof setInterval> | null = null
   private xtalkPairs: Array<[number, number, number]> = []
   private displayFlip = false
   private wifiAutostart = false
@@ -246,6 +247,8 @@ export class MockDevice {
   stop(): void {
     if (this.hitTimer) clearInterval(this.hitTimer)
     this.hitTimer = null
+    if (this.rawTimer) clearInterval(this.rawTimer)
+    this.rawTimer = null
     if (this.bleTimer) {
       clearTimeout(this.bleTimer)
       clearInterval(this.bleTimer)
@@ -308,6 +311,25 @@ export class MockDevice {
 
       case 'get_device_info':
         this.emit(this.deviceInfo())
+        break
+
+      case 'raw_monitor':
+        if (this.rawTimer) clearInterval(this.rawTimer)
+        this.rawTimer = null
+        if (cmd.enabled) {
+          this.rawTimer = setInterval(() => {
+            const n = this.pads.length
+            const used = this.pads.map((p, i) => (this.primary[i] ? (p.enabled ? 1 : 0) : 1))
+            const peaks = used.map((u) => (u ? 10 + Math.round(Math.random() * 25) : 0))
+            const sat = new Array(n).fill(0)
+            if (Math.random() < 0.15) {
+              const c = [4, 6, 7, 8, 10][Math.floor(Math.random() * 5)]
+              peaks[c] = c === 4 ? 4095 : 1200 + Math.round(Math.random() * 2400)
+              if (c === 4) sat[c] = 3
+            }
+            this.emit({ type: 'raw_levels', peaks, sat, used })
+          }, 100)
+        }
         break
 
       case 'get_xtalk':

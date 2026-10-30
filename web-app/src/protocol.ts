@@ -293,6 +293,16 @@ export interface XtalkCalStatus {
   }
 }
 
+/** Monitor de entradas (2026-10-30) - raw_levels, a cada ~100 ms. */
+export interface RawLevels {
+  /** pico bruto (0-4095, antes do gain) de cada canal na janela */
+  peaks: number[]
+  /** leituras >= 4090 (saturadas) na janela */
+  sat: number[]
+  /** 1 = canal lido nesta janela */
+  used: number[]
+}
+
 export interface XtalkMatrix {
   calibrated: boolean
   /** [vítima, fonte, %] - só os pares de 2% para cima */
@@ -473,6 +483,7 @@ export type IncomingMessage =
   | ({ type: 'ota_status' } & OtaStatus)
   | ({ type: 'xtalk_cal_status' } & XtalkCalStatus)
   | ({ type: 'xtalk_matrix' } & XtalkMatrix)
+  | ({ type: 'raw_levels' } & RawLevels)
 
 export function parseIncoming(line: string): IncomingMessage | null {
   try {

@@ -14,7 +14,8 @@ import {
   WifiInfo,
   OtaStatus,
   XtalkCalStatus,
-  XtalkMatrix
+  XtalkMatrix,
+  RawLevels
 } from './protocol'
 import PadGrid, { HitEvent, stepPad } from './components/PadGrid'
 import PadEditor from './components/PadEditor'
@@ -37,6 +38,7 @@ import { DEVICE_HOSTED } from './hosted'
 import WifiPanel, { WifiScanState } from './components/WifiPanel'
 import OtaManager from './components/OtaManager'
 import XtalkPanel from './components/XtalkPanel'
+import RawMonitor from './components/RawMonitor'
 
 const PAD_COUNT = 32
 
@@ -98,6 +100,7 @@ export default function App() {
   const [xtalkCal, setXtalkCal] = useState<XtalkCalStatus | null>(null)
   const [xtalkMatrix, setXtalkMatrix] = useState<XtalkMatrix | null>(null)
   const [xtalkUnsupported, setXtalkUnsupported] = useState(false)
+  const [rawLevels, setRawLevels] = useState<RawLevels | null>(null)
   const reconnectTimer = useRef<number | null>(null)
 
   const mockDeviceRef = useRef<MockDevice | null>(null)
@@ -162,6 +165,9 @@ export default function App() {
         break
       case 'xtalk_cal_status':
         setXtalkCal({ state: message.state, hits: message.hits, last: message.last })
+        break
+      case 'raw_levels':
+        setRawLevels({ peaks: message.peaks, sat: message.sat, used: message.used })
         break
       case 'xtalk_matrix':
         setXtalkMatrix({ calibrated: message.calibrated, pairs: message.pairs })
@@ -837,6 +843,14 @@ export default function App() {
                   </select>
                 </div>
               </section>
+
+              <RawMonitor
+                connected={connected}
+                pads={pads}
+                jackLabels={jackLabels}
+                levels={rawLevels}
+                onSend={send}
+              />
 
               <XtalkPanel
                 pads={pads}

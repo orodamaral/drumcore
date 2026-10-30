@@ -2,6 +2,19 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-10-30 — Monitor de entradas (leitura bruta de cada porta)
+
+- ConfigTool, aba Global > **Monitor de entradas**: os 16 jacks, tip e ring,
+  com o pico bruto de cada porta direto do conversor (0–4095, antes do
+  ganho), a marca do maior pico e o aviso **SATUROU** quando o sinal passa
+  do teto. Serve para ajustar o nível dos piezos (saturação = dinâmica
+  perdida nas batidas fortes), achar ruído e testar jacks recém-soldados
+  (opção de ler também as portas sem pad).
+- Comando `raw_monitor` / evento `raw_levels`; desliga sozinho 30 s depois
+  de o app sair.
+- Serial com buffer de saída de 2 KB: antes, mensagens maiores travavam o
+  loop esperando a transmissão (até ~22 ms).
+
 ## 2026-10-25 — Crosstalk calibrado (pads disparando outros)
 
 - **Problema**: batida forte no bumbo disparava o tom 1 e o tom 2, mesmo sem

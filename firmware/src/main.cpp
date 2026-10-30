@@ -548,6 +548,24 @@ byte xcalHits[NUM_PADS];
 uint16_t xcalCap[NUM_PADS];
 unsigned long xcalCaptureUntil = 0;  // 0 = sem captura em andamento
 unsigned long xcalHoldoffUntil = 0;
+// ---------------------------------------------------------------------------
+// Monitor de entradas (2026-10-30): pico bruto (antes do gain) de cada canal
+// e quantas leituras bateram no teto do ADC, mandados a cada RAWMON_SEND_MS
+// como raw_levels - pra ver no ConfigTool se um piezo satura, se esta' fraco
+// ou com ruido. Ligado pelo app (raw_monitor) e desligado sozinho sem
+// renovacao em RAWMON_KEEPALIVE_MS (app fechado). Com "all", le' tambem os
+// canais sem pad (testar um jack recem-soldado).
+// ---------------------------------------------------------------------------
+#define RAWMON_SEND_MS 100
+#define RAWMON_KEEPALIVE_MS 30000
+#define RAWMON_SAT_LEVEL 4090 // >= isso conta como saturado (teto 4095)
+bool rawMonOn = false;
+bool rawMonAll = false;
+unsigned long rawMonLastSendMs = 0;
+unsigned long rawMonKeepaliveMs = 0;
+uint16_t rawMonPeak[NUM_PADS];
+uint16_t rawMonSat[NUM_PADS];
+
 // Ultimo golpe, pra tela do modulo (PAGE_XTALK).
 int xcalLastSrc = -1;
 char xcalLastResult = 0; // 'o' ok, 'w' fraco, 'm' 2 pads juntos
@@ -2160,6 +2178,15 @@ void handleSerialCommand(const String &line)
         saveXtalkMatrix();
         sendXtalkMatrix();
     }
+    else if (strcmp(cmd, "raw_monitor") == 0)
+    {
+        // {"enabled":true,"all":false} - renovar a cada <30 s pra continuar.
+        rawMonOn = doc["enabled"] | false;
+        rawMonAll = doc["all"] | false;
+        rawMonKeepaliveMs = millis();
+        memset(rawMonPeak, 0, sizeof(rawMonPeak));
+        memset(rawMonSat, 0, sizeof(rawMonSat));
+    }
     else if (strcmp(cmd, "get_xtalk") == 0)
     {
         sendXtalkMatrix();
@@ -2928,6 +2955,39 @@ void xtalkCalTick()
         xcalHits[src]++;
     }
     sendXtalkCalStatus(src, "ok", xcalCap);
+}
+
+void rawMonTick()
+{
+    if (!rawMonOn)
+    {
+        return;
+    }
+    unsigned long now = millis();
+    if (now - rawMonKeepaliveMs > RAWMON_KEEPALIVE_MS)
+    {
+        rawMonOn = false; // app sumiu
+        return;
+    }
+    if (now - rawMonLastSendMs < RAWMON_SEND_MS)
+    {
+        return;
+    }
+    rawMonLastSendMs = now;
+    JsonDocument doc;
+    doc["type"] = "raw_levels";
+    JsonArray peaks = doc["peaks"].to<JsonArray>();
+    JsonArray sat = doc["sat"].to<JsonArray>();
+    JsonArray used = doc["used"].to<JsonArray>(); // canal lido nesta janela
+    for (byte c = 0; c < NUM_PADS; c++)
+    {
+        peaks.add(rawMonPeak[c]);
+        sat.add(rawMonSat[c]);
+        used.add((channelInUse(c) || rawMonAll) ? 1 : 0);
+    }
+    memset(rawMonPeak, 0, sizeof(rawMonPeak));
+    memset(rawMonSat, 0, sizeof(rawMonSat));
+    sendJsonLine(doc);
 }
 
 void startXtalkCal()
@@ -5925,6 +5985,10 @@ void renderScreen()
 
 void setup()
 {
+    // 2026-10-30: buffer de saida maior - com o padrao, um raw_levels (~300
+    // bytes) enchia o buffer e o Serial.print esperava a transmissao (115200
+    // baud = ~26 ms), travando a leitura dos pads.
+    Serial.setTxBufferSize(2048);
     Serial.begin(115200); // com ARDUINO_USB_CDC_ON_BOOT=0, "Serial" e' a UART
                            // fisica (GPIO43/44), nao a USB nativa - ver
                            // docs/01-decisoes-arquiteturais.md
@@ -6125,7 +6189,7 @@ void scanActiveChannels()
         for (byte ch = 0; ch < PADS_PER_MUX; ch++)
         {
             byte c = m * PADS_PER_MUX + ch;
-            if (!channelInUse(c))
+            if (!channelInUse(c) && !(rawMonOn && rawMonAll))
             {
                 rawValue[c] = 0;
                 continue;
@@ -6138,6 +6202,17 @@ void scanActiveChannels()
             if (rawValue[c] > chPeakCur[c])
             {
                 chPeakCur[c] = rawValue[c]; // crosstalk calibrado - antes do gain
+            }
+            if (rawMonOn)
+            {
+                if (rawValue[c] > rawMonPeak[c])
+                {
+                    rawMonPeak[c] = rawValue[c];
+                }
+                if (rawValue[c] >= RAWMON_SAT_LEVEL && rawMonSat[c] < 65535)
+                {
+                    rawMonSat[c]++;
+                }
             }
         }
     }
@@ -6199,6 +6274,7 @@ void loop()
     }
 
     xtalkCalTick();      // 2026-10-25 - assistente de crosstalk (antes da supressao)
+    rawMonTick();        // 2026-10-30 - monitor de entradas (raw_levels)
     suppressCrosstalk(); // Fase P - depois do dispatch, antes de decidir o que enviar
 
     for (byte i = 0; i < NUM_PADS; i++)
