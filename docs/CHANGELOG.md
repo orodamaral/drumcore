@@ -12,6 +12,12 @@ Registro cronológico do que foi feito no projeto (mais recente no topo).
   (opção de ler também as portas sem pad).
 - Comando `raw_monitor` / evento `raw_levels`; desliga sozinho 30 s depois
   de o app sair.
+- **Uma entrada por vez, para ajustar trimpot**: no ConfigTool, seletor de
+  entrada com barra grande, **último golpe**, maior pico e saturação; no
+  **módulo**, GLOBAL > **MONITOR** (o encoder escolhe a entrada, J1 tip a
+  J16 ring, inclusive as sem pad; clique zera, segurar volta). A tela
+  atualiza só a barra (até 20×/s) e os números quando mudam, para não
+  travar a leitura dos pads.
 - Serial com buffer de saída de 2 KB: antes, mensagens maiores travavam o
   loop esperando a transmissão (até ~22 ms).
 

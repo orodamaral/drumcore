@@ -1623,6 +1623,61 @@ input:disabled {
   font-weight: 600;
 }
 
+.rawmon-focus {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.rawmon-focus-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.rawmon-focus-head select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rawmon-big-track {
+  position: relative;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--bg);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.rawmon-mark85 {
+  position: absolute;
+  top: 0;
+  left: 85%;
+  width: 1px;
+  height: 100%;
+  background: var(--line);
+}
+
+.rawmon-nums dd.rawmon-big {
+  font-size: 26px;
+}
+
+.rawmon-nums dd.hot {
+  color: var(--edit);
+}
+
+.rawmon-nums dd.sat {
+  color: var(--hit);
+}
+
+.rawmon-nums dd.ok {
+  color: var(--ok);
+}
+
 /* ---------------------------------------------------------------- crosstalk */
 
 .xtalk-hits {

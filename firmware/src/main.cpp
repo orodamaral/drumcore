@@ -559,6 +559,22 @@ unsigned long xcalHoldoffUntil = 0;
 #define RAWMON_SEND_MS 100
 #define RAWMON_KEEPALIVE_MS 30000
 #define RAWMON_SAT_LEVEL 4090 // >= isso conta como saturado (teto 4095)
+// Monitor na TELA do modulo (PAGE_RAWMON): 1 entrada escolhida no encoder,
+// com o pico do ultimo golpe (pra ir ajustando um trimpot) e o maior pico.
+#define MON_HIT_LEVEL 150   // acima disso comeca um golpe (ruido fica bem abaixo)
+#define MON_HIT_END_MS 40   // golpe acaba depois de 40 ms abaixo do nivel
+#define MON_BAR_MS 50       // barra atualiza ate' 20x/s (so' o retangulo dela)
+byte monCh = 0;             // canal 0-31 (jack = canal/2, tip = par)
+uint16_t monWinMax = 0;     // maior leitura desde o ultimo desenho da barra
+uint16_t monHold = 0;       // maior pico desde que entrou/zerou
+uint16_t monLastHit = 0;    // pico do ultimo golpe
+uint16_t monSat = 0;        // leituras saturadas desde que entrou/zerou
+uint16_t monBurstMax = 0;
+bool monInBurst = false;
+unsigned long monBelowSinceMs = 0;
+bool monNumsDirty = false;
+unsigned long monBarDrawnMs = 0;
+
 bool rawMonOn = false;
 bool rawMonAll = false;
 unsigned long rawMonLastSendMs = 0;
@@ -628,6 +644,8 @@ void goToLive(); // usado pelo onOtaStatus() (Wi-Fi), definido bem mais abaixo
 void sendXtalkCalStatus(int source, const char *result, const uint16_t *peaks);
 void startXtalkCal();
 void stopXtalkCal(bool apply);
+void monSample(uint16_t v);
+void monReset();
 void saveXtalkMatrix();
 void sendXtalkMatrix();
 
@@ -977,6 +995,7 @@ enum ScreenPage
     PAGE_AUTOTUNE, // Fase O - ver docs/01-decisoes-arquiteturais.md
     PAGE_OTA,      // Fase AE (fase 3) - atualizacao do firmware pelo Wi-Fi
     PAGE_XTALK,    // 2026-10-25 - assistente de crosstalk (GLOBAL > XTALK ou app)
+    PAGE_RAWMON,   // 2026-10-30 - monitor de uma entrada (GLOBAL > MONITOR)
 };
 
 ScreenPage currentPage = PAGE_BOOT;
@@ -1007,7 +1026,8 @@ bool globalEditing = false;
 #define GLOBAL_ROW_WIFI 5 // Fase AE - clique liga/desliga
 #define GLOBAL_ROW_DISPLAY 6 // 2026-10-11 - clique inverte a tela
 #define GLOBAL_ROW_XTALK 7   // 2026-10-25 - clique abre a calibracao de crosstalk
-#define GLOBAL_ROW_COUNT 8
+#define GLOBAL_ROW_MONITOR 8 // 2026-10-30 - clique abre o monitor de uma entrada
+#define GLOBAL_ROW_COUNT 9
 // So' cabem 6 linhas acima dos dados do Wi-Fi - a lista rola.
 #define GLOBAL_VISIBLE_ROWS 6
 byte globalTop = 0;
@@ -2957,6 +2977,56 @@ void xtalkCalTick()
     sendXtalkCalStatus(src, "ok", xcalCap);
 }
 
+void monReset()
+{
+    monWinMax = 0;
+    monHold = 0;
+    monLastHit = 0;
+    monSat = 0;
+    monBurstMax = 0;
+    monInBurst = false;
+    monNumsDirty = true;
+}
+
+// Chamado na varredura, pra cada leitura do canal escolhido na tela.
+void monSample(uint16_t v)
+{
+    if (v > monWinMax)
+    {
+        monWinMax = v;
+    }
+    if (v > monHold)
+    {
+        monHold = v;
+        monNumsDirty = true;
+    }
+    if (v >= RAWMON_SAT_LEVEL && monSat < 65535)
+    {
+        monSat++;
+        monNumsDirty = true;
+    }
+    unsigned long now = millis();
+    if (v >= MON_HIT_LEVEL)
+    {
+        if (!monInBurst)
+        {
+            monInBurst = true;
+            monBurstMax = 0;
+        }
+        if (v > monBurstMax)
+        {
+            monBurstMax = v;
+        }
+        monBelowSinceMs = now;
+    }
+    else if (monInBurst && now - monBelowSinceMs >= MON_HIT_END_MS)
+    {
+        monInBurst = false;
+        monLastHit = monBurstMax;
+        monNumsDirty = true;
+    }
+}
+
 void rawMonTick()
 {
     if (!rawMonOn)
@@ -4331,6 +4401,13 @@ int currentFieldStep(const FieldDef &field)
 // completo (substitui os antigos onEnc1Rotate/onEnc2Rotate).
 void onEncRotate(int delta)
 {
+    if (currentPage == PAGE_RAWMON)
+    {
+        monCh = (byte)((monCh + delta + NUM_PADS * 4) % NUM_PADS); // escolhe a entrada
+        monReset();
+        forceScreenRedraw = true;
+        return;
+    }
     if (currentPage == PAGE_XTALK)
     {
         return; // so' click (salvar) e hold (cancelar)
@@ -4485,6 +4562,11 @@ void showToast(const char *line1, const char *line2)
 // onEnc1Click/onEnc2Click.
 void onEncClick()
 {
+    if (currentPage == PAGE_RAWMON)
+    {
+        monReset(); // zera os picos
+        return;
+    }
     if (currentPage == PAGE_XTALK)
     {
         stopXtalkCal(true);
@@ -4559,6 +4641,13 @@ void onEncClick()
         {
             loadAllFromEeprom();
             showToast("RESTAURADO", "32 PADS DA NVS");
+        }
+        else if (globalSelection == GLOBAL_ROW_MONITOR)
+        {
+            monReset();
+            currentPage = PAGE_RAWMON;
+            forceScreenRedraw = true;
+            return;
         }
         else if (globalSelection == GLOBAL_ROW_XTALK)
         {
@@ -4663,6 +4752,13 @@ void onEncClick()
 // LIVE. Substitui os antigos onEnc1Hold/onEnc2Hold.
 void onEncHold()
 {
+    if (currentPage == PAGE_RAWMON)
+    {
+        currentPage = PAGE_GLOBAL;
+        homeBrowsing = false;
+        forceScreenRedraw = true;
+        return;
+    }
     if (currentPage == PAGE_XTALK)
     {
         stopXtalkCal(false);
@@ -5465,6 +5561,9 @@ bool renderGlobal()
         case GLOBAL_ROW_XTALK:
             drawValueRow(y, "XTALK", xtalkMatrixValid ? "CALIBRADO" : ">", sel, false);
             break;
+        case GLOBAL_ROW_MONITOR:
+            drawValueRow(y, "MONITOR", ">", sel, false);
+            break;
         case GLOBAL_ROW_DISPLAY:
             drawValueRow(y, "TELA", displayFlip ? "INVERTIDA" : "NORMAL", sel, false);
             break;
@@ -5556,6 +5655,140 @@ void padShortName(byte i, char *out, size_t n)
     {
         snprintf(out, n, "P%d", i + 1);
     }
+}
+
+// --- Monitor de uma entrada (PAGE_RAWMON) ---
+#define MON_BAR_X 4
+#define MON_BAR_Y 30
+#define MON_BAR_W 152
+#define MON_BAR_H 14
+#define MON_NUMS_Y 48
+#define MON_NUMS_H 52
+
+uint16_t monLevelColor(uint16_t v)
+{
+    if (v >= RAWMON_SAT_LEVEL)
+    {
+        return COL_HIT; // saturou
+    }
+    return v > (uint16_t)(ADC_RAW_MAX * 0.85f) ? COL_EDIT : COL_ACCENT;
+}
+
+void drawMonBar(uint16_t level)
+{
+    canvas.fillRect(MON_BAR_X, MON_BAR_Y, MON_BAR_W, MON_BAR_H, COL_SURFACE);
+    int w = (int)((long)level * (MON_BAR_W - 2) / ADC_RAW_MAX);
+    canvas.fillRect(MON_BAR_X + 1, MON_BAR_Y + 1, w, MON_BAR_H - 2, monLevelColor(level));
+    // marca de 85% e do maior pico
+    int m85 = MON_BAR_X + 1 + (MON_BAR_W - 2) * 85 / 100;
+    canvas.drawFastVLine(m85, MON_BAR_Y, MON_BAR_H, COL_LINE);
+    if (monHold > 0)
+    {
+        int hx = MON_BAR_X + 1 + (int)((long)monHold * (MON_BAR_W - 3) / ADC_RAW_MAX);
+        canvas.drawFastVLine(hx, MON_BAR_Y, MON_BAR_H, COL_TXT);
+    }
+}
+
+void drawMonNums()
+{
+    canvas.fillRect(0, MON_NUMS_Y, canvas.width(), MON_NUMS_H, COL_BG);
+    char buf[24];
+    canvas.setTextSize(1);
+    canvas.setTextColor(COL_TXT_DIM);
+    canvas.setCursor(4, MON_NUMS_Y + 2);
+    canvas.print("ULTIMO GOLPE");
+    canvas.setTextSize(2);
+    canvas.setTextColor(monLastHit >= RAWMON_SAT_LEVEL ? COL_HIT : COL_TXT);
+    canvas.setCursor(4, MON_NUMS_Y + 12);
+    snprintf(buf, sizeof(buf), "%u", monLastHit);
+    canvas.print(monLastHit ? buf : "--");
+    canvas.setTextSize(1);
+    canvas.setTextColor(COL_TXT_DIM);
+    canvas.setCursor(90, MON_NUMS_Y + 2);
+    canvas.print("MAIOR");
+    canvas.setTextColor(COL_TXT);
+    canvas.setCursor(90, MON_NUMS_Y + 14);
+    snprintf(buf, sizeof(buf), "%u", monHold);
+    canvas.print(buf);
+    canvas.setCursor(4, MON_NUMS_Y + 38);
+    if (monSat > 0)
+    {
+        canvas.setTextColor(COL_HIT);
+        snprintf(buf, sizeof(buf), "SATUROU x%u", monSat);
+        canvas.print(buf);
+    }
+    else
+    {
+        canvas.setTextColor(COL_OK);
+        canvas.print("sem saturacao");
+    }
+}
+
+bool renderRawMon()
+{
+    unsigned long now = millis();
+    if (forceScreenRedraw)
+    {
+        forceScreenRedraw = false;
+        canvas.fillScreen(COL_BG);
+        char right[12];
+        snprintf(right, sizeof(right), "J%d %s", monCh / 2 + 1, (monCh % 2) ? "RING" : "TIP");
+        drawTitleBar("MONITOR", right, COL_ACCENT);
+        canvas.setTextSize(1);
+        canvas.setCursor(4, 16);
+        if (channelPrimary[monCh])
+        {
+            canvas.setTextColor(padEnabled[monCh] ? COL_TXT : COL_TXT_DIM);
+            if (padLabels[monCh][0])
+            {
+                canvas.print(padLabels[monCh]);
+            }
+            else
+            {
+                canvas.print("Pad ");
+                canvas.print(monCh + 1);
+            }
+            if (!padEnabled[monCh])
+            {
+                canvas.print(" (deslig.)");
+            }
+        }
+        else
+        {
+            char name[8];
+            padShortName(monCh - 1, name, sizeof(name));
+            canvas.setTextColor(COL_TXT);
+            canvas.print("2a zona de ");
+            canvas.print(name);
+        }
+        drawMonBar(0);
+        drawMonNums();
+        canvas.setTextColor(COL_TXT_DIM);
+        canvas.setCursor(4, 110);
+        canvas.print("GIRE=ENTRADA CLIQUE=ZERA");
+        canvas.setCursor(4, 119);
+        canvas.print("SEGURE=VOLTAR");
+        monNumsDirty = false;
+        monWinMax = 0;
+        monBarDrawnMs = now;
+        return true;
+    }
+    // So' os retangulos que mudam (ver pushCanvasRect) - mandar o quadro
+    // inteiro levaria >10 ms e o proprio monitor perderia picos.
+    if (monNumsDirty)
+    {
+        monNumsDirty = false;
+        drawMonNums();
+        pushCanvasRect(0, MON_NUMS_Y, canvas.width(), MON_NUMS_H);
+    }
+    if (now - monBarDrawnMs >= MON_BAR_MS)
+    {
+        monBarDrawnMs = now;
+        drawMonBar(monWinMax);
+        monWinMax = 0;
+        pushCanvasRect(MON_BAR_X, MON_BAR_Y, MON_BAR_W, MON_BAR_H);
+    }
+    return false;
 }
 
 // 2026-10-25 - assistente de crosstalk na tela do modulo.
@@ -5975,6 +6208,9 @@ void renderScreen()
     case PAGE_XTALK:
         dirty = renderXtalk();
         break;
+    case PAGE_RAWMON:
+        dirty = renderRawMon();
+        break;
     }
 
     if (dirty)
@@ -6189,7 +6425,7 @@ void scanActiveChannels()
         for (byte ch = 0; ch < PADS_PER_MUX; ch++)
         {
             byte c = m * PADS_PER_MUX + ch;
-            if (!channelInUse(c) && !(rawMonOn && rawMonAll))
+            if (!channelInUse(c) && !(rawMonOn && rawMonAll) && !(currentPage == PAGE_RAWMON && c == monCh))
             {
                 rawValue[c] = 0;
                 continue;
@@ -6202,6 +6438,10 @@ void scanActiveChannels()
             if (rawValue[c] > chPeakCur[c])
             {
                 chPeakCur[c] = rawValue[c]; // crosstalk calibrado - antes do gain
+            }
+            if (currentPage == PAGE_RAWMON && c == monCh)
+            {
+                monSample(rawValue[c]);
             }
             if (rawMonOn)
             {
