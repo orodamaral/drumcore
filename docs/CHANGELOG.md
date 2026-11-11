@@ -2,6 +2,14 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-11-11 — WebDrum descontinuado
+
+- A página **WebDrum** (protótipo de módulo de bateria no navegador, Web MIDI
+  + Web Audio) saiu do site: `site/webdrum.html` e `site/assets/webdrum.*`
+  removidos, assim como o link no menu do site e do ConfigTool. O
+  `web-app/src/webDrumCore.ts` continua: é a conexão Web Serial do
+  ConfigTool, não tem relação com o WebDrum.
+
 ## 2026-10-30 — Monitor de entradas (leitura bruta de cada porta)
 
 - ConfigTool, aba Global > **Monitor de entradas**: os 16 jacks, tip e ring,

@@ -647,7 +647,6 @@ export default function App() {
                 <li><a href="../index.html">Visão geral</a></li>
                 <li><a href="../hardware.html">Hardware</a></li>
                 <li><a className="active" href="./">ConfigTool</a></li>
-                <li><a href="../webdrum.html">WebDrum</a></li>
               </>
             )}
             <li>
