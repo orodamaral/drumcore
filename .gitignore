@@ -33,3 +33,14 @@ firmware/include/webapp_files.h
 
 # Python
 __pycache__/
+
+# Mantidos so local de proposito (repo publico):
+# - material de terceiros (fotos, datasheets, keymaps da XLN/Toontrack, STL de case)
+# - drum-studio/ ainda em desenvolvimento local
+pics/
+Addictive Drums 2 Keymap.pdf
+Addictive_Drums_2_Keymap.xlsx
+SDX-Keys.jpg
+enclosure/
+stl/culpula3.stl
+drum-studio/

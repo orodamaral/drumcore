@@ -69,7 +69,7 @@
       <div class="card">
         <div class="icon">🖥️</div>
         <h3>Tela + encoder</h3>
-        <p>TFT ST7735 (SPI) com navegação por 1 encoder rotativo (girar navega, clicar entra/confirma, segurar volta) — configura sensibilidade, threshold, nota e mais direto na bancada.</p>
+        <p>TFT ST7735 (SPI) com navegação por 1 encoder rotativo (girar navega, clicar entra/confirma, segurar volta) — configura sensibilidade, threshold, nota e mais direto na bancada. A tela pode ser girada 180° para caixas em que ela fica de cabeça para baixo.</p>
       </div>
       <div class="card">
         <div class="icon">🧰</div>
@@ -80,6 +80,16 @@
         <div class="icon">🎯</div>
         <h3>Auto-calibração assistida</h3>
         <p>Assistente guiado que bate no pad algumas vezes e calcula sensibilidade/threshold sozinho, em vez de ajustar slider no escuro. No pedal de chimbal, basta segurar solto e depois fechado.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔇</div>
+        <h3>Crosstalk calibrado</h3>
+        <p>Bateu forte no bumbo e o tom disparou junto? Bate-se em cada pad, um de cada vez, e o módulo mede quanto cada um vaza para os outros ("Bumbo → Tom 1 18%"). Daí em diante, disparos que são só vazamento são descartados. Funciona pelo app ou direto na tela do módulo.</p>
+      </div>
+      <div class="card">
+        <div class="icon">📊</div>
+        <h3>Monitor de entradas</h3>
+        <p>Leitura bruta de cada porta (tip e ring dos 16 jacks), com o pico de cada golpe e aviso quando o sinal satura. Serve para ajustar o nível dos piezos, achar ruído e testar jacks recém-soldados — no app ou na tela do módulo, uma entrada por vez.</p>
       </div>
       <div class="card">
         <div class="icon">📡</div>
@@ -110,7 +120,7 @@
         </thead>
         <tbody>
           <tr><td>Simples</td><td class="mono">1</td><td class="wrap-text">Pad ou prato de zona única (bow).</td></tr>
-          <tr><td>Aro / Dual</td><td class="mono">2</td><td class="wrap-text">Pele (head) + aro (rim) — caixa/tom com sensor de aro.</td></tr>
+          <tr><td>Aro / Dual</td><td class="mono">2</td><td class="wrap-text">Pele (head) + aro (rim) — caixa/tom com sensor de aro. O aro é reconhecido pela razão entre o sinal do aro e o da pele (98% de acerto nas capturas de um pad real), com o limite calculado pela calibração.</td></tr>
           <tr><td>Chimbal simples <span class="dim">(legado)</span></td><td class="mono">1</td><td class="wrap-text">1 zona; a nota muda conforme o pedal está aberto ou fechado. Escondido no app: com Addictive Drums 2 e Superior Drummer 3, o chimbal é um pad comum com as notas controladas pelo CC do pedal.</td></tr>
           <tr><td>Prato 2 zonas</td><td class="mono">2</td><td class="wrap-text">Corpo (bow) + borda (edge).</td></tr>
           <tr><td>Chimbal 2 zonas <span class="dim">(legado)</span></td><td class="mono">2</td><td class="wrap-text">Bow + edge, nota muda com o pedal aberto/fechado. Escondido no app, pelo mesmo motivo.</td></tr>
