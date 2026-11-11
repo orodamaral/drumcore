@@ -14,6 +14,8 @@ interface Props {
   pads: Record<number, PadConfig>
   jackLabels: Record<number, string>
   levels: RawLevels | null
+  /** leituras de descarte do ADC (0-3); undefined = firmware sem a opção */
+  adcSettle: number | undefined
   onSend: (obj: Record<string, unknown>) => void
 }
 
@@ -38,7 +40,7 @@ function jackLabel(c: number): string {
   return `J${Math.floor(c / 2) + 1} ${c % 2 ? 'ring' : 'tip'}`
 }
 
-export default function RawMonitor({ connected, pads, jackLabels, levels, onSend }: Props) {
+export default function RawMonitor({ connected, pads, jackLabels, levels, adcSettle, onSend }: Props) {
   const [on, setOn] = useState(false)
   const [all, setAll] = useState(false)
   const [hold, setHold] = useState<number[]>(() => new Array(JACKS * 2).fill(0))
@@ -204,6 +206,38 @@ export default function RawMonitor({ connected, pads, jackLabels, levels, onSend
               {row(2 * j + 1, 'R')}
             </div>
           ))}
+        </div>
+      )}
+      {on && adcSettle !== undefined && (
+        <div className="param">
+          <div className="param-head">
+            <label htmlFor="rawmon-settle" className="param-label">
+              Leituras de descarte (teste de crosstalk)
+            </label>
+          </div>
+          <select
+            id="rawmon-settle"
+            className="full-select"
+            value={adcSettle}
+            onChange={(e) => onSend({ cmd: 'set_global', field: 'adc_settle', value: Number(e.target.value) })}
+          >
+            <option value={0}>0 — desligado (como era antes)</option>
+            <option value={1}>1 leitura de descarte</option>
+            <option value={2}>2 leituras de descarte</option>
+            <option value={3}>3 leituras de descarte</option>
+          </select>
+          <p className="pad-hint">
+            Ao trocar de porta, o conversor do módulo pode guardar um resto do sinal da porta anterior, que aparece como
+            pico falso na seguinte. Para comparar: bata forte num pad e veja o pico que aparece nas <strong>outras</strong>{' '}
+            portas, com 0 e depois com 1 ou mais descartes. Cada descarte deixa a leitura mais lenta
+            {levels?.loop_us ? (
+              <>
+                {' '}
+                — agora cada porta é lida a cada <strong>{(levels.loop_us / 1000).toFixed(2)} ms</strong>
+              </>
+            ) : null}
+            . Fica gravado no módulo.
+          </p>
         </div>
       )}
       {on && (

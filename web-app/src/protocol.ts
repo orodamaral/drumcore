@@ -301,6 +301,8 @@ export interface RawLevels {
   sat: number[]
   /** 1 = canal lido nesta janela */
   used: number[]
+  /** intervalo médio entre 2 leituras do mesmo canal, em µs (desde 2026-11-11) */
+  loop_us?: number
 }
 
 export interface XtalkMatrix {
@@ -470,6 +472,8 @@ export type IncomingMessage =
       firmware_version?: string
       /** Tela girada 180° (montagem física; fora do arquivo de configuração). Desde 2026-10-11. */
       display_flip?: boolean
+      /** Leituras de descarte do ADC após trocar o canal do MUX (0-3). Desde 2026-11-11. */
+      adc_settle?: number
       wifi?: WifiInfo
     })
   | ({ type: 'pad_config' } & PadConfig)

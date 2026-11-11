@@ -417,7 +417,11 @@ const char *padTypeShortName(byte type)
 #define EEPROM_XTALK_MAGIC_ADDR (EEPROM_DUAL_RATIO_ADDR + 1)
 #define EEPROM_XTALK_MATRIX_ADDR (EEPROM_XTALK_MAGIC_ADDR + 1)
 #define XTALK_MATRIX_MAGIC 0x5C
-#define EEPROM_SIZE (EEPROM_XTALK_MATRIX_ADDR + NUM_PADS * NUM_PADS)
+// 2026-11-11: leituras de descarte do ADC apos trocar o canal do MUX (ver
+// adcSettle) - 1 byte no fim. Placa ja' em uso: EEPROM_ESP.begin() cresce o
+// blob preenchendo o byte novo com 0 = sem descarte (0xFF tambem vira 0).
+#define EEPROM_ADC_SETTLE_ADDR (EEPROM_XTALK_MATRIX_ADDR + NUM_PADS * NUM_PADS)
+#define EEPROM_SIZE (EEPROM_ADC_SETTLE_ADDR + 1)
 #define DUAL_RATIO_MAGIC 0xD2
 #define jackLabelEepromAddr(j) (EEPROM_JACK_LABELS_ADDR + (j) * (JACK_LABEL_MAX_LEN + 1))
 #define EEPROM_INIT_MAGIC 0xA5
@@ -656,6 +660,17 @@ byte midiOutput = OUTPUT_USB_BLE;
 // (2026-10-11). E' da montagem fisica, nao do kit: fora do "fabrica", do
 // save_all/restore_all e do arquivo de configuracao do ConfigTool.
 bool displayFlip = false;
+// 2026-11-11: leituras de descarte (0-3) depois de trocar o canal do MUX,
+// antes da leitura que vale. O ADC do ESP32 guarda no capacitor de
+// amostragem um resto da tensao do canal anterior; com piezo (fonte de alta
+// impedancia) esse resto pode aparecer como pico "fantasma" no canal
+// seguinte - suspeita de parte do crosstalk eletrico de 2026-10-25. Ideia
+// tirada do J-DRUMS (adcRead(): 3 descartes). Cada descarte custa ~1
+// analogRead por canal (o loop fica mais lento) - por isso e' ajustavel
+// pelo app (Monitor de entradas) pra comparar com e sem. Da montagem, como
+// displayFlip: fora do "fabrica" e do arquivo de configuracao.
+#define ADC_SETTLE_MAX 3
+byte adcSettle = 0;
 
 // true se ha mudancas em RAM ainda nao gravadas via GLOBAL > SALVAR (o
 // design pede persistencia so explicita pelos encoders - ver
@@ -1122,6 +1137,7 @@ void sendDeviceInfo()
     doc["midi_channel"] = midiChannel;
     doc["midi_output"] = midiOutput;
     doc["display_flip"] = displayFlip;
+    doc["adc_settle"] = adcSettle;
     doc["ble_connected"] = bleMidiConnected;
     doc["firmware_phase"] = "J";
     doc["firmware_version"] = FW_VERSION;
@@ -1889,6 +1905,16 @@ void handleSetGlobal(JsonDocument &doc)
     {
         if (value < 0 || value > 1) { sendError("set_global", "value_out_of_range"); return; }
         setDisplayFlip(value == 1); // ja' grava na EEPROM
+        sendAck("set_global", -1, field, value);
+        sendDeviceInfo();
+        return;
+    }
+    else if (strcmp(field, "adc_settle") == 0)
+    {
+        if (value < 0 || value > ADC_SETTLE_MAX) { sendError("set_global", "value_out_of_range"); return; }
+        adcSettle = value;
+        EEPROM_ESP.write(EEPROM_ADC_SETTLE_ADDR, adcSettle);
+        EEPROM_ESP.commit();
         sendAck("set_global", -1, field, value);
         sendDeviceInfo();
         return;
@@ -3027,6 +3053,8 @@ void monSample(uint16_t v)
     }
 }
 
+extern unsigned long loopAvgUs; // measureLoop(), mais abaixo
+
 void rawMonTick()
 {
     if (!rawMonOn)
@@ -3055,6 +3083,9 @@ void rawMonTick()
         sat.add(rawMonSat[c]);
         used.add((channelInUse(c) || rawMonAll) ? 1 : 0);
     }
+    // Intervalo medio entre 2 leituras do mesmo canal (= 1 volta do loop) -
+    // pra ver no app quanto cada leitura de descarte (adcSettle) custa.
+    doc["loop_us"] = loopAvgUs;
     memset(rawMonPeak, 0, sizeof(rawMonPeak));
     memset(rawMonSat, 0, sizeof(rawMonSat));
     sendJsonLine(doc);
@@ -6274,6 +6305,10 @@ void setup()
         sendLog("EEPROM_ESP.begin() falhou - configuracoes nao vao persistir entre boots.");
     }
     displayFlip = EEPROM_ESP.read(EEPROM_DISPLAY_FLIP_ADDR) == 1;
+    {
+        byte v = EEPROM_ESP.read(EEPROM_ADC_SETTLE_ADDR);
+        adcSettle = v <= ADC_SETTLE_MAX ? v : 0; // fora da faixa = sem descarte
+    }
 
     pinMode(TFT_BLK, OUTPUT);
     digitalWrite(TFT_BLK, HIGH);
@@ -6434,6 +6469,10 @@ void scanActiveChannels()
             digitalWrite(MUX_S1, (ch >> 1) & 1);
             digitalWrite(MUX_S2, (ch >> 2) & 1);
             digitalWrite(MUX_S3, (ch >> 3) & 1);
+            for (byte k = 0; k < adcSettle; k++)
+            {
+                analogRead(SIG[m]); // descarte - ver adcSettle
+            }
             rawValue[c] = analogRead(SIG[m]);
             if (rawValue[c] > chPeakCur[c])
             {

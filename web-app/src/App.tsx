@@ -95,6 +95,7 @@ export default function App() {
   const [wifi, setWifi] = useState<WifiInfo | null>(null)
   // undefined = firmware sem a opção (anterior a 2026-10-11)
   const [displayFlip, setDisplayFlip] = useState<boolean | undefined>(undefined)
+  const [adcSettle, setAdcSettle] = useState<number | undefined>(undefined)
   const [wifiScan, setWifiScan] = useState<WifiScanState | null>(null)
   const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null)
   const [xtalkCal, setXtalkCal] = useState<XtalkCalStatus | null>(null)
@@ -158,6 +159,7 @@ export default function App() {
         setFirmwareVersion(message.firmware_version)
         setWifi(message.wifi ?? null)
         setDisplayFlip(message.display_flip)
+        setAdcSettle(message.adc_settle)
         setGlobal({
           midi_channel: message.midi_channel,
           midi_output: message.midi_output
@@ -167,7 +169,7 @@ export default function App() {
         setXtalkCal({ state: message.state, hits: message.hits, last: message.last })
         break
       case 'raw_levels':
-        setRawLevels({ peaks: message.peaks, sat: message.sat, used: message.used })
+        setRawLevels({ peaks: message.peaks, sat: message.sat, used: message.used, loop_us: message.loop_us })
         break
       case 'xtalk_matrix':
         setXtalkMatrix({ calibrated: message.calibrated, pairs: message.pairs })
@@ -345,6 +347,7 @@ export default function App() {
     setWifi(null)
     setWifiScan(null)
     setDisplayFlip(undefined)
+    setAdcSettle(undefined)
     setXtalkCal(null)
     setXtalkMatrix(null)
     setXtalkUnsupported(false)
@@ -848,6 +851,7 @@ export default function App() {
                 pads={pads}
                 jackLabels={jackLabels}
                 levels={rawLevels}
+                adcSettle={adcSettle}
                 onSend={send}
               />
 

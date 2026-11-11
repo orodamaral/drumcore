@@ -125,6 +125,7 @@ export class MockDevice {
   private rawTimer: ReturnType<typeof setInterval> | null = null
   private xtalkPairs: Array<[number, number, number]> = []
   private displayFlip = false
+  private adcSettle = 0
   private wifiAutostart = false
   private staSsid = ''
 
@@ -137,6 +138,7 @@ export class MockDevice {
       firmware_phase: 'K (demo)',
       firmware_version: 'demo',
       display_flip: this.displayFlip,
+      adc_settle: this.adcSettle,
       wifi: {
         active: this.wifiActive,
         ap_active: this.wifiActive && !this.staSsid,
@@ -327,7 +329,9 @@ export class MockDevice {
               peaks[c] = c === 4 ? 4095 : 1200 + Math.round(Math.random() * 2400)
               if (c === 4) sat[c] = 3
             }
-            this.emit({ type: 'raw_levels', peaks, sat, used })
+            // ~60 µs por leitura; cada descarte soma mais uma por canal lido
+            const reads = used.filter(Boolean).length * (1 + this.adcSettle)
+            this.emit({ type: 'raw_levels', peaks, sat, used, loop_us: 400 + reads * 60 })
           }, 100)
         }
         break
@@ -500,6 +504,8 @@ export class MockDevice {
       this.global.midi_output = value as 0 | 1 | 2
     } else if (cmd.field === 'display_flip' && (value === 0 || value === 1)) {
       this.displayFlip = value === 1
+    } else if (cmd.field === 'adc_settle' && value >= 0 && value <= 3) {
+      this.adcSettle = value
     } else {
       this.emit({ type: 'error', cmd: 'set_global', message: 'value_out_of_range' })
       return

@@ -2,6 +2,24 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
+## 2026-11-11 — Leituras de descarte do conversor (teste de crosstalk)
+
+- **Suspeita**: ao trocar o canal do MUX, o conversor do ESP32 guarda no
+  capacitor de amostragem um resto da tensão do canal anterior; com piezo
+  (fonte de alta impedância) isso pode aparecer como pico falso no canal
+  seguinte — o mesmo sintoma do crosstalk elétrico de 2026-10-25 (pico ao
+  mesmo tempo nos outros canais). Até agora a varredura trocava o canal e
+  lia na hora. Ideia tirada do firmware J-DRUMS (3 leituras de descarte
+  antes de cada leitura).
+- **Global `adc_settle`** (0–3, padrão 0 = como antes): leituras de descarte
+  depois de trocar o canal. Gravado no módulo; fora do "fábrica" e do
+  arquivo de configuração. No ConfigTool, aba Global > Monitor de entradas,
+  com o intervalo entre leituras de cada porta ao vivo (`loop_us` novo no
+  `raw_levels`), já que cada descarte deixa a varredura mais lenta.
+- **Falta testar no hardware**: bater forte num pad e comparar o pico que
+  aparece nas outras portas com 0 e com 1–3 descartes. Se ajudar, escolher
+  o padrão e recalibrar o crosstalk.
+
 ## 2026-11-11 — WebDrum descontinuado
 
 - A página **WebDrum** (protótipo de módulo de bateria no navegador, Web MIDI
