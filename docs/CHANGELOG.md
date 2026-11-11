@@ -2,7 +2,7 @@
 
 Registro cronológico do que foi feito no projeto (mais recente no topo).
 
-## 2026-11-11 — Leituras de descarte do conversor (teste de crosstalk)
+## 2026-11-11 — Leituras de descarte do conversor (testado: não é a causa do crosstalk)
 
 - **Suspeita**: ao trocar o canal do MUX, o conversor do ESP32 guarda no
   capacitor de amostragem um resto da tensão do canal anterior; com piezo
@@ -16,9 +16,17 @@ Registro cronológico do que foi feito no projeto (mais recente no topo).
   arquivo de configuração. No ConfigTool, aba Global > Monitor de entradas,
   com o intervalo entre leituras de cada porta ao vivo (`loop_us` novo no
   `raw_levels`), já que cada descarte deixa a varredura mais lenta.
-- **Falta testar no hardware**: bater forte num pad e comparar o pico que
-  aparece nas outras portas com 0 e com 1–3 descartes. Se ajudar, escolher
-  o padrão e recalibrar o crosstalk.
+- **Testado no hardware (kit completo, 2 rodadas, ~10 golpes por pad em
+  cada valor)**: o descarte **não** resolve o crosstalk. Se fosse resto de
+  carga, o vazamento apareceria na porta lida logo depois na varredura
+  (HiHat→Kick, Kick→Snare…) e sumiria com o descarte; esses pares nem
+  passam de 3%. O que sobra é mecânico: entre os pratos (Cym 1, Cym 2 e
+  Ride, 16–37%, sem melhora com descarte) e tip/ring do mesmo pad (Snare
+  45%, Ride 35%, esperado). Kick/toms → pratos caíram de ~6% para ~3%, mas
+  o intervalo entre leituras de cada porta quase dobra (1,15 ms → 2,01 ms;
+  2,91 ms com 2 e 3,79 ms com 3). Ruído em repouso ~11–13 de 4095 em todos.
+- **Decisão**: padrão continua 0; a opção fica no Monitor de entradas como
+  diagnóstico. O crosstalk dos pratos fica com a tabela calibrada.
 
 ## 2026-11-11 — WebDrum descontinuado
 
